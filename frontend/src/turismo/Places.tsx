@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { TermsAndConditionsDialog } from '@/components/TermsAndConditionsDialog'; 
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Users, AlertCircle, Star, BarChart3, X, ThumbsUp } from 'lucide-react';
+import { MapPin, Clock, Users, AlertCircle, Star, BarChart3, X, ThumbsUp, Loader2 } from 'lucide-react';
 import { usePlaces } from '@/hooks/usePlaces';
 import { useAuth } from '@/hooks/useAuth';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -162,11 +162,12 @@ const Rating = ({
 
 // Interface para estadísticas
 interface RatingStats {
-  average_rating: number;
-  total_ratings: number;
-  rating_distribution: Array<{
-    rating: number;
-    count: number;
+  promedio: number;
+  total: number;
+  distribucion: Array<{
+    calificacion: number;
+    cantidad: number;
+    porcentaje: number;
   }>;
 }
 
@@ -263,8 +264,8 @@ const RatingStatsDialog = ({
               "bg-secondary/30": variant === "secondary"
             })}>
               <p className="text-2xl font-bold">
-                {stats.average_rating !== null && stats.average_rating !== undefined 
-                  ? Number(stats.average_rating).toFixed(1) 
+                {stats.promedio !== null && stats.promedio !== undefined 
+                  ? Number(stats.promedio).toFixed(1) 
                   : '0.0'
                 }
               </p>
@@ -275,17 +276,17 @@ const RatingStatsDialog = ({
               "bg-primary/30": variant === "primary",
               "bg-secondary/30": variant === "secondary"
             })}>
-              <p className="text-2xl font-bold">{stats.total_ratings}</p>
+              <p className="text-2xl font-bold">{stats.total}</p>
               <p className="text-sm text-muted-foreground">Total calificaciones</p>
             </div>
           </div>
           
           <div className="space-y-3">
             <h4 className="font-semibold">Distribución de calificaciones:</h4>
-            {stats.rating_distribution.map((item) => (
-              <div key={item.rating} className="flex items-center gap-3">
+            {stats.distribucion.map((item) => (
+              <div key={item.calificacion} className="flex items-center gap-3">
                 <div className="w-16 text-sm text-muted-foreground">
-                  {item.rating} estrella{item.rating !== 1 ? 's' : ''}
+                  {item.calificacion} estrella{item.calificacion !== 1 ? 's' : ''}
                 </div>
                 <div className="flex-1 bg-secondary rounded-full h-3">
                   <div 
@@ -295,12 +296,12 @@ const RatingStatsDialog = ({
                       "bg-secondary-foreground": variant === "secondary"
                     })} 
                     style={{ 
-                      width: `${stats.total_ratings > 0 ? (item.count / stats.total_ratings) * 100 : 0}%` 
+                      width: `${stats.total > 0 ? (item.cantidad / stats.total) * 100 : 0}%` 
                     }}
                   />
                 </div>
                 <div className="w-12 text-sm font-medium text-right">
-                  {item.count}
+                  {item.cantidad} ({item.porcentaje}%)
                 </div>
               </div>
             ))}
@@ -323,24 +324,57 @@ const ImageModal = ({
   isOpen: boolean; 
   onClose: () => void 
 }) => {
+  // Manejo de tecla ESC y scroll
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("keydown", handleEscape);
+      document.body.style.overflow = "hidden";
+    }
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = "unset";
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="relative max-w-4xl max-h-full">
-        <button
-          onClick={onClose}
-          className="absolute -top-0 right-0 text-white hover:text-gray-300 transition-colors"
-        >
-          <X className="w-8 h-8" />
-        </button>
+    <div
+      className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      {/* Botón de cerrar */}
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors bg-black/50 rounded-full p-2 backdrop-blur-sm"
+      >
+        <X className="w-6 h-6" />
+      </button>
+
+      {/* Contenedor imagen */}
+      <div
+        className="relative"
+        onClick={(e) => e.stopPropagation()} // Prevenir cierre al dar click en la imagen
+      >
         <img
           src={src}
           alt={alt}
-          className="max-w-full max-h-full object-contain rounded-lg shadow-lg transition-transform duration-300 hover:scale-105"
+          className="max-w-screen max-h-screen object-contain rounded-lg shadow-lg transition-transform duration-300 hover:scale-105"
         />
-        <div className="absolute bottom-4 left-4 text-white bg-black/50 px-3 py-1 rounded-lg">
+
+        {/* Info de la imagen */}
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black/70 px-4 py-2 rounded-lg backdrop-blur-sm text-sm text-center max-w-lg">
           {alt}
+          <p className="text-xs text-gray-300 mt-1">
+            Haz clic fuera o presiona ESC para cerrar
+          </p>
         </div>
       </div>
     </div>
@@ -431,11 +465,23 @@ const UpdatedRatingInvitationBanner = ({ theme }: {
 };
 
 const Places = () => {
-  const { places, loading, error, ratePlace, getUserRating, getRatingStats, isRating } = usePlaces();
+  const { 
+    places, 
+    loading, 
+    error, 
+    ratePlace, 
+    getUserRating, 
+    getRatingStats, 
+    isRating,
+    getUserCurrentRating,
+    hasUserRated
+  } = usePlaces();
+  
   const { user } = useAuth();
   const { toast } = useToast();
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [ratingStats, setRatingStats] = useState<Record<string, RatingStats>>({});
+  const [loadingStats, setLoadingStats] = useState<Record<string, boolean>>({});
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
   const [theme, setTheme] = useState<'default' | 'nature' | 'waterfall' | 'cultural' | 'history' | 'bridge' | 'viewpoint' | 'trail' | 'montain' | 'river' | 'path'>('default');
 
@@ -547,14 +593,18 @@ const Places = () => {
   };
 
   // Load user ratings for each place
-  useEffect(() => {
+   useEffect(() => {
     if (places.length > 0) {
       const loadUserRatings = async () => {
         const ratings: Record<string, number> = {};
         for (const place of places) {
-          const ratingData = await getUserRating(place.id);
-          if (ratingData) {
-            ratings[place.id] = ratingData.calificacion;
+          try {
+            const ratingData = await getUserRating(place.id);
+            if (ratingData) {
+              ratings[place.id] = ratingData.calificacion;
+            }
+          } catch (error) {
+            console.error(`Error loading rating for place ${place.id}:`, error);
           }
         }
         setUserRatings(ratings);
@@ -563,42 +613,74 @@ const Places = () => {
     }
   }, [places, getUserRating]);
 
-  // Cargar estadísticas de calificaciones
-  useEffect(() => {
-    if (places.length > 0) {
-      const loadRatingStats = async () => {
-        const stats: Record<string, RatingStats> = {};
-        for (const place of places) {
-          try {
-            const statsData = await getRatingStats(place.id);
-            if (statsData) {
-              stats[place.id] = statsData;
-            }
-          } catch (error) {
-            console.error(`Error loading stats for place ${place.id}:`, error);
-          }
-        }
-        setRatingStats(stats);
-      };
-      loadRatingStats();
-    }
-  }, [places, getRatingStats]);
-
-  // Función mejorada para manejar calificaciones
-  const handleRatingChange = async (placeId: string, placeName: string, newRating: number) => {
-    try {
-      const success = await ratePlace(placeId, newRating, undefined, placeName);
-      if (success) {
-        setUserRatings(prev => ({ ...prev, [placeId]: newRating }));
+  // Cargar estadísticas de calificaciones - MEJORADO
+// CORREGIDO: Carga estadísticas para todos los lugares, no solo los con calificaciones
+useEffect(() => {
+  if (places.length > 0) {
+    const loadRatingStats = async () => {
+      const stats: Record<string, RatingStats> = {};
+      const loading: Record<string, boolean> = {};
+      
+      for (const place of places) {
+        // Cargar stats para TODOS los lugares, no solo los con calificaciones
+        loading[place.id] = true;
+        setLoadingStats(prev => ({ ...prev, [place.id]: true }));
         
         try {
-          const statsData = await getRatingStats(placeId);
+          const statsData = await getRatingStats(place.id);
+          console.log(`📍 Stats for ${place.nombre}:`, statsData);
+          
           if (statsData) {
-            setRatingStats(prev => ({ ...prev, [placeId]: statsData }));
+            stats[place.id] = statsData;
           }
         } catch (error) {
-          console.error('Error reloading stats:', error);
+          console.error(`Error loading stats for place ${place.id}:`, error);
+        } finally {
+          loading[place.id] = false;
+          setLoadingStats(prev => ({ ...prev, [place.id]: false }));
         }
+      }
+      
+      setRatingStats(stats);
+      console.log('📊 All rating stats loaded:', stats);
+    };
+    
+    loadRatingStats();
+  }
+}, [places, getRatingStats]);
+
+  // Función mejorada para manejar calificaciones - CORREGIDA
+  const handleRatingChange = async (placeId: string, placeName: string, newRating: number) => {
+    try {
+      // Verificar si ya tiene una calificación para mostrar confirmación
+      const currentUserRating = userRatings[placeId];
+      const isUpdating = currentUserRating !== undefined;
+      
+      const success = await ratePlace(placeId, newRating, undefined, placeName);
+      
+      if (success) {
+        // Actualizar estado local inmediatamente para mejor UX
+        setUserRatings(prev => ({ ...prev, [placeId]: newRating }));
+        
+        // Mostrar mensaje apropiado
+        toast({
+          title: isUpdating ? '⭐ Calificación actualizada' : '🎉 ¡Gracias por tu calificación!',
+          description: isUpdating 
+            ? `Tu calificación para "${placeName}" ha sido actualizada a ${newRating} estrellas`
+            : `Has calificado "${placeName}" con ${newRating} estrellas`,
+        });
+        
+        // Recargar estadísticas después de un breve delay
+        setTimeout(async () => {
+          try {
+            const statsData = await getRatingStats(placeId);
+            if (statsData) {
+              setRatingStats(prev => ({ ...prev, [placeId]: statsData }));
+            }
+          } catch (error) {
+            console.error('Error reloading stats:', error);
+          }
+        }, 1000);
       }
     } catch (error: unknown) {
       if (error instanceof Error && error.message === 'TERMS_REQUIRED') {
@@ -609,10 +691,11 @@ const Places = () => {
         });
         setShowTermsDialog(true);
       }
+      // Otros errores ya son manejados por el hook
     }
   };
 
-  // Función para cuando se aceptan los términos
+  // Función para cuando se aceptan los términos - MEJORADA
   const handleTermsAccept = async () => {
     if (pendingRating) {
       const { placeId, placeName, rating } = pendingRating;
@@ -621,23 +704,32 @@ const Places = () => {
         const success = await ratePlace(placeId, rating, undefined, placeName);
         if (success) {
           setUserRatings(prev => ({ ...prev, [placeId]: rating }));
+          toast({
+            title: '🎉 ¡Gracias por tu calificación!',
+            description: `Has calificado "${placeName}" con ${rating} estrellas`,
+          });
           
-          try {
-            const statsData = await getRatingStats(placeId);
-            if (statsData) {
-              setRatingStats(prev => ({ ...prev, [placeId]: statsData }));
+          // Recargar estadísticas
+          setTimeout(async () => {
+            try {
+              const statsData = await getRatingStats(placeId);
+              if (statsData) {
+                setRatingStats(prev => ({ ...prev, [placeId]: statsData }));
+              }
+            } catch (error) {
+              console.error('Error reloading stats:', error);
             }
-          } catch (error) {
-            console.error('Error reloading stats:', error);
-          }
+          }, 1000);
         }
       } catch (error) {
         // Error ya manejado en ratePlace
       }
       
       setPendingRating(null);
+      setShowTermsDialog(false);
     }
   };
+
 
   const handleImageClick = (src: string, alt: string) => {
     setSelectedImage({ src, alt });
@@ -647,6 +739,12 @@ const Places = () => {
       duration: 3000,
     });
   };
+
+    const handleImageError = (placeName: string, imageUrl: string) => {
+    console.error('❌ Error cargando imagen:', imageUrl);
+    // No mostrar toast para evitar spam, solo log en consola
+  };
+
 
   const getCategoryColor = (category: string | null) => {
     if (!category) return 'bg-secondary text-secondary-foreground';
@@ -693,6 +791,13 @@ const Places = () => {
     
     return features.length > 0 ? features : ['Turismo'];
   };
+
+    // Función para formatear el promedio de calificación
+  const formatRating = (rating: number | null | undefined): string => {
+    if (!rating || rating === 0) return '0.0';
+    return Number(rating).toFixed(1);
+  };
+
 
   if (loading) {
     return (
@@ -803,7 +908,7 @@ const Places = () => {
             </p>
           </div>
 
-          {/* SECCIÓN DE INVITACIÓN ACTUALIZADA */}
+                    {/* SECCIÓN DE INVITACIÓN ACTUALIZADA */}
           {!user && (
             <UpdatedRatingInvitationBanner theme={theme} />
           )}
@@ -814,6 +919,8 @@ const Places = () => {
               const displayRating = userRatings[place.id] || place.puntuacion_promedio || 0;
               const isCurrentlyRating = isRating[place.id] || false;
               const imageUrl = place.foto_principal_url || '/placeholder.svg';
+              const userHasRated = hasUserRated(place.id);
+              const userCurrentRating = getUserCurrentRating(place.id);
               
               return (
                 <div 
@@ -828,15 +935,9 @@ const Places = () => {
                       loading="lazy"
                       onClick={() => handleImageClick(imageUrl, place.nombre)}
                       onError={(e) => {
-                        console.error('❌ Error cargando imagen:', imageUrl);
+                        handleImageError(place.nombre, imageUrl);
                         const target = e.target as HTMLImageElement;
                         target.src = '/placeholder.svg';
-                        toast({
-                          title: 'Error al cargar imagen',
-                          description: `No se pudo cargar la imagen de ${place.nombre}`,
-                          variant: 'destructive',
-                          duration: 5000,
-                        });
                       }}
                     />
                     
@@ -865,7 +966,7 @@ const Places = () => {
                     </div>
 
                     <p className="text-muted-foreground mb-4 leading-relaxed line-clamp-3">
-                      {place.descripcion  || 'Un hermoso lugar para visitar en San Juan Tahitic.'}
+                      {place.descripcion || 'Un hermoso lugar para visitar en San Juan Tahitic.'}
                     </p>
 
                     <div className="mb-4">
@@ -879,34 +980,49 @@ const Places = () => {
                             readonly={isCurrentlyRating}
                           />
                           
-                          {place.puntuacion_promedio  !== null && place.puntuacion_promedio  !== undefined && place.puntuacion_promedio  > 0 && (
+                          {place.puntuacion_promedio !== null && place.puntuacion_promedio !== undefined && place.puntuacion_promedio > 0 && (
                             <div className="flex items-center ml-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white font-bold py-1 px-3 rounded-full shadow-lg">
                               <Star className="w-3 h-3 mr-1 fill-white" />
-                              <span className="text-sm">{Number(place.puntuacion_promedio ).toFixed(1)}</span>
+                              <span className="text-sm">{formatRating(place.puntuacion_promedio)}</span>
                             </div>
                           )}
                         </div>
                         
                         {isCurrentlyRating && (
-                          <div className="text-sm text-muted-foreground">
+                          <div className="flex items-center text-sm text-muted-foreground">
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
                             Calificando...
                           </div>
                         )}
                       </div>
                       
-                      {!user && (
+                      {userHasRated && userCurrentRating && (
+                        <p className="text-xs text-green-600 mt-1">
+                          ✅ Ya calificaste con {userCurrentRating} estrellas
+                        </p>
+                      )}
+                      
+                      {!user && !userHasRated && (
                         <p className="text-xs text-muted-foreground mt-1">
                           Califica sin registro (aceptarás términos de privacidad)
                         </p>
                       )}
                       
-                      {ratingStats[place.id] && ratingStats[place.id].total_ratings > 0 && (
-                        <RatingStatsDialog 
-                          placeName={place.nombre}
-                          stats={ratingStats[place.id]}
-                          variant={theme === 'default' ? 'default' : 'primary'}
-                          theme={theme}
-                        />
+                      {ratingStats[place.id] && ratingStats[place.id].total > 0 && (
+                        <div className="mt-2">
+                          <RatingStatsDialog 
+                            placeName={place.nombre}
+                            stats={ratingStats[place.id]}
+                            variant={theme === 'default' ? 'default' : 'primary'}
+                            theme={theme}
+                          />
+                          {loadingStats[place.id] && (
+                            <div className="flex items-center text-xs text-muted-foreground mt-1">
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              Cargando estadísticas...
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
 

@@ -13,4 +13,9 @@ router.get('/lugar/:lugarId/mi-calificacion', calificacionController.obtenerMiCa
 // Rutas protegidas (admin only)
 router.get('/lugar/:lugarId', autenticarAdmin, calificacionController.obtenerCalificacionesLugar);
 
+// En tus rutas - AGREGAR ESTA RUTA
+// NUEVA RUTA: Estadísticas públicas de calificaciones
+router.get('/lugar/:lugarId/estadisticas', calificacionController.obtenerCalificacionesParaEstadisticas);
+
+
 export default router;

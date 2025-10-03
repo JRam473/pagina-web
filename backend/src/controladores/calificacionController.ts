@@ -1,4 +1,4 @@
-//controladores/administradorController.ts
+//controladores/calificacionController.ts
 import { Request, Response } from 'express';
 import { pool } from '../utils/baseDeDatos';
 import { generarHashNavegador } from '../utils/hashNavegador';
@@ -84,5 +84,27 @@ export const calificacionController = {
     } catch (error) {
       res.status(500).json({ error: 'Error al obtener calificaciones' });
     }
+  },
+// En controladores/administradorController.ts - AGREGAR ESTA FUNCIÓN
+async obtenerCalificacionesParaEstadisticas(req: Request, res: Response) {
+  const { lugarId } = req.params;
+  
+  try {
+    const result = await pool.query(
+      `SELECT calificacion 
+       FROM calificaciones_lugares 
+       WHERE lugar_id = $1`,
+      [lugarId]
+    );
+    
+    res.json({
+      calificaciones: result.rows
+    });
+  } catch (error) {
+    console.error('Error obteniendo calificaciones para estadísticas:', error);
+    res.status(500).json({ error: 'Error al obtener calificaciones' });
   }
+}
+
+
 };
