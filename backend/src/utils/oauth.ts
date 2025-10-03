@@ -1,35 +1,44 @@
+import e from 'express';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 
-// Verificar si las variables de Google OAuth están configuradas
-const hasGoogleConfig = 
-  process.env.GOOGLE_CLIENT_ID && 
-  process.env.GOOGLE_CLIENT_SECRET && 
-  process.env.GOOGLE_CALLBACK_URL;
+export interface GoogleProfile extends passport.Profile {
+  _originalPath?: string; // ✅ Ruta original desde el estado
+}
 
-if (hasGoogleConfig) {
-  console.log('✅ Google OAuth configurado correctamente');
-  
+// Configurar estrategia Google OAuth SOLO si las variables existen
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CALLBACK_URL) {
   passport.use(new GoogleStrategy({
-      clientID: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL!,
-      scope: ['profile', 'email']
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: process.env.GOOGLE_CALLBACK_URL,
+      scope: ['profile', 'email'],
+      passReqToCallback: true // ✅ Permitir acceso al request
     },
-    (accessToken, refreshToken, profile, done) => {
-      console.log(`🔐 Usuario de Google autenticado: ${profile.displayName}`);
-      return done(null, profile);
+    (req: any, accessToken, refreshToken, profile, done) => {
+      console.log('🔐 PERFIL COMPLETO DE GOOGLE:');
+      console.log('- ID:', profile.id);
+      console.log('- Display Name:', profile.displayName);
+      console.log('- Emails:', profile.emails?.[0]?.value);
+      
+      // ✅ Obtener el estado (ruta original) si existe
+      const originalPath = req.query.state || '/';
+      console.log('📍 Ruta original desde estado:', originalPath);
+      
+      // ✅ Adjuntar la ruta original al perfil
+      const profileWithState = {
+        ...profile,
+        _originalPath: originalPath
+      };
+      
+      return done(null, profileWithState);
     }
   ));
 } else {
   console.warn('⚠️  Google OAuth no configurado. Las rutas /auth/google no funcionarán.');
-  console.warn('   Variables faltantes:');
-  if (!process.env.GOOGLE_CLIENT_ID) console.warn('   - GOOGLE_CLIENT_ID');
-  if (!process.env.GOOGLE_CLIENT_SECRET) console.warn('   - GOOGLE_CLIENT_SECRET');
-  if (!process.env.GOOGLE_CALLBACK_URL) console.warn('   - GOOGLE_CALLBACK_URL');
 }
 
-// Serialización simple (siempre necesaria)
+// Serialización simple
 passport.serializeUser((user: any, done) => {
   done(null, user);
 });

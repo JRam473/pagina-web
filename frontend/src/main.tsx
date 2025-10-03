@@ -7,13 +7,9 @@ import {
   RouterProvider,
 } from 'react-router-dom';
 
-// App principal (layout completo)
+// App principal
 import App from './App.tsx';
-
-// Layout mínimo para login
 import { MinimalLayout } from './MinimalLayout';
-
-// Rutas
 import { HomePage } from './pages/HomePage';
 import { TourismSection } from './pages/TourismSection.tsx';
 import { CulturePage } from './pages/CulturePage';
@@ -22,24 +18,18 @@ import { GallerySection } from './pages/GallerySection.tsx';
 import { ContactSection } from './ContactSection';
 import { OAuthCallback } from './pages/OAuthCallback';
 import { Login } from './pages/Login';
-
-// Importar AuthProvider
 import { AuthProvider } from '@/hooks/useAuth'; 
-
-// Importar ProtectedRoute y ProfilePage
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ProfilePage } from './pages/ProfilePage';
-
-// Importar ToastProvider
-import { ToastProvider } from '@/components/ui/toast';
-
-// 👇 Importar el Panel de Administración
 import { PanelPlaceSection } from './pages/PanelPlaceSection';
+import { SilentErrorBoundary } from './components/SilentErrorBoundary';
+import { SilentRouteError } from './components/SilentRouteError';
 
 const router = createBrowserRouter([
   {
     path: '/',
     element: <App />,
+    errorElement: <SilentRouteError />, // 👈 Recarga silenciosa
     children: [
       { index: true, element: <HomePage /> },
       { path: 'turismo', element: <TourismSection /> },
@@ -55,11 +45,10 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         )
       },
-      // 👇 Agregar la ruta del panel de administración
       {
         path: 'admin/places',
         element: (
-          <ProtectedRoute requireAdmin={true}> {/* 👈 Nueva prop para requerir admin */}
+          <ProtectedRoute requireAdmin={true}>
             <PanelPlaceSection />
           </ProtectedRoute>
         )
@@ -80,12 +69,20 @@ const router = createBrowserRouter([
   },
 ]);
 
-createRoot(document.getElementById('root')!).render(
+// Renderizar con protección silenciosa
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error('No se encontró el elemento root');
+}
+
+const root = createRoot(rootElement);
+
+root.render(
   <StrictMode>
-    <ToastProvider>
+    <SilentErrorBoundary>
       <AuthProvider>
         <RouterProvider router={router} />
       </AuthProvider>
-    </ToastProvider>
-  </StrictMode>,
+    </SilentErrorBoundary>
+  </StrictMode>
 );

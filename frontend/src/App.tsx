@@ -53,14 +53,11 @@ function App() {
           transition={pageTransition}
           style={{ position: 'relative' }}
         >
-          {/* Outlet renderizará el componente de la ruta actual */}
           <Outlet />
         </motion.div>
       </AnimatePresence>
 
       <Footer />
-      
-      {/* 👇 Agregar el Toaster aquí */}
       <Toaster />
     </div>
   );

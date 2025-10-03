@@ -2,9 +2,8 @@ import { useState, useEffect } from 'react';
 import { Button } from './components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from './components/ui/sheet';
 import { Menu, MapPin, Phone, Mail, Sparkles } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { AuthButton } from "./AuthButton"; // 👈 importa tu botón de auth
-
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -65,13 +64,12 @@ export function Navigation() {
 
           {/* Desktop Navigation */}
           <div className="hidden lg:flex items-center space-x-2">
-            {navItems.map((item, index) => (
+            {navItems.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
                 onClick={() => setIsOpen(false)}
                 className={`relative px-4 py-2 rounded-xl text-white font-medium transition-all duration-300 hover:scale-105 ${item.color}`}
-                style={{ animationDelay: `${index * 0.1}s` }}
               >
                 {item.label}
               </Link>
@@ -98,7 +96,7 @@ export function Navigation() {
                 className="w-[300px] bg-black/80 backdrop-blur-lg text-white border-l border-white/10"
               >
                 <div className="flex flex-col mt-8 space-y-2">
-                  {navItems.map((item, index) => (
+                  {navItems.map((item) => (
                     <Link
                       key={item.to}
                       to={item.to}

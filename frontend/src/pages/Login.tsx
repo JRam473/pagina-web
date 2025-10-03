@@ -1,27 +1,38 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 
 export const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-  const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const [usernameError, setUsernameError] = useState('');
 
-  const { signIn, signUp, signInWithGoogle } = useAuth();
+  const { signIn, signInWithGoogle, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Validaciones
+  // ✅ Obtener SOLO de location.state (más confiable)
+  const from = location.state?.from?.pathname || '/';
+
+  console.log('📍 Redirigiendo después de login a:', from);
+
+  // ✅ Redirigir automáticamente si ya está autenticado
+  useEffect(() => {
+    if (isAuthenticated) {
+      console.log('✅ Usuario ya autenticado, redirigiendo a:', from);
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, from, navigate]);
+
+  // Validaciones simplificadas (solo para login)
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -41,15 +52,6 @@ export const Login = () => {
     return true;
   };
 
-  const validateUsername = (username: string): boolean => {
-    if (!isLogin && username.length < 3) {
-      setUsernameError('El usuario debe tener al menos 3 caracteres');
-      return false;
-    }
-    setUsernameError('');
-    return true;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -58,7 +60,6 @@ export const Login = () => {
     let isValid = true;
     if (!validateEmail(email)) isValid = false;
     if (!validatePassword(password)) isValid = false;
-    if (!isLogin && !validateUsername(username)) isValid = false;
 
     if (!isValid) {
       setLoading(false);
@@ -66,16 +67,30 @@ export const Login = () => {
     }
 
     try {
-      if (isLogin) {
-        await signIn(email, password);
+      await signIn(email, password);
+      // ✅ La redirección se maneja automáticamente en el useEffect
+      console.log('✅ Login exitoso, redirigiendo a:', from);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
       } else {
-        await signUp(email, password, username);
+        setError('Error desconocido durante el login');
       }
-      navigate('/', { replace: true });
-    } catch (err: any) {
-      setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithGoogle();
+      // ✅ La redirección se maneja automáticamente en el useEffect
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Error desconocido durante el login con Google');
+      }
     }
   };
 
@@ -97,6 +112,15 @@ export const Login = () => {
     x.set(0);
     y.set(0);
   };
+
+  // ✅ Si ya está autenticado, mostrar loading
+  if (isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="text-white text-xl">Redirigiendo...</div>
+      </div>
+    );
+  }
 
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-black">
@@ -134,33 +158,15 @@ export const Login = () => {
           <Card className="backdrop-blur-md bg-white/10 border-white/20 shadow-2xl rounded-3xl overflow-hidden hover:scale-105 transform transition-transform duration-500 border-glow">
             <CardHeader className="text-center space-y-3">
               <CardTitle className="text-3xl font-extrabold text-white drop-shadow-lg animate-pulse">
-                {isLogin ? 'Iniciar Sesión' : 'Crear Cuenta'}
+                Iniciar Sesión
               </CardTitle>
               <CardDescription className="text-white/80">
-                {isLogin ? 'Ingresa a tu cuenta de Tahitic' : 'Únete a la comunidad de Tahitic'}
+                Ingresa a tu cuenta de administrador
               </CardDescription>
             </CardHeader>
 
-<CardContent>
+            <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
-                {!isLogin && (
-                  <Tooltip delayDuration={200}>
-                    <TooltipTrigger asChild>
-                      <Input
-                        placeholder="Nombre de usuario"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        required
-                        disabled={loading}
-                        className={`transition-all duration-300 ${usernameError ? 'border-red-500' : 'focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400'}`}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="bg-slate-100/90 backdrop-blur-sm text-gray-900 shadow-lg">
-                      {usernameError || 'Tu usuario debe tener al menos 3 caracteres'}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
                 <Tooltip delayDuration={200}>
                   <TooltipTrigger asChild>
                     <Input
@@ -211,22 +217,9 @@ export const Login = () => {
                     className="w-full bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 text-white shadow-lg transition-transform duration-300"
                     disabled={loading}
                   >
-                    {loading ? 'Cargando...' : isLogin ? 'Iniciar Sesión' : 'Crear Cuenta'}
+                    {loading ? 'Cargando...' : 'Iniciar Sesión'}
                   </Button>
                 </motion.div>
-
-                <div className="text-center text-sm mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsLogin(!isLogin)}
-                    className="text-emerald-300 hover:text-white/90 hover:underline transition-colors"
-                    disabled={loading}
-                  >
-                    {isLogin
-                      ? '¿No tienes cuenta? Regístrate aquí'
-                      : '¿Ya tienes cuenta? Inicia sesión'}
-                  </button>
-                </div>
               </form>
 
               {/* Divider */}
@@ -241,8 +234,9 @@ export const Login = () => {
                   <Button
                     variant="outline"
                     className="w-full mt-4 border-white/30 bg-white/20 text-white hover:bg-white/30 hover:text-gray-900 backdrop-blur-md transition-all duration-300"
-                    onClick={signInWithGoogle}
+                    onClick={handleGoogleLogin}
                     type="button"
+                    disabled={loading}
                   >
                     <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

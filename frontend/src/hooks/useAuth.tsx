@@ -1,243 +1,152 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import type { ReactNode } from 'react';
 import api from '../lib/axios';
 
-// Interfaces basadas en lo que realmente devuelve tu backend
-interface User {
+interface Admin {
   id: string;
+  usuario: string;
   email: string;
-  username?: string;
-  is_verified: boolean;
+  rol: string;
   avatar_url?: string;
 }
 
-interface Profile {
-  id: string;
-  user_id: string;
-  full_name?: string;
-  bio?: string;
-  avatar_url?: string;
-}
-
-// Interfaces REALES basadas en lo que tu backend devuelve
-interface LoginResponse {
-  message: string;
+interface ApiResponse {
   token: string;
-  user: User;
-}
-
-interface RegisterResponse {
-  message: string;
-  token: string;
-  user: User;
-}
-
-interface ProfileResponse {
-  user: User;
+  administrador: Admin;
 }
 
 interface AuthContextType {
-  user: User | null;
-  profile: Profile | null;
+  admin: Admin | null;
   loading: boolean;
   isAuthenticated: boolean;
-  isAdmin: boolean; // 👈 Agregar esta propiedad
+  isAdmin: boolean;
   signOut: () => void;
   signInWithGoogle: () => void;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, username?: string) => Promise<void>;
+  redirectPath: string;
+  setRedirectPath: (path: string) => void;
+  getPreLoginPath: () => string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [admin, setAdmin] = useState<Admin | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [redirectPath, setRedirectPath] = useState('/');
+  const isAdmin = isAuthenticated;
 
-  // ✅ Función para verificar si el usuario es administrador
-  const checkIsAdmin = useCallback((userEmail: string | undefined): boolean => {
-    if (!userEmail) return false;
-    const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
-    return userEmail === adminEmail;
-  }, []);
-
-  const [isAdmin, setIsAdmin] = useState(false); // 👈 Estado para isAdmin
-
-  // ✅ CORREGIDO: Función para cargar usuario desde token
-  const loadUserFromToken = useCallback(async (token: string): Promise<void> => {
+  // ✅ Cargar admin desde token
+  const loadAdminFromToken = useCallback(async (token: string): Promise<void> => {
     try {
-      const userResponse = await api.get<ProfileResponse>('/api/auth/profile', {
+      const response = await api.get<{ administrador: Admin }>('/api/admin/perfil', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      // ✅ CORRECCIÓN: Acceder directamente según la interfaz ProfileResponse
-      setUser(userResponse.data.user);
+      setAdmin(response.data.administrador);
       setIsAuthenticated(true);
-      
-      // ✅ Verificar si es administrador
-      setIsAdmin(checkIsAdmin(userResponse.data.user.email));
-      
-      try {
-        const profileResponse = await api.get<{ profile: Profile }>('/api/profiles/me', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setProfile(profileResponse.data.profile);
-      } catch {
-        console.log('Perfil no encontrado');
-      }
     } catch (error) {
-      console.error('Error cargando usuario:', error);
-      localStorage.removeItem('token');
+      console.error('❌ Token inválido o expirado:', error);
+      localStorage.removeItem('admin_token');
       setIsAuthenticated(false);
-      setIsAdmin(false); // 👈 Resetear isAdmin en caso de error
+      setAdmin(null);
     }
-  }, [checkIsAdmin]);
+  }, []);
 
-  // ✅ CORRECCIÓN: Función para verificar autenticación
+  // ✅ Verificar autenticación al cargar la app
   const checkAuth = useCallback(async (): Promise<void> => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('admin_token');
+    
     if (token) {
-      await loadUserFromToken(token);
+      await loadAdminFromToken(token);
     } else {
       setIsAuthenticated(false);
-      setIsAdmin(false); // 👈 Resetear isAdmin si no hay token
+      setAdmin(null);
     }
     setLoading(false);
-  }, [loadUserFromToken]);
+  }, [loadAdminFromToken]);
 
-  // Verificar autenticación al cargar
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
 
-  // ✅ CORRECCIÓN: Función signIn con estructura consistente
+  // ✅ Login para administradores
   const signIn = async (email: string, password: string): Promise<void> => {
     try {
-      console.log('🔄 Intentando login con:', { email });
-      
-      const response = await api.post<LoginResponse>('/api/auth/login', { 
+      const response = await api.post<ApiResponse>('/api/admin/login', { 
         email, 
         password 
       });
       
-      console.log('✅ Respuesta completa del backend:', response);
+      const { token, administrador } = response.data;
       
-      // ✅ MEJORAR validación
-      if (!response.data) {
-        throw new Error('No se recibió respuesta del servidor');
-      }
-
-      const { token, user: userData } = response.data;
-      
-      if (!token) {
-        throw new Error('Token no recibido del servidor');
-      }
-      
-      if (!userData) {
-        throw new Error('Datos de usuario no recibidos');
-      }
-      
-      localStorage.setItem('token', token);
-      setUser(userData);
+      localStorage.setItem('admin_token', token);
+      setAdmin(administrador);
       setIsAuthenticated(true);
-      setIsAdmin(checkIsAdmin(userData.email)); // 👈 Verificar si es admin
-      
-      // Verificar que el token funciona
-      await loadUserFromToken(token);
       
     } catch (error: unknown) {
-      console.error('❌ Error completo en login:', error);
+      console.error('Error en login:', error);
       setIsAuthenticated(false);
-      setIsAdmin(false); // 👈 Resetear isAdmin en error
+      setAdmin(null);
       
-      if (error instanceof Error && 'response' in error) {
-        const axiosError = error as { response?: { data?: { message?: string } } };
-        throw new Error(axiosError.response?.data?.message || 'Error al iniciar sesión');
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: { error?: string } } };
+        if (axiosError.response?.data?.error) {
+          throw new Error(axiosError.response.data.error);
+        }
       }
       throw new Error('Error al iniciar sesión');
     }
   };
 
-  // ✅ CORRECCIÓN: Función signUp con estructura consistente
-  const signUp = async (email: string, password: string, username?: string): Promise<void> => {
-    try {
-      console.log('📤 Enviando registro:', { email, username });
-      
-      const response = await api.post<RegisterResponse>('/api/auth/register', { 
-        email, 
-        password, 
-        username 
-      });
-      
-      console.log('✅ Respuesta de registro:', response.data);
-      
-      // ✅ CORRECCIÓN: Acceder directamente según RegisterResponse
-      const { token, user: userData } = response.data;
-      
-      localStorage.setItem('token', token);
-      setUser(userData);
-      setIsAuthenticated(true);
-      setIsAdmin(checkIsAdmin(userData.email)); // 👈 Verificar si es admin
-      
-    } catch (error: unknown) {
-      console.error('❌ Error completo en registro:', error);
-      setIsAuthenticated(false);
-      setIsAdmin(false); // 👈 Resetear isAdmin en error
-      
-      if (error instanceof Error && 'response' in error) {
-        const axiosError = error as { 
-          response?: { 
-            data?: { message?: string }; 
-            status?: number 
-          } 
-        };
-        
-        if (axiosError.response?.data?.message) {
-          throw new Error(axiosError.response.data.message);
-        } else if (axiosError.response?.status === 400) {
-          throw new Error('Datos de registro inválidos');
-        } else if (axiosError.response?.status === 409) {
-          throw new Error('El usuario ya existe');
-        }
-      }
-      
-      throw new Error('Error al registrarse');
-    }
+  const signOut = (): void => {
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('pre_login_path');
+    setAdmin(null);
+    setIsAuthenticated(false);
+    setRedirectPath('/');
   };
 
-  const signOut = (): void => {
-    localStorage.removeItem('token');
-    setUser(null);
-    setProfile(null);
-    setIsAuthenticated(false);
-    setIsAdmin(false); // 👈 Resetear isAdmin al cerrar sesión
+  // ✅ Función para obtener la ruta guardada (para OAuthCallback)
+  const getPreLoginPath = (): string => {
+    const path = redirectPath || localStorage.getItem('pre_login_path') || '/';
+    console.log('📍 getPreLoginPath - Ruta recuperada:', path);
+    localStorage.removeItem('pre_login_path');
+    return path;
   };
 
   const signInWithGoogle = (): void => {
-    const googleAuthUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/google`;
-    console.log('Redirecting to Google OAuth:', googleAuthUrl);
+    const pathToSave = redirectPath !== '/' ? redirectPath : window.location.pathname;
+    
+    console.log('📍 signInWithGoogle - Ruta a guardar:', pathToSave);
+    
+    localStorage.setItem('pre_login_path', pathToSave);
+    
+    const googleAuthUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/google?state=${encodeURIComponent(pathToSave)}`;
+    console.log('🔗 Redirigiendo a Google OAuth con estado:', googleAuthUrl);
+    
     window.location.href = googleAuthUrl;
   };
 
   return (
     <AuthContext.Provider value={{ 
-      user, 
-      profile, 
+      admin, 
       loading, 
       isAuthenticated,
-      isAdmin, // 👈 Incluir isAdmin en el contexto
+      isAdmin,
       signOut, 
       signInWithGoogle,
       signIn,
-      signUp
+      redirectPath,
+      setRedirectPath,
+      getPreLoginPath
     }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
+// ✅ Exportar el hook en un archivo separado para evitar el error de Fast Refresh
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) throw new Error('useAuth must be used within AuthProvider');
