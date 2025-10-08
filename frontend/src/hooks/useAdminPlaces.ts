@@ -328,42 +328,130 @@ const uploadPlaceImage = useCallback(async (placeId: string, imageFile: File) =>
   /**
    * Subir múltiples imágenes a la galería de un lugar - CORREGIDA
    */
-  const uploadMultipleImages = useCallback(async (placeId: string, imageFiles: File[]) => {
-    try {
-      const formData = new FormData();
-      
-      // ✅ CORREGIDO: Parámetros tipados correctamente
-      imageFiles.forEach((file: File) => {
-        formData.append('imagenes', file);
-      });
+// En tu useAdminPlaces.ts - mejorar la función uploadMultipleImages
+const uploadMultipleImages = useCallback(async (placeId: string, imageFiles: File[]) => {
+  try {
+    console.log('🔄 [uploadMultipleImages] Subiendo imágenes a galería:', {
+      placeId,
+      cantidad: imageFiles.length
+    });
 
-      const response = await api.post<{ 
-        mensaje: string;
-        imagenes: Array<{ url: string; orden: number; nombre: string; tamaño: number; tipo: string }>;
-      }>(`/api/lugares/${placeId}/imagenes`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+    const formData = new FormData();
+    
+    imageFiles.forEach((file: File) => {
+      formData.append('imagenes', file);
+    });
 
-      toast({
-        title: '✅ Imágenes subidas',
-        description: `${imageFiles.length} imágenes agregadas a la galería`,
-      });
+    const response = await api.post<{ 
+      mensaje: string;
+      imagenes: Array<{ 
+        id: string; 
+        url: string; 
+        es_principal: boolean;
+        orden: number;
+        nombre: string;
+      }>;
+      nota?: string;
+    }>(`/api/lugares/${placeId}/imagenes`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000, // 30 segundos timeout
+    });
 
-      return response.data;
-    } catch (err: unknown) { // ✅ CORREGIDO: Eliminado 'any'
-      const errorMessage = handleError(err);
-      
-      toast({
-        title: '❌ Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      
-      throw new Error(errorMessage);
+    console.log('✅ [uploadMultipleImages] Imágenes agregadas a galería:', response.data.imagenes);
+
+    toast({
+      title: '✅ Galería actualizada',
+      description: `${imageFiles.length} imágenes agregadas a la galería`,
+    });
+
+    return response.data;
+  } catch (err: unknown) {
+    const errorMessage = handleError(err);
+    console.error('❌ [uploadMultipleImages] Error:', errorMessage);
+    
+    // Error más específico para el usuario
+    let userMessage = 'Error al agregar imágenes a la galería';
+    if (errorMessage.includes('timeout')) {
+      userMessage = 'La subida tardó demasiado tiempo. Intenta con menos imágenes.';
+    } else if (errorMessage.includes('network') || errorMessage.includes('Network')) {
+      userMessage = 'Error de conexión. Verifica tu internet.';
     }
-  }, [toast]);
+    
+    toast({
+      title: '❌ Error',
+      description: userMessage,
+      variant: 'destructive',
+    });
+    
+    throw new Error(errorMessage);
+  }
+}, [toast]);
+
+/**
+ * Reemplazar imagen principal
+ */
+const replaceMainImage = useCallback(async (placeId: string, imageFile: File) => {
+  try {
+    console.log('🔄 [replaceMainImage] Reemplazando imagen principal:', {
+      placeId,
+      fileName: imageFile.name
+    });
+
+    const formData = new FormData();
+    formData.append('imagen', imageFile);
+
+    const response = await api.put<{ 
+      mensaje: string;
+      url_imagen: string;
+      imagen_id: string;
+      es_principal: boolean;
+      archivo: { nombre: string; tamaño: number; tipo: string };
+    }>(`/api/lugares/${placeId}/imagen-principal`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    console.log('✅ [replaceMainImage] Imagen principal reemplazada:', response.data);
+
+    // Actualizar el estado local
+    setPlaces(prevPlaces => 
+      prevPlaces.map(place => 
+        place.id === placeId 
+          ? {
+              ...place,
+              image_url: response.data.url_imagen,
+              gallery_images: place.gallery_images?.map(img => 
+                img.es_principal 
+                  ? { ...img, url_foto: response.data.url_imagen }
+                  : img
+              ) || []
+            }
+          : place
+      )
+    );
+
+    toast({
+      title: '✅ Imagen principal actualizada',
+      description: 'La imagen principal se ha reemplazado correctamente',
+    });
+
+    return response.data;
+  } catch (err: unknown) {
+    const errorMessage = handleError(err);
+    console.error('❌ [replaceMainImage] Error:', errorMessage);
+    
+    toast({
+      title: '❌ Error',
+      description: 'Error al reemplazar imagen principal',
+      variant: 'destructive',
+    });
+    
+    throw new Error(errorMessage);
+  }
+}, [toast]);
 
   /**
    * Obtener galería de imágenes de un lugar - CORREGIDA
@@ -593,61 +681,6 @@ const uploadPlaceImage = useCallback(async (placeId: string, imageFile: File) =>
     }
   }, [toast]);
 
-  /**
-   * Reemplazar imagen principal
-   */
-  const replaceMainImage = useCallback(async (placeId: string, imageFile: File) => {
-    try {
-      const formData = new FormData();
-      formData.append('imagen', imageFile);
-
-      const response = await api.put<{ 
-        mensaje: string;
-        url_imagen: string;
-        archivo: { nombre: string; tamaño: number; tipo: string };
-      }>(`/api/lugares/${placeId}/imagen-principal`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      // Actualizar el estado local
-      setPlaces(prevPlaces => 
-        prevPlaces.map(place => 
-          place.id === placeId 
-            ? {
-                ...place,
-                image_url: response.data.url_imagen,
-                gallery_images: place.gallery_images?.map((img: GalleryImage) => // ✅ CORREGIDO: Tipo explícito
-                  img.es_principal 
-                    ? { ...img, url_foto: response.data.url_imagen }
-                    : img
-                ) || []
-              }
-            : place
-        )
-      );
-
-      toast({
-        title: '✅ Imagen principal reemplazada',
-        description: 'La imagen principal se ha actualizado correctamente',
-      });
-
-      return response.data;
-    } catch (err: unknown) { // ✅ CORREGIDO: Eliminado 'any'
-      const errorMessage = handleError(err);
-      
-      toast({
-        title: '❌ Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      
-      throw new Error(errorMessage);
-    }
-  }, [toast]);
-
-  // hooks/useAdminPlaces.ts - AGREGAR estas funciones
 
 /**
  * Crear lugar SIN archivos - solo datos básicos

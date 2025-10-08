@@ -91,61 +91,20 @@ export const ImageEditor = ({
 
 const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
   const file = event.target.files?.[0];
-  if (!file) {
-    console.log('❌ No se seleccionó ningún archivo');
-    return;
-  }
+  if (!file) return;
 
-  // Validar archivo
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-  const maxSize = 5 * 1024 * 1024; // 5MB
-
-  console.log('📁 Archivo seleccionado en ImageEditor:', {
-    name: file.name,
-    type: file.type,
-    size: file.size
-  });
-
-  if (!allowedTypes.includes(file.type)) {
-    toast({
-      title: 'Tipo de archivo no válido',
-      description: 'Solo se permiten imágenes JPEG, PNG o WebP',
-      variant: 'destructive',
-    });
-    return;
-  }
-
-  if (file.size > maxSize) {
-    toast({
-      title: 'Archivo muy grande',
-      description: 'La imagen no puede exceder 5MB',
-      variant: 'destructive',
-    });
-    return;
-  }
+  console.log('🔄 [ImageEditor] Reemplazando IMAGEN PRINCIPAL:', file.name);
 
   try {
     setIsUploading(true);
-    console.log('🔄 Reemplazando imagen principal con archivo:', file.name);
-    
-    // ✅ VERIFICAR que el archivo existe antes de pasarlo
-    if (!file || file.size === 0) {
-      throw new Error('El archivo está vacío o es inválido');
-    }
-    
     await onReplaceMain(placeId, file);
     onUpdate();
     onClose();
-    
   } catch (error: unknown) {
-    console.error('❌ Error reemplazando imagen:', error);
-    // El toast se maneja en la función padre
+    console.error('❌ [ImageEditor] Error reemplazando imagen principal:', error);
   } finally {
     setIsUploading(false);
-    // Limpiar el input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 };
 

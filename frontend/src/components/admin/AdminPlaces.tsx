@@ -66,6 +66,7 @@ import { MapLocationSelector } from '@/components/admin/MapLocationSelector';
 import { toast } from '@/hooks/use-toast';
 import { ExpandableText } from '@/components/ui/ExpandableText';
 import { FormErrorBoundary } from './FormErrorBoundary';
+import { AdminErrorBoundary } from './AdminErrorBoundary';
 
 // Función para construir la URL completa de la imagen
 const buildImageUrl = (imagePath: string | null | undefined): string => {
@@ -288,6 +289,7 @@ export const AdminPlaces = () => {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, setIsProcessing] = useState(false); // Para prevenir múltiples envíos
+  const [isDeleting, setIsDeleting] = useState(false); // Para prevenir múltiples eliminaciones
 
   useEffect(() => {
     refetch();
@@ -493,17 +495,45 @@ export const AdminPlaces = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = async () => {
-    if (!editingPlace) return;
-    try {
-      await deletePlace(editingPlace.id);
-      setIsDeleteDialogOpen(false);
-      resetForm();
-      await refetch();
-    } catch (err) {
-      console.error('Error al eliminar el lugar:', err);
-    }
-  };
+ const handleDelete = async () => {
+  if (!editingPlace || isDeleting) {
+    console.log('🛑 Eliminación ya en proceso o lugar no seleccionado');
+    return;
+  }
+
+  console.log('🗑️ [DELETE] Iniciando eliminación de lugar:', editingPlace.id);
+  setIsDeleting(true);
+
+  try {
+    // Pequeño delay para estabilizar el estado
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    await deletePlace(editingPlace.id);
+    
+    console.log('✅ [DELETE] Lugar eliminado correctamente');
+    
+    // Cerrar diálogo y limpiar con delay
+    await new Promise(resolve => setTimeout(resolve, 300));
+    setIsDeleteDialogOpen(false);
+    resetForm();
+    
+    // Actualizar lista
+    await refetch();
+    console.log('🔄 [DELETE] Lista actualizada después de eliminar');
+
+  } catch (err) {
+    console.error('❌ [DELETE] Error eliminando lugar:', err);
+    const errorMessage = err instanceof Error ? err.message : 'Error al eliminar el lugar';
+    
+    toast({
+      title: '❌ Error',
+      description: errorMessage,
+      variant: 'destructive',
+    });
+  } finally {
+    setIsDeleting(false);
+  }
+};
 
   const openGalleryManager = (place: Place) => {
     setSelectedPlaceForGallery(place);
@@ -1027,17 +1057,35 @@ export const AdminPlaces = () => {
               exit={{ opacity: 0 }}
               className="h-full overflow-y-auto"
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
-                {filteredPlaces.map((place) => (
-                  <PlaceCard
-                    key={place.id}
-                    place={place}
-                    onEdit={handleEdit}
-                    onDelete={openDeleteDialog}
-                    onManageGallery={openGalleryManager}
-                  />
-                ))}
-              </div>
+              {/* En la vista grid - envuelve cada PlaceCard */}
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
+  {filteredPlaces.map((place) => (
+    <AdminErrorBoundary 
+      key={place.id}
+      operation={`renderizado de card ${place.name}`}
+      fallback={
+        <Card className="border border-red-200 bg-red-50 p-4 text-center">
+          <p className="text-red-600 text-sm">Error mostrando lugar</p>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => window.location.reload()}
+            className="mt-2"
+          >
+            Recargar
+          </Button>
+        </Card>
+      }
+    >
+      <PlaceCard
+        place={place}
+        onEdit={handleEdit}
+        onDelete={openDeleteDialog}
+        onManageGallery={openGalleryManager}
+      />
+    </AdminErrorBoundary>
+  ))}
+</div>
             </motion.div>
           ) : (
             <motion.div
@@ -1111,19 +1159,64 @@ export const AdminPlaces = () => {
                                 totalRatings={place.total_ratings} 
                               />
                             </TableCell>
-                            <TableCell>
-                              <div className="flex justify-end gap-2">
-                                <Button variant="ghost" size="sm" onClick={() => handleEdit(place)} className="text-blue-600 hover:text-blue-800 hover:bg-blue-50">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button variant="ghost" size="sm" onClick={() => openGalleryManager(place)} className="text-green-600 hover:text-green-800 hover:bg-green-50">
-                                  <Grid3X3 className="h-4 w-4" />
-                                </Button>
-                                <Button variant="ghost" size="sm" onClick={() => openDeleteDialog(place)} className="text-red-600 hover:text-red-800 hover:bg-red-50">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
+                            {/* En la tabla - envuelve cada botón de acción */}
+<TableCell>
+  <div className="flex justify-end gap-2">
+    <AdminErrorBoundary 
+      operation="edición de lugar" 
+      fallback={
+        <Button variant="ghost" size="sm" disabled className="text-gray-400">
+          <Edit className="h-4 w-4" />
+        </Button>
+      }
+    >
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        onClick={() => handleEdit(place)} 
+        className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+      >
+        <Edit className="h-4 w-4" />
+      </Button>
+    </AdminErrorBoundary>
+
+    <AdminErrorBoundary 
+      operation="gestión de galería"
+      fallback={
+        <Button variant="ghost" size="sm" disabled className="text-gray-400">
+          <Grid3X3 className="h-4 w-4" />
+        </Button>
+      }
+    >
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        onClick={() => openGalleryManager(place)} 
+        className="text-green-600 hover:text-green-800 hover:bg-green-50"
+      >
+        <Grid3X3 className="h-4 w-4" />
+      </Button>
+    </AdminErrorBoundary>
+
+    <AdminErrorBoundary 
+      operation="apertura de diálogo de eliminación"
+      fallback={
+        <Button variant="ghost" size="sm" disabled className="text-gray-400">
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      }
+    >
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        onClick={() => openDeleteDialog(place)} 
+        className="text-red-600 hover:text-red-800 hover:bg-red-50"
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </AdminErrorBoundary>
+  </div>
+</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -1137,37 +1230,61 @@ export const AdminPlaces = () => {
       </div>
 
       {/* Diálogo de eliminación */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent className="border border-gray-200 shadow-2xl bg-white">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-red-600">¿Eliminar lugar?</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600">
-              Esta acción no se puede deshacer. El lugar "{editingPlace?.name}" será eliminado permanentemente junto con todas sus calificaciones y datos asociados.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="border-gray-300 text-gray-700 hover:bg-gray-50">
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 text-white hover:bg-red-700">
+{/* Diálogo de eliminación - ENVUELTO CON ERROR BOUNDARY */}
+<AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+  <AlertDialogContent className="border border-gray-200 shadow-2xl bg-white">
+    <AdminErrorBoundary operation="eliminación de lugar">
+      <AlertDialogHeader>
+        <AlertDialogTitle className="text-red-600">
+          ¿Eliminar lugar?
+        </AlertDialogTitle>
+        <AlertDialogDescription className="text-gray-600">
+          Esta acción no se puede deshacer. El lugar "{editingPlace?.name}" será eliminado permanentemente junto con todas sus calificaciones y datos asociados.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel 
+          className="border-gray-300 text-gray-700 hover:bg-gray-50"
+          disabled={isDeleting}
+        >
+          Cancelar
+        </AlertDialogCancel>
+        <AlertDialogAction 
+          onClick={handleDelete} 
+          className="bg-red-600 text-white hover:bg-red-700 disabled:bg-red-400"
+          disabled={isDeleting}
+        >
+          {isDeleting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Eliminando...
+            </>
+          ) : (
+            <>
               <Trash2 className="h-4 w-4 mr-2" />
               Eliminar Permanentemente
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </>
+          )}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AdminErrorBoundary>
+  </AlertDialogContent>
+</AlertDialog>
 
       {/* Gallery Manager */}
-      {selectedPlaceForGallery && (
-        <GalleryManager
-          key={selectedPlaceForGallery.id}
-          placeId={selectedPlaceForGallery.id}
-          placeName={selectedPlaceForGallery.name}
-          isOpen={galleryManagerOpen}
-          onClose={closeGalleryManager}
-          onGalleryUpdate={handleGalleryUpdate}
-        />
-      )}
+{/* Gallery Manager - ENVUELTO CON ERROR BOUNDARY */}
+{selectedPlaceForGallery && (
+  <AdminErrorBoundary operation="gestión de galería">
+    <GalleryManager
+      key={selectedPlaceForGallery.id}
+      placeId={selectedPlaceForGallery.id}
+      placeName={selectedPlaceForGallery.name}
+      isOpen={galleryManagerOpen}
+      onClose={closeGalleryManager}
+      onGalleryUpdate={handleGalleryUpdate}
+    />
+  </AdminErrorBoundary>
+)}
     </div>
   );
 };

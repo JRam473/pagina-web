@@ -289,93 +289,136 @@ export const lugarController = {
   },
 
   // Subir múltiples imágenes para galería del lugar - VERSIÓN CORREGIDA
-  async subirMultipleImagenesLugar(req: Request, res: Response) {
-    try {
-      const { id } = req.params;
-      
-      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-        return res.status(400).json({ error: 'No se proporcionaron imágenes' });
-      }
-
-      // Verificar que el lugar existe
-      const lugarResult = await pool.query(
-        'SELECT id FROM lugares WHERE id = $1',
-        [id]
-      );
-
-      if (lugarResult.rows.length === 0) {
-        // Eliminar todos los archivos subidos
-        req.files.forEach(file => {
-          if (file.path) fs.unlinkSync(file.path);
-        });
-        return res.status(404).json({ error: 'Lugar no encontrado' });
-      }
-
-      // Obtener el máximo orden actual para este lugar
-      const maxOrdenResult = await pool.query(
-        'SELECT COALESCE(MAX(orden), 0) as max_orden FROM fotos_lugares WHERE lugar_id = $1',
-        [id]
-      );
-      
-      let orden = maxOrdenResult.rows[0].max_orden + 1;
-
-      const imagenesSubidas = [];
-
-      // Insertar cada imagen en la tabla fotos_lugares
-      for (const file of req.files) {
-        // ✅ CORREGIDO: Usar misma ruta que cargaArchivosController
-        const rutaImagen = `/uploads/images/lugares/${file.filename}`;
-        
-        await pool.query(
-          `INSERT INTO fotos_lugares (lugar_id, url_foto, es_principal, descripcion, orden, 
-           ruta_almacenamiento, tamaño_archivo, tipo_archivo)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            id,
-            rutaImagen,
-            false, // No es principal
-            `Imagen ${orden} del lugar`,
-            orden,
-            file.path,
-            file.size,
-            file.mimetype
-          ]
-        );
-
-        imagenesSubidas.push({
-          url: rutaImagen,
-          nombre: file.filename,
-          tamaño: file.size,
-          tipo: file.mimetype,
-          orden: orden
-        });
-
-        orden++;
-      }
-
-      res.json({
-        mensaje: `${req.files.length} imágenes subidas exitosamente`,
-        imagenes: imagenesSubidas
-      });
-    } catch (error) {
-      console.error('Error subiendo múltiples imágenes:', error);
-      
-      // Eliminar archivos en caso de error
-      if (req.files && Array.isArray(req.files)) {
-        req.files.forEach(file => {
-          if (file.path) {
-            try {
-              fs.unlinkSync(file.path);
-            } catch (unlinkError) {
-              console.error('Error eliminando archivo:', unlinkError);
-            }
-          }
-        });
-      }
-      
-      res.status(500).json({ error: 'Error al subir imágenes' });
+async subirMultipleImagenesLugar(req: Request, res: Response) {
+  const client = await pool.connect();
+  
+  try {
+    const { id } = req.params;
+    
+    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+      return res.status(400).json({ error: 'No se proporcionaron imágenes' });
     }
-  },
+
+    console.log('📤 Subiendo múltiples imágenes para galería del lugar:', id);
+
+    await client.query('BEGIN');
+
+    // 1. Verificar que el lugar existe
+    const lugarResult = await client.query(
+      'SELECT id, nombre, foto_principal_url FROM lugares WHERE id = $1',
+      [id]
+    );
+
+    if (lugarResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      req.files.forEach(file => { if (file.path) fs.unlinkSync(file.path); });
+      return res.status(404).json({ error: 'Lugar no encontrado' });
+    }
+
+    const lugar = lugarResult.rows[0];
+    const tieneImagenPrincipal = !!lugar.foto_principal_url;
+    
+    console.log('📍 Lugar:', lugar.nombre, '| ¿Tiene imagen principal?:', tieneImagenPrincipal);
+
+    // 2. Obtener el máximo orden actual
+    const maxOrdenResult = await client.query(
+      'SELECT COALESCE(MAX(orden), 0) as max_orden FROM fotos_lugares WHERE lugar_id = $1',
+      [id]
+    );
+    
+    let orden = maxOrdenResult.rows[0].max_orden + 1;
+    const imagenesSubidas = [];
+
+    // 3. Insertar cada imagen como NO principal
+    for (const file of req.files) {
+      const rutaImagen = `/uploads/images/lugares/${file.filename}`;
+      
+      console.log('💾 Guardando imagen de galería:', {
+        nombre: file.filename,
+        orden: orden,
+        es_principal: false // ← EXPLÍCITAMENTE NO principal
+      });
+
+      // Obtener dimensiones
+      let anchoImagen: number | null = null;
+      let altoImagen: number | null = null;
+      
+      try {
+        const metadata = await sharp(file.path).metadata();
+        anchoImagen = metadata.width || null;
+        altoImagen = metadata.height || null;
+      } catch (sharpError) {
+        console.warn('⚠️ No se pudieron obtener dimensiones:', sharpError);
+      }
+
+      // Insertar imagen EXPLÍCITAMENTE como no principal
+      const result = await client.query(
+        `INSERT INTO fotos_lugares 
+         (lugar_id, url_foto, ruta_almacenamiento, descripcion, es_principal, orden,
+          ancho_imagen, alto_imagen, tamaño_archivo, tipo_archivo)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING id, url_foto, es_principal, orden`,
+        [
+          id,
+          rutaImagen,
+          file.path,
+          `Imagen ${orden} - ${lugar.nombre}`,
+          false, // ← CRÍTICO: Siempre false para imágenes de galería
+          orden,
+          anchoImagen,
+          altoImagen,
+          file.size,
+          file.mimetype
+        ]
+      );
+
+      const imagenInsertada = result.rows[0];
+      console.log('✅ Imagen de galería insertada:', {
+        id: imagenInsertada.id, 
+        es_principal: imagenInsertada.es_principal
+      });
+
+      imagenesSubidas.push({
+        id: imagenInsertada.id,
+        url: imagenInsertada.url_foto,
+        es_principal: imagenInsertada.es_principal,
+        orden: imagenInsertada.orden,
+        nombre: file.filename
+      });
+
+      orden++;
+    }
+
+    await client.query('COMMIT');
+    console.log('✅ Galería actualizada - Imágenes agregadas:', imagenesSubidas.length);
+
+    res.json({
+      mensaje: `${req.files.length} imágenes agregadas a la galería`,
+      imagenes: imagenesSubidas,
+      total: imagenesSubidas.length,
+      nota: 'Las imágenes se agregaron a la galería sin establecer como principal'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error subiendo imágenes a galería:', error);
+    
+    if (req.files && Array.isArray(req.files)) {
+      req.files.forEach(file => {
+        if (file.path) {
+          try { fs.unlinkSync(file.path); } catch (unlinkError) { /* ignore */ }
+        }
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Error al agregar imágenes a la galería',
+      detalle: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  } finally {
+    client.release();
+  }
+},
 
   // Subir PDF de lugar - VERSIÓN CORREGIDA
   async subirPDFLugar(req: Request, res: Response) {
@@ -701,189 +744,164 @@ export const lugarController = {
   },
 
   // Reemplazar imagen principal - VERSIÓN CORREGIDA
-  async reemplazarImagenPrincipal(req: Request, res: Response) {
-    const client = await pool.connect();
+async reemplazarImagenPrincipal(req: Request, res: Response) {
+  const client = await pool.connect();
+  
+  try {
+    const { id } = req.params;
     
-    try {
-      const { id } = req.params;
-      
-      console.log('🔄 [BACKEND] Reemplazando imagen principal para lugar:', id);
-      console.log('📁 [BACKEND] Archivo recibido:', req.file ? {
-        fieldname: req.file.fieldname,
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        filename: req.file.filename
-      } : 'NO FILE');
+    console.log('🔄 Reemplazando imagen principal para lugar:', id);
 
-      if (!req.file) {
-        console.error('❌ [BACKEND] No se recibió archivo');
-        return res.status(400).json({ error: 'Archivo es requerido' });
-      }
-
-      await client.query('BEGIN');
-
-      // 1. Verificar que el lugar existe
-      const lugarResult = await client.query(
-        'SELECT id, nombre FROM lugares WHERE id = $1',
-        [id]
-      );
-
-      if (lugarResult.rows.length === 0) {
-        // Eliminar el archivo subido si el lugar no existe
-        if (req.file.path) {
-          fs.unlinkSync(req.file.path);
-        }
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Lugar no encontrado' });
-      }
-
-      const lugar = lugarResult.rows[0];
-      
-      // ✅ CORREGIDO: Usar misma ruta que cargaArchivosController
-      const rutaRelativa = `/uploads/images/lugares/${req.file.filename}`;
-      
-      console.log('📍 [BACKEND] Lugar encontrado:', lugar.nombre);
-      console.log('🖼️ [BACKEND] Ruta de imagen:', rutaRelativa);
-
-      // 2. Obtener la imagen principal actual (si existe)
-      const imagenPrincipalActual = await client.query(
-        'SELECT id, ruta_almacenamiento FROM fotos_lugares WHERE lugar_id = $1 AND es_principal = true',
-        [id]
-      );
-
-      let imagenActualId: string | null = null;
-
-      if (imagenPrincipalActual.rows.length > 0) {
-        const imagenActual = imagenPrincipalActual.rows[0];
-        imagenActualId = imagenActual.id;
-        
-        console.log('📸 [BACKEND] Imagen principal actual encontrada:', imagenActualId);
-
-        // 3. Eliminar archivo físico anterior
-        if (imagenActual.ruta_almacenamiento && fs.existsSync(imagenActual.ruta_almacenamiento)) {
-          console.log('🗑️ [BACKEND] Eliminando archivo anterior:', imagenActual.ruta_almacenamiento);
-          fs.unlinkSync(imagenActual.ruta_almacenamiento);
-        }
-
-        // 4. Obtener dimensiones de la nueva imagen usando sharp
-        let anchoImagen: number | null = null;
-        let altoImagen: number | null = null;
-        
-        try {
-          const metadata = await sharp(req.file.path).metadata();
-          anchoImagen = metadata.width || null;
-          altoImagen = metadata.height || null;
-          console.log('📐 [BACKEND] Dimensiones de imagen:', { anchoImagen, altoImagen });
-        } catch (sharpError) {
-          console.warn('⚠️ [BACKEND] No se pudieron obtener las dimensiones de la imagen:', sharpError);
-        }
-
-        // 5. Actualizar la imagen existente
-        await client.query(
-          `UPDATE fotos_lugares 
-           SET url_foto = $1, 
-               ruta_almacenamiento = $2, 
-               tamaño_archivo = $3, 
-               tipo_archivo = $4,
-               ancho_imagen = $5,
-               alto_imagen = $6,
-               actualizado_en = NOW()
-           WHERE id = $7`,
-          [
-            rutaRelativa, 
-            req.file.path, 
-            req.file.size, 
-            req.file.mimetype,
-            anchoImagen,
-            altoImagen,
-            imagenActualId
-          ]
-        );
-        
-        console.log('✅ [BACKEND] Imagen principal actualizada en base de datos');
-
-      } else {
-        // 6. Si no existe imagen principal, crear una nueva
-        console.log('➕ [BACKEND] No hay imagen principal existente, creando nueva...');
-        
-        // Obtener dimensiones de la nueva imagen
-        let anchoImagen: number | null = null;
-        let altoImagen: number | null = null;
-        
-        try {
-          const metadata = await sharp(req.file.path).metadata();
-          anchoImagen = metadata.width || null;
-          altoImagen = metadata.height || null;
-          console.log('📐 [BACKEND] Dimensiones de imagen:', { anchoImagen, altoImagen });
-        } catch (sharpError) {
-          console.warn('⚠️ [BACKEND] No se pudieron obtener las dimensiones de la imagen:', sharpError);
-        }
-
-        const result = await client.query(
-          `INSERT INTO fotos_lugares 
-           (lugar_id, url_foto, es_principal, descripcion, orden, 
-            ruta_almacenamiento, tamaño_archivo, tipo_archivo, ancho_imagen, alto_imagen)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-           RETURNING id`,
-          [
-            id,
-            rutaRelativa,
-            true,
-            'Imagen principal del lugar',
-            1,
-            req.file.path,
-            req.file.size,
-            req.file.mimetype,
-            anchoImagen,
-            altoImagen
-          ]
-        );
-        
-        imagenActualId = result.rows[0].id;
-        console.log('✅ [BACKEND] Nueva imagen principal creada con ID:', imagenActualId);
-      }
-
-      // 7. Actualizar la foto_principal_url en la tabla lugares
-      await client.query(
-        'UPDATE lugares SET foto_principal_url = $1, actualizado_en = NOW() WHERE id = $2',
-        [rutaRelativa, id]
-      );
-
-      await client.query('COMMIT');
-      console.log('✅ [BACKEND] Transacción completada exitosamente');
-
-      res.json({
-        mensaje: 'Imagen principal reemplazada exitosamente',
-        url_imagen: rutaRelativa,
-        imagen_id: imagenActualId,
-        archivo: {
-          nombre: req.file.filename,
-          tamaño: req.file.size,
-          tipo: req.file.mimetype
-        }
-      });
-
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('❌ [BACKEND] Error en reemplazarImagenPrincipal:', error);
-      
-      // Eliminar archivo en caso de error
-      if (req.file?.path) {
-        try {
-          fs.unlinkSync(req.file.path);
-          console.log('🗑️ [BACKEND] Archivo temporal eliminado debido a error');
-        } catch (unlinkError) {
-          console.error('❌ [BACKEND] Error eliminando archivo temporal:', unlinkError);
-        }
-      }
-      
-      res.status(500).json({ 
-        error: 'Error al reemplazar imagen principal',
-        detalle: error instanceof Error ? error.message : 'Error desconocido'
-      });
-    } finally {
-      client.release();
+    if (!req.file) {
+      return res.status(400).json({ error: 'Archivo es requerido' });
     }
+
+    await client.query('BEGIN');
+
+    // 1. Verificar que el lugar existe
+    const lugarResult = await client.query(
+      'SELECT id, nombre FROM lugares WHERE id = $1',
+      [id]
+    );
+
+    if (lugarResult.rows.length === 0) {
+      if (req.file.path) fs.unlinkSync(req.file.path);
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Lugar no encontrado' });
+    }
+
+    const lugar = lugarResult.rows[0];
+    const rutaRelativa = `/uploads/images/lugares/${req.file.filename}`;
+    
+    console.log('📍 Reemplazando imagen principal para:', lugar.nombre);
+
+    // 2. Obtener la imagen principal actual
+    const imagenPrincipalActual = await client.query(
+      'SELECT id, ruta_almacenamiento FROM fotos_lugares WHERE lugar_id = $1 AND es_principal = true',
+      [id]
+    );
+
+    let imagenActualId: string | null = null;
+
+    if (imagenPrincipalActual.rows.length > 0) {
+      // 3. Reemplazar imagen principal existente
+      const imagenActual = imagenPrincipalActual.rows[0];
+      imagenActualId = imagenActual.id;
+      
+      console.log('📸 Imagen principal actual encontrada:', imagenActualId);
+
+      // Eliminar archivo anterior
+      if (imagenActual.ruta_almacenamiento && fs.existsSync(imagenActual.ruta_almacenamiento)) {
+        fs.unlinkSync(imagenActual.ruta_almacenamiento);
+      }
+
+      // Obtener dimensiones
+      let anchoImagen: number | null = null;
+      let altoImagen: number | null = null;
+      
+      try {
+        const metadata = await sharp(req.file.path).metadata();
+        anchoImagen = metadata.width || null;
+        altoImagen = metadata.height || null;
+      } catch (sharpError) {
+        console.warn('⚠️ No se pudieron obtener dimensiones:', sharpError);
+      }
+
+      // Actualizar la imagen existente (manteniendo es_principal = true)
+      await client.query(
+        `UPDATE fotos_lugares 
+         SET url_foto = $1, 
+             ruta_almacenamiento = $2, 
+             tamaño_archivo = $3, 
+             tipo_archivo = $4,
+             ancho_imagen = $5,
+             alto_imagen = $6,
+             actualizado_en = NOW()
+         WHERE id = $7`,
+        [
+          rutaRelativa, 
+          req.file.path, 
+          req.file.size, 
+          req.file.mimetype,
+          anchoImagen,
+          altoImagen,
+          imagenActualId
+        ]
+      );
+      
+    } else {
+      // 4. Crear nueva imagen principal si no existe
+      console.log('➕ Creando nueva imagen principal...');
+      
+      let anchoImagen: number | null = null;
+      let altoImagen: number | null = null;
+      
+      try {
+        const metadata = await sharp(req.file.path).metadata();
+        anchoImagen = metadata.width || null;
+        altoImagen = metadata.height || null;
+      } catch (sharpError) {
+        console.warn('⚠️ No se pudieron obtener dimensiones:', sharpError);
+      }
+
+      const result = await client.query(
+        `INSERT INTO fotos_lugares 
+         (lugar_id, url_foto, es_principal, descripcion, orden, 
+          ruta_almacenamiento, tamaño_archivo, tipo_archivo, ancho_imagen, alto_imagen)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING id`,
+        [
+          id,
+          rutaRelativa,
+          true, // ← CRÍTICO: Esta es la imagen principal
+          'Imagen principal del lugar',
+          1,
+          req.file.path,
+          req.file.size,
+          req.file.mimetype,
+          anchoImagen,
+          altoImagen
+        ]
+      );
+      
+      imagenActualId = result.rows[0].id;
+    }
+
+    // 5. Actualizar la foto_principal_url en la tabla lugares
+    await client.query(
+      'UPDATE lugares SET foto_principal_url = $1, actualizado_en = NOW() WHERE id = $2',
+      [rutaRelativa, id]
+    );
+
+    await client.query('COMMIT');
+    console.log('✅ Imagen principal reemplazada exitosamente');
+
+    res.json({
+      mensaje: 'Imagen principal reemplazada exitosamente',
+      url_imagen: rutaRelativa,
+      imagen_id: imagenActualId,
+      es_principal: true,
+      archivo: {
+        nombre: req.file.filename,
+        tamaño: req.file.size,
+        tipo: req.file.mimetype
+      }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error reemplazando imagen principal:', error);
+    
+    if (req.file?.path) {
+      try { fs.unlinkSync(req.file.path); } catch (unlinkError) { /* ignore */ }
+    }
+    
+    res.status(500).json({ 
+      error: 'Error al reemplazar imagen principal',
+      detalle: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  } finally {
+    client.release();
   }
+}
 };

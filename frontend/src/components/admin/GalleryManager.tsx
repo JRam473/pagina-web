@@ -1,4 +1,4 @@
-// components/admin/GalleryManager.tsx - VERSIÓN CORREGIDA SIN ERRORES TYPESCRIPT
+// components/admin/GalleryManager.tsx - VERSIÓN COMPLETAMENTE CORREGIDA
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Loader2, 
   Upload, 
@@ -13,13 +14,14 @@ import {
   Star, 
   Trash2, 
   Image as ImageIcon,
-  Grid3X3
+  Grid3X3,
+  AlertTriangle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useAdminPlaces, type GalleryImage } from '@/hooks/useAdminPlaces';
 import { ImageEditor } from '@/components/admin/ImageEditor';
+import { UploadErrorBoundary } from './UploadErrorBoundary';
 
 interface GalleryManagerProps {
   placeId: string;
@@ -32,15 +34,65 @@ interface GalleryManagerProps {
 // Función para construir URLs de imágenes
 const buildImageUrl = (imagePath: string | null | undefined): string => {
   if (!imagePath) return '/placeholder.svg';
-  
-  if (imagePath.startsWith('http')) {
-    return imagePath;
-  }
+  if (imagePath.startsWith('http')) return imagePath;
   
   const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
   const normalizedPath = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
-  
   return `${backendUrl}${normalizedPath}`;
+};
+
+// Componente de botón de subida seguro
+const SafeUploadButton = ({ 
+  onClick, 
+  disabled, 
+  uploading, 
+  fileCount 
+}: { 
+  onClick: () => void;
+  disabled: boolean;
+  uploading: boolean;
+  fileCount: number;
+}) => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('🔄 [SafeUploadButton] Click prevenido y manejado');
+    onClick();
+  };
+
+  return (
+    <UploadErrorBoundary 
+      operation="subida de imágenes" 
+      fallback={
+        <Button
+          variant="outline"
+          disabled
+          className="w-full bg-gray-600 text-white"
+        >
+          <AlertTriangle className="h-4 w-4 mr-2" />
+          Error en subida
+        </Button>
+      }
+    >
+      <Button
+        onClick={handleClick}
+        disabled={disabled}
+        className="w-full bg-green-600 hover:bg-green-700 text-white"
+      >
+        {uploading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            Subiendo...
+          </>
+        ) : (
+          <>
+            <Upload className="h-4 w-4 mr-2" />
+            Subir {fileCount} Imágenes
+          </>
+        )}
+      </Button>
+    </UploadErrorBoundary>
+  );
 };
 
 export const GalleryManager = ({ 
@@ -58,11 +110,12 @@ export const GalleryManager = ({
   const { toast } = useToast();
   const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // Usar el hook para las operaciones de galería
+  // Usar SOLO las funciones que necesitamos del hook
   const { 
     getGallery, 
-    uploadMultipleImages, 
+    uploadMultipleImages,
     deleteGalleryImage, 
     setMainImage,
     updateImageDescription,
@@ -107,6 +160,7 @@ export const GalleryManager = ({
       setSelectedFiles([]);
       setSelectedImage(null);
       setImageEditorOpen(false);
+      setUploadError(null);
     }
   }, [isOpen, placeId, loadGallery]);
 
@@ -123,36 +177,43 @@ export const GalleryManager = ({
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    
-    // Validar archivos
-    const validFiles = files.filter(file => {
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-      const maxSize = 5 * 1024 * 1024; // 5MB
+    try {
+      const files = Array.from(event.target.files || []);
+      console.log('📁 Archivos seleccionados:', files.length);
       
-      if (!allowedTypes.includes(file.type)) {
-        toast({
-          title: 'Tipo de archivo no válido',
-          description: `${file.name} no es una imagen válida (JPEG, PNG, WebP)`,
-          variant: 'destructive',
-        });
-        return false;
-      }
+      // Validar archivos
+      const validFiles = files.filter(file => {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        
+        if (!allowedTypes.includes(file.type)) {
+          toast({
+            title: 'Tipo de archivo no válido',
+            description: `${file.name} no es una imagen válida (JPEG, PNG, WebP)`,
+            variant: 'destructive',
+          });
+          return false;
+        }
+        
+        if (file.size > maxSize) {
+          toast({
+            title: 'Archivo muy grande',
+            description: `${file.name} excede el tamaño máximo de 5MB`,
+            variant: 'destructive',
+          });
+          return false;
+        }
+        
+        return true;
+      });
       
-      if (file.size > maxSize) {
-        toast({
-          title: 'Archivo muy grande',
-          description: `${file.name} excede el tamaño máximo de 5MB`,
-          variant: 'destructive',
-        });
-        return false;
-      }
-      
-      return true;
-    });
-    
-    setSelectedFiles(prev => [...prev, ...validFiles]);
-    event.target.value = ''; // Reset input
+      setSelectedFiles(prev => [...prev, ...validFiles]);
+      setUploadError(null);
+      event.target.value = ''; // Reset input
+    } catch (error) {
+      console.error('❌ Error seleccionando archivos:', error);
+      setUploadError('Error al seleccionar archivos');
+    }
   };
 
   const removeSelectedFile = (index: number) => {
@@ -164,31 +225,44 @@ export const GalleryManager = ({
 
     try {
       setUploading(true);
-      console.log('📤 Subiendo imágenes:', selectedFiles.length);
+      setUploadError(null);
+      console.log('📤 [GalleryManager] Subiendo imágenes a GALERÍA (no principales):', selectedFiles.length);
       
       await uploadMultipleImages(placeId, selectedFiles);
       
+      toast({
+        title: '✅ Éxito',
+        description: `${selectedFiles.length} imágenes agregadas a la galería`,
+      });
+      
       setSelectedFiles([]);
-      await loadGallery(); // Recargar la galería
-      onGalleryUpdate?.(); // Notificar al componente padre
+      await loadGallery();
+      onGalleryUpdate?.();
 
     } catch (error: unknown) {
-      console.error('❌ Error subiendo imágenes:', error);
-      // El toast se maneja en el hook
+      console.error('❌ [GalleryManager] Error subiendo imágenes a galería:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido al subir imágenes';
+      setUploadError(errorMessage);
+      
+      toast({
+        title: '❌ Error',
+        description: 'Error al subir imágenes',
+        variant: 'destructive',
+      });
     } finally {
       setUploading(false);
     }
   };
 
+  // Funciones que se pasarán al ImageEditor - CORREGIDAS (sin parámetros no utilizados)
   const handleSetAsMainImage = async (imageId: string) => {
     try {
       console.log('⭐ Estableciendo como principal:', imageId);
       await setMainImage(placeId, imageId);
-      await loadGallery(); // Recargar la galería
-      onGalleryUpdate?.(); // Notificar al componente padre
+      await loadGallery();
+      onGalleryUpdate?.();
     } catch (error: unknown) {
       console.error('❌ Error estableciendo imagen principal:', error);
-      // El toast se maneja en el hook
     }
   };
 
@@ -209,63 +283,47 @@ export const GalleryManager = ({
     try {
       console.log('🗑️ Eliminando imagen:', imageId);
       await deleteGalleryImage(placeId, imageId);
-      await loadGallery(); // Recargar la galería
-      onGalleryUpdate?.(); // Notificar al componente padre
+      await loadGallery();
+      onGalleryUpdate?.();
     } catch (error: unknown) {
       console.error('❌ Error eliminando imagen:', error);
-      // El toast se maneja en el hook
     }
   };
 
-  // Manejar eliminación de imagen principal
+  // ✅ CORREGIDO: Parámetro 'placeIdParam' renombrado y utilizado
+  const handleReplaceMainImage = async (placeIdParam: string, file: File) => {
+    try {
+      console.log('🔄 Reemplazando imagen principal:', file.name);
+      await replaceMainImage(placeIdParam, file);
+      await loadGallery();
+      onGalleryUpdate?.();
+    } catch (error: unknown) {
+      console.error('❌ Error reemplazando imagen principal:', error);
+    }
+  };
+
+  // ✅ CORREGIDO: Parámetro 'descripcion' utilizado
+  const handleUpdateDescription = async (imageId: string, descripcion: string) => {
+    try {
+      console.log('📝 Actualizando descripción:', { imageId, descripcion });
+      await updateImageDescription(placeId, imageId, descripcion);
+      await loadGallery();
+    } catch (error: unknown) {
+      console.error('❌ Error actualizando descripción:', error);
+    }
+  };
+
   const handleDeleteMainImage = async () => {
     if (!selectedImage) return;
     
     try {
       console.log('🗑️ Eliminando imagen principal:', selectedImage.id);
       await deleteMainImage(placeId);
-      await loadGallery(); // Recargar la galería
-      onGalleryUpdate?.(); // Notificar al componente padre
+      await loadGallery();
+      onGalleryUpdate?.();
       closeImageEditor();
     } catch (error: unknown) {
       console.error('❌ Error eliminando imagen principal:', error);
-      // El toast se maneja en el hook
-    }
-  };
-
-  // Manejar reemplazo de imagen principal
-  const handleReplaceMainImage = async (placeIdParam: string, file: File) => {
-    try {
-      console.log('🔄 [GalleryManager] Reemplazando imagen principal:', {
-        placeId: placeIdParam,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type
-      });
-
-      // Verificar que el archivo existe
-      if (!file || file.size === 0) {
-        throw new Error('El archivo recibido está vacío o es inválido');
-      }
-
-      await replaceMainImage(placeIdParam, file);
-      await loadGallery();
-      onGalleryUpdate?.();
-    } catch (error: unknown) {
-      console.error('❌ [GalleryManager] Error reemplazando imagen principal:', error);
-      // El toast se maneja en el hook
-    }
-  };
-
-  // Actualizar descripción de imagen
-  const handleUpdateDescription = async (imageId: string, descripcion: string) => {
-    try {
-      console.log('📝 Actualizando descripción:', { imageId, descripcion });
-      await updateImageDescription(placeId, imageId, descripcion);
-      await loadGallery(); // Recargar la galería
-    } catch (error: unknown) {
-      console.error('❌ Error actualizando descripción:', error);
-      // El toast se maneja en el hook
     }
   };
 
@@ -281,107 +339,117 @@ export const GalleryManager = ({
           </DialogHeader>
 
           <div className="flex flex-col h-[calc(90vh-100px)]">
-            {/* Sección de Subida */}
-            <Card className="mb-6 bg-slate-800/50 border-slate-600">
-              <CardContent className="p-4">
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-medium">Agregar Imágenes a la Galería</Label>
-                    <p className="text-sm text-slate-400 mt-1">
-                      Puedes seleccionar múltiples imágenes (JPEG, PNG, WebP, máximo 5MB cada una)
-                    </p>
-                  </div>
-
-                  {/* Archivos seleccionados */}
-                  {selectedFiles.length > 0 && (
-                    <div className="space-y-2">
-                      <Label className="text-sm">Imágenes a subir ({selectedFiles.length})</Label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-32 overflow-y-auto">
-                        {selectedFiles.map((file, index) => (
-                          <div
-                            key={index}
-                            className="relative group bg-slate-700 rounded-md p-2"
-                          >
-                            <img
-                              src={URL.createObjectURL(file)}
-                              alt={file.name}
-                              className="w-full h-16 object-cover rounded"
-                            />
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeSelectedFile(index)}
-                                className="h-8 w-8 p-0 text-white hover:bg-red-500"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <p className="text-xs text-slate-300 truncate mt-1">
-                              {file.name}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                      
-                      <Button
-                        onClick={uploadImages}
-                        disabled={uploading}
-                        className="w-full bg-green-600 hover:bg-green-700 text-white"
-                      >
-                        {uploading ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            Subiendo...
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="h-4 w-4 mr-2" />
-                            Subir {selectedFiles.length} Imágenes
-                          </>
-                        )}
-                      </Button>
+            {/* Sección de Subida - ENVUELTA EN ERROR BOUNDARY */}
+            <UploadErrorBoundary operation="gestión de archivos de galería">
+              <Card className="mb-6 bg-slate-800/50 border-slate-600">
+                <CardContent className="p-4">
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-sm font-medium">Agregar Imágenes a la Galería</Label>
+                      <p className="text-sm text-slate-400 mt-1">
+                        Puedes seleccionar múltiples imágenes (JPEG, PNG, WebP, máximo 5MB cada una)
+                      </p>
                     </div>
-                  )}
 
-                  {/* Área de drop */}
-                  <div
-                    className={cn(
-                      "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors",
-                      selectedFiles.length === 0 
-                        ? "border-slate-500 hover:border-slate-400 bg-slate-800/30 hover:bg-slate-800/50" 
-                        : "border-slate-600 bg-slate-800/20"
+                    {/* Archivos seleccionados */}
+                    {selectedFiles.length > 0 && (
+                      <div className="space-y-2">
+                        <Label className="text-sm">Imágenes a subir ({selectedFiles.length})</Label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-32 overflow-y-auto">
+                          {selectedFiles.map((file, index) => (
+                            <div
+                              key={index}
+                              className="relative group bg-slate-700 rounded-md p-2"
+                            >
+                              <img
+                                src={URL.createObjectURL(file)}
+                                alt={file.name}
+                                className="w-full h-16 object-cover rounded"
+                              />
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeSelectedFile(index)}
+                                  className="h-8 w-8 p-0 text-white hover:bg-red-500"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <p className="text-xs text-slate-300 truncate mt-1">
+                                {file.name}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* BOTÓN DE SUBIDA SEGURO */}
+                        <SafeUploadButton
+                          onClick={uploadImages}
+                          disabled={uploading}
+                          uploading={uploading}
+                          fileCount={selectedFiles.length}
+                        />
+
+                        {uploadError && (
+                          <Alert variant="destructive" className="mt-2">
+                            <AlertDescription className="text-sm">
+                              {uploadError}
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      </div>
                     )}
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const files = Array.from(e.dataTransfer.files);
-                      setSelectedFiles(prev => [...prev, ...files]);
-                    }}
-                  >
-                    <Upload className="h-8 w-8 mx-auto text-slate-400 mb-2" />
-                    <p className="text-sm text-slate-300 mb-1">
-                      Arrastra imágenes aquí o haz clic para seleccionar
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Formatos: JPEG, PNG, WebP • Máximo 5MB por imagen
-                    </p>
+
+                    {/* Área de drop SEGURA */}
+                    <UploadErrorBoundary operation="selección de archivos">
+                      <div
+                        className={cn(
+                          "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors",
+                          selectedFiles.length === 0 
+                            ? "border-slate-500 hover:border-slate-400 bg-slate-800/30 hover:bg-slate-800/50" 
+                            : "border-slate-600 bg-slate-800/20"
+                        )}
+                        onClick={() => {
+                          console.log('🖱️ Click en área de drop');
+                          fileInputRef.current?.click();
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log('📂 Archivos arrastrados:', e.dataTransfer.files.length);
+                          const files = Array.from(e.dataTransfer.files);
+                          setSelectedFiles(prev => [...prev, ...files]);
+                        }}
+                      >
+                        <Upload className="h-8 w-8 mx-auto text-slate-400 mb-2" />
+                        <p className="text-sm text-slate-300 mb-1">
+                          Arrastra imágenes aquí o haz clic para seleccionar
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Formatos: JPEG, PNG, WebP • Máximo 5MB por imagen
+                        </p>
+                      </div>
+                    </UploadErrorBoundary>
+
+                    <Input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp,image/jpg"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
                   </div>
+                </CardContent>
+              </Card>
+            </UploadErrorBoundary>
 
-                  <Input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/jpeg,image/png,image/webp,image/jpg"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Galería de Imágenes */}
+            {/* Galería de Imágenes - SIMPLIFICADA SIN ANIMACIONES PROBLEMÁTICAS */}
             <div className="flex-1 overflow-hidden">
               <div className="flex items-center justify-between mb-4">
                 <Label className="text-sm font-medium">
@@ -409,82 +477,77 @@ export const GalleryManager = ({
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-96 overflow-y-auto pr-2">
-                  <AnimatePresence>
-                    {images.map((image, index) => (
-                      <motion.div
-                        key={image.id}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        className="relative group bg-slate-800 rounded-lg overflow-hidden border border-slate-700 cursor-pointer"
-                        onClick={() => openImageEditor(image)}
-                      >
-                        {/* Imagen */}
-                        <img
-                          src={buildImageUrl(image.url_foto)}
-                          alt={image.descripcion}
-                          className="w-full h-32 object-cover"
-                        />
+                  {images.map((image, index) => (
+                    <div
+                      key={image.id}
+                      className="relative group bg-slate-800 rounded-lg overflow-hidden border border-slate-700 cursor-pointer"
+                      onClick={() => openImageEditor(image)}
+                    >
+                      {/* Imagen */}
+                      <img
+                        src={buildImageUrl(image.url_foto)}
+                        alt={image.descripcion}
+                        className="w-full h-32 object-cover"
+                      />
 
-                        {/* Overlay con acciones */}
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
-                          {/* Badge de imagen principal */}
-                          {image.es_principal && (
-                            <div className="flex justify-start">
-                              <Badge className="bg-amber-500 text-white text-xs">
-                                <Star className="h-3 w-3 mr-1 fill-current" />
-                                Principal
-                              </Badge>
-                            </div>
-                          )}
-
-                          {/* Acciones */}
-                          <div className="flex justify-center gap-1">
-                            {!image.es_principal && (
-                              <Button
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSetAsMainImage(image.id);
-                                }}
-                                className="h-7 px-2 text-xs bg-amber-600 hover:bg-amber-700 text-white"
-                              >
-                                <Star className="h-3 w-3 mr-1" />
-                                Principal
-                              </Button>
-                            )}
-                            
-                            {/* No permitir eliminar si es la única imagen principal */}
-                            {!(image.es_principal && images.filter(img => img.es_principal).length === 1) && (
-                              <Button
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteImage(image.id);
-                                }}
-                                className="h-7 px-2 text-xs bg-red-600 hover:bg-red-700 text-white"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )}
+                      {/* Overlay con acciones */}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
+                        {/* Badge de imagen principal */}
+                        {image.es_principal && (
+                          <div className="flex justify-start">
+                            <Badge className="bg-amber-500 text-white text-xs">
+                              <Star className="h-3 w-3 mr-1 fill-current" />
+                              Principal
+                            </Badge>
                           </div>
-                        </div>
+                        )}
 
-                        {/* Info siempre visible */}
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2">
-                          <p className="text-xs text-white truncate">
-                            {image.descripcion || `Imagen ${index + 1}`}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            Orden: {image.orden}
-                          </p>
-                          {image.es_principal && (
-                            <Star className="h-3 w-3 text-amber-400 absolute top-2 right-2" />
+                        {/* Acciones */}
+                        <div className="flex justify-center gap-1">
+                          {!image.es_principal && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSetAsMainImage(image.id);
+                              }}
+                              className="h-7 px-2 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                            >
+                              <Star className="h-3 w-3 mr-1" />
+                              Principal
+                            </Button>
+                          )}
+                          
+                          {/* No permitir eliminar si es la única imagen principal */}
+                          {!(image.es_principal && images.filter(img => img.es_principal).length === 1) && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteImage(image.id);
+                              }}
+                              className="h-7 px-2 text-xs bg-red-600 hover:bg-red-700 text-white"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
                           )}
                         </div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
+                      </div>
+
+                      {/* Info siempre visible */}
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2">
+                        <p className="text-xs text-white truncate">
+                          {image.descripcion || `Imagen ${index + 1}`}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Orden: {image.orden}
+                        </p>
+                        {image.es_principal && (
+                          <Star className="h-3 w-3 text-amber-400 absolute top-2 right-2" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
