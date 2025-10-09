@@ -1,12 +1,13 @@
-// components/Places.tsx
+// components/Places.tsx - VERSIÓN ACTUALIZADA
+import { ImageGalleryModal } from '@/components/galeria/ImageGalleryModal';
 import { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { TermsAndConditionsDialog } from '@/components/TermsAndConditionsDialog'; 
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Users, AlertCircle, Star, BarChart3, X, ThumbsUp, Loader2 } from 'lucide-react';
+import { MapPin, Clock, Users, Star, BarChart3, ThumbsUp, Loader2, Grid3X3, ZoomIn } from 'lucide-react';
 import { usePlaces } from '@/hooks/usePlaces';
-import { useAuth } from '@/hooks/useAuth';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useCategories } from '@/hooks/useCategories'; // ✅ NUEVO: Importar useCategories
+
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -312,75 +313,6 @@ const RatingStatsDialog = ({
   );
 };
 
-// Componente para visualización completa de imágenes
-const ImageModal = ({ 
-  src, 
-  alt, 
-  isOpen, 
-  onClose 
-}: { 
-  src: string; 
-  alt: string; 
-  isOpen: boolean; 
-  onClose: () => void 
-}) => {
-  // Manejo de tecla ESC y scroll
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener("keydown", handleEscape);
-      document.body.style.overflow = "hidden";
-    }
-
-    return () => {
-      document.removeEventListener("keydown", handleEscape);
-      document.body.style.overflow = "unset";
-    };
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div
-      className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      {/* Botón de cerrar */}
-      <button
-        onClick={onClose}
-        className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors bg-black/50 rounded-full p-2 backdrop-blur-sm"
-      >
-        <X className="w-6 h-6" />
-      </button>
-
-      {/* Contenedor imagen */}
-      <div
-        className="relative"
-        onClick={(e) => e.stopPropagation()} // Prevenir cierre al dar click en la imagen
-      >
-        <img
-          src={src}
-          alt={alt}
-          className="max-w-screen max-h-screen object-contain rounded-lg shadow-lg transition-transform duration-300 hover:scale-105"
-        />
-
-        {/* Info de la imagen */}
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black/70 px-4 py-2 rounded-lg backdrop-blur-sm text-sm text-center max-w-lg">
-          {alt}
-          <p className="text-xs text-gray-300 mt-1">
-            Haz clic fuera o presiona ESC para cerrar
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // Componente de invitación para valoraciones
 const UpdatedRatingInvitationBanner = ({ theme }: { 
   theme: 'default' | 'nature' | 'waterfall' | 'cultural' | 'history' | 'bridge' | 'viewpoint' | 'trail' | 'montain' | 'river' | 'path'; 
@@ -468,7 +400,6 @@ const Places = () => {
   const { 
     places, 
     loading, 
-    error, 
     ratePlace, 
     getUserRating, 
     getRatingStats, 
@@ -477,12 +408,22 @@ const Places = () => {
     hasUserRated
   } = usePlaces();
   
-  const { user } = useAuth();
+  // ✅ NUEVO: Usar useCategories en lugar de manejar categorías internamente
+  const { getCategoryColor } = useCategories();
+  
   const { toast } = useToast();
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [ratingStats, setRatingStats] = useState<Record<string, RatingStats>>({});
   const [loadingStats, setLoadingStats] = useState<Record<string, boolean>>({});
-  const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
+  const [galleryModal, setGalleryModal] = useState<{
+    isOpen: boolean;
+    images: Array<{ id: string; url_foto: string; descripcion: string }>;
+    initialIndex: number;
+  }>({
+    isOpen: false,
+    images: [],
+    initialIndex: 0
+  });
   const [theme, setTheme] = useState<'default' | 'nature' | 'waterfall' | 'cultural' | 'history' | 'bridge' | 'viewpoint' | 'trail' | 'montain' | 'river' | 'path'>('default');
 
   // Estados para el diálogo de términos
@@ -493,7 +434,7 @@ const Places = () => {
     rating: number;
   } | null>(null);
 
-  // Determinar tema basado en las categorías de lugares
+  // ✅ CORREGIDO: Determinar tema basado en las categorías de lugares usando useCategories
   useEffect(() => {
     if (places.length > 0) {
       const categories = places.map(p => p.categoria?.toLowerCase());
@@ -593,7 +534,7 @@ const Places = () => {
   };
 
   // Load user ratings for each place
-   useEffect(() => {
+  useEffect(() => {
     if (places.length > 0) {
       const loadUserRatings = async () => {
         const ratings: Record<string, number> = {};
@@ -613,50 +554,52 @@ const Places = () => {
     }
   }, [places, getUserRating]);
 
-  // Cargar estadísticas de calificaciones - MEJORADO
-// CORREGIDO: Carga estadísticas para todos los lugares, no solo los con calificaciones
-useEffect(() => {
-  if (places.length > 0) {
-    const loadRatingStats = async () => {
-      const stats: Record<string, RatingStats> = {};
-      const loading: Record<string, boolean> = {};
-      
-      for (const place of places) {
-        // Cargar stats para TODOS los lugares, no solo los con calificaciones
-        loading[place.id] = true;
-        setLoadingStats(prev => ({ ...prev, [place.id]: true }));
+  // Cargar estadísticas de calificaciones
+  useEffect(() => {
+    if (places.length > 0) {
+      const loadRatingStats = async () => {
+        const stats: Record<string, RatingStats> = {};
+        const loading: Record<string, boolean> = {};
         
-        try {
-          const statsData = await getRatingStats(place.id);
-          console.log(`📍 Stats for ${place.nombre}:`, statsData);
+        for (const place of places) {
+          loading[place.id] = true;
+          setLoadingStats(prev => ({ ...prev, [place.id]: true }));
           
-          if (statsData) {
-            stats[place.id] = statsData;
+          try {
+            const statsData = await getRatingStats(place.id);
+            console.log(`📍 Stats for ${place.nombre}:`, statsData);
+            
+            if (statsData) {
+              stats[place.id] = statsData;
+            }
+          } catch (error) {
+            console.error(`Error loading stats for place ${place.id}:`, error);
+          } finally {
+            loading[place.id] = false;
+            setLoadingStats(prev => ({ ...prev, [place.id]: false }));
           }
-        } catch (error) {
-          console.error(`Error loading stats for place ${place.id}:`, error);
-        } finally {
-          loading[place.id] = false;
-          setLoadingStats(prev => ({ ...prev, [place.id]: false }));
         }
-      }
+        
+        setRatingStats(stats);
+        console.log('📊 All rating stats loaded:', stats);
+      };
       
-      setRatingStats(stats);
-      console.log('📊 All rating stats loaded:', stats);
-    };
-    
-    loadRatingStats();
-  }
-}, [places, getRatingStats]);
+      loadRatingStats();
+    }
+  }, [places, getRatingStats]);
 
-  // Función mejorada para manejar calificaciones - CORREGIDA
-  const handleRatingChange = async (placeId: string, placeName: string, newRating: number) => {
+  // ✅ CORREGIDO: Función para manejar calificaciones (sin parámetro extra placeName)
+  const handleRatingChange = async (placeId: string, newRating: number) => {
     try {
+      const place = places.find(p => p.id === placeId);
+      if (!place) return;
+
       // Verificar si ya tiene una calificación para mostrar confirmación
       const currentUserRating = userRatings[placeId];
       const isUpdating = currentUserRating !== undefined;
       
-      const success = await ratePlace(placeId, newRating, undefined, placeName);
+      // ✅ CORREGIDO: Solo 3 argumentos (placeId, calificacion, comentario)
+      const success = await ratePlace(placeId, newRating);
       
       if (success) {
         // Actualizar estado local inmediatamente para mejor UX
@@ -666,8 +609,8 @@ useEffect(() => {
         toast({
           title: isUpdating ? '⭐ Calificación actualizada' : '🎉 ¡Gracias por tu calificación!',
           description: isUpdating 
-            ? `Tu calificación para "${placeName}" ha sido actualizada a ${newRating} estrellas`
-            : `Has calificado "${placeName}" con ${newRating} estrellas`,
+            ? `Tu calificación para "${place.nombre}" ha sido actualizada a ${newRating} estrellas`
+            : `Has calificado "${place.nombre}" con ${newRating} estrellas`,
         });
         
         // Recargar estadísticas después de un breve delay
@@ -684,29 +627,33 @@ useEffect(() => {
       }
     } catch (error: unknown) {
       if (error instanceof Error && error.message === 'TERMS_REQUIRED') {
-        setPendingRating({
-          placeId,
-          placeName,
-          rating: newRating
-        });
-        setShowTermsDialog(true);
+        const place = places.find(p => p.id === placeId);
+        if (place) {
+          setPendingRating({
+            placeId,
+            placeName: place.nombre,
+            rating: newRating
+          });
+          setShowTermsDialog(true);
+        }
       }
       // Otros errores ya son manejados por el hook
     }
   };
 
-  // Función para cuando se aceptan los términos - MEJORADA
+  // ✅ CORREGIDO: Función para cuando se aceptan los términos
   const handleTermsAccept = async () => {
     if (pendingRating) {
-      const { placeId, placeName, rating } = pendingRating;
+      const { placeId, rating } = pendingRating;
       
       try {
-        const success = await ratePlace(placeId, rating, undefined, placeName);
+        // ✅ CORREGIDO: Solo 3 argumentos
+        const success = await ratePlace(placeId, rating);
         if (success) {
           setUserRatings(prev => ({ ...prev, [placeId]: rating }));
           toast({
             title: '🎉 ¡Gracias por tu calificación!',
-            description: `Has calificado "${placeName}" con ${rating} estrellas`,
+            description: `Has calificado "${pendingRating.placeName}" con ${rating} estrellas`,
           });
           
           // Recargar estadísticas
@@ -730,47 +677,50 @@ useEffect(() => {
     }
   };
 
+  // ✅ CORREGIDO: Función para abrir la galería (sin parámetro id no utilizado)
+  const openGalleryFromImage = (placeId: string, imageIndex: number = 0) => {
+    const place = places.find(p => p.id === placeId);
+    if (!place) return;
 
-  const handleImageClick = (src: string, alt: string) => {
-    setSelectedImage({ src, alt });
-    toast({
-      title: 'Imagen expandida',
-      description: 'Haz clic en cualquier lugar o presiona ESC para cerrar',
-      duration: 3000,
+    const galleryImages = [{
+      id: 'main',
+      url_foto: place.foto_principal_url || '/placeholder.svg',
+      descripcion: place.descripcion || place.nombre
+    }];
+
+    setGalleryModal({
+      isOpen: true,
+      images: galleryImages,
+      initialIndex: imageIndex
     });
   };
 
-    const handleImageError = (placeName: string, imageUrl: string) => {
-    console.error('❌ Error cargando imagen:', imageUrl);
-    // No mostrar toast para evitar spam, solo log en consola
+  // Función para abrir la galería completa del lugar
+  const openPlaceGallery = (placeId: string) => {
+    const place = places.find(p => p.id === placeId);
+    if (!place) return;
+
+    const galleryImages = [{
+      id: 'main',
+      url_foto: place.foto_principal_url || '/placeholder.svg',
+      descripcion: place.descripcion || place.nombre
+    }];
+
+    setGalleryModal({
+      isOpen: true,
+      images: galleryImages,
+      initialIndex: 0
+    });
   };
 
+  // ✅ CORREGIDO: Función handleImageClick simplificada
+  const handleImageClick = (placeId: string) => {
+    openGalleryFromImage(placeId, 0);
+  };
 
-  const getCategoryColor = (category: string | null) => {
-    if (!category) return 'bg-secondary text-secondary-foreground';
-    
-    const categoryLower = category.toLowerCase();
-    if (categoryLower.includes('naturaleza') || categoryLower.includes('nature')) 
-      return 'bg-green-500 text-white';
-    if (categoryLower.includes('cultura') || categoryLower.includes('culture')) 
-      return 'bg-amber-500 text-white';  
-    if (categoryLower.includes('cascada') || categoryLower.includes('waterfall')) 
-      return 'bg-blue-500 text-white';
-    if (categoryLower.includes('historia') || categoryLower.includes('history')) 
-      return 'bg-purple-500 text-white';
-    if (categoryLower.includes('puente') || categoryLower.includes('bridge')) 
-      return 'bg-red-700 text-white';
-    if (categoryLower.includes('mirador') || categoryLower.includes('viewpoint')) 
-      return 'bg-yellow-500 text-white';
-    if (categoryLower.includes('sendero') || categoryLower.includes('trail')) 
-      return 'bg-teal-500 text-white';
-    if (categoryLower.includes('montaña') || categoryLower.includes('montain')) 
-      return 'bg-gray-600 text-white';
-    if (categoryLower.includes('río') || categoryLower.includes('river')) 
-      return 'bg-blue-600 text-white';
-    if (categoryLower.includes('ruta') || categoryLower.includes('path'))
-      return 'bg-teal-500 text-white';
-    return 'bg-gray-500 text-white';
+  // ✅ CORREGIDO: Función handleImageError simplificada
+  const handleImageError = (imageUrl: string) => {
+    console.error('❌ Error cargando imagen:', imageUrl);
   };
 
   const getPlaceFeatures = (description: string | null): string[] => {
@@ -792,12 +742,11 @@ useEffect(() => {
     return features.length > 0 ? features : ['Turismo'];
   };
 
-    // Función para formatear el promedio de calificación
+  // Función para formatear el promedio de calificación
   const formatRating = (rating: number | null | undefined): string => {
     if (!rating || rating === 0) return '0.0';
     return Number(rating).toFixed(1);
   };
-
 
   if (loading) {
     return (
@@ -828,65 +777,7 @@ useEffect(() => {
     );
   }
 
-  if (error) {
-    return (
-      <section id="places" className={`py-24 ${themeClasses[theme]?.bg || 'bg-background'} relative overflow-hidden`}>
-        <div className="absolute top-20 left-10 w-32 h-32 bg-blue-200/30 rounded-full blur-3xl animate-float"></div>
-        <div className="absolute bottom-20 right-10 w-40 h-40 bg-indigo-200/30 rounded-full blur-3xl animate-float" style={{ animationDelay: '1s' }}></div>
-        
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-blue-100 to-indigo-100 px-4 py-2 rounded-full mb-6">
-              <MapPin className="h-5 w-5 text-blue-600" />
-              <span className="text-blue-800 font-medium">Destinos Únicos</span>
-            </div>
-            
-            <h2 className="text-5xl lg:text-6xl font-bold text-gray-900 mb-6">
-              Lugares{' '}
-              <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-600 bg-clip-text text-transparent">
-                Destacados
-              </span>
-            </h2>
-          </div>
-          <Alert variant="destructive" className="max-w-2xl mx-auto">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              {error}
-            </AlertDescription>
-          </Alert>
-        </div>
-      </section>
-    );
-  }
-
-  if (places.length === 0) {
-    return (
-      <section id="places" className={`py-24 ${themeClasses[theme]?.bg || 'bg-background'} relative overflow-hidden`}>
-        <div className="absolute top-20 left-10 w-32 h-32 bg-blue-200/30 rounded-full blur-3xl animate-float"></div>
-        <div className="absolute bottom-20 right-10 w-40 h-40 bg-indigo-200/30 rounded-full blur-3xl animate-float" style={{ animationDelay: '1s' }}></div>
-        
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-blue-100 to-indigo-100 px-4 py-2 rounded-full mb-6">
-              <MapPin className="h-5 w-5 text-blue-600" />
-              <span className="text-blue-800 font-medium">Destinos Únicos</span>
-            </div>
-            
-            <h2 className="text-5xl lg:text-6xl font-bold text-gray-900 mb-6">
-              Lugares{' '}
-              <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-600 bg-clip-text text-transparent">
-                Destacados
-              </span>
-            </h2>
-            <p className="text-xl text-gray-600 max-w-4xl mx-auto leading-relaxed">
-              No hay lugares disponibles en este momento. ¡Vuelve pronto para descubrir nuevos destinos!
-            </p>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
+  // ✅ CORREGIDO: Removida la referencia a 'user' que no existe
   return (
     <>
       <section id="places" className={`py-20 ${themeClasses[theme]?.bg || 'bg-background'}`}>
@@ -908,10 +799,8 @@ useEffect(() => {
             </p>
           </div>
 
-                    {/* SECCIÓN DE INVITACIÓN ACTUALIZADA */}
-          {!user && (
-            <UpdatedRatingInvitationBanner theme={theme} />
-          )}
+          {/* ✅ CORREGIDO: Mostrar banner de invitación siempre (sin verificación de user) */}
+          <UpdatedRatingInvitationBanner theme={theme} />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {places.map((place) => {
@@ -933,23 +822,30 @@ useEffect(() => {
                       alt={place.nombre}
                       className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
                       loading="lazy"
-                      onClick={() => handleImageClick(imageUrl, place.nombre)}
-                      onError={(e) => {
-                        handleImageError(place.nombre, imageUrl);
-                        const target = e.target as HTMLImageElement;
-                        target.src = '/placeholder.svg';
-                      }}
+                      onClick={() => handleImageClick(place.id)}
+                      onError={() => handleImageError(imageUrl)}
                     />
                     
                     <button
-                      onClick={() => handleImageClick(imageUrl, place.nombre)}
+                      onClick={() => handleImageClick(place.id)}
                       className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-lg hover:bg-black/70 transition-colors"
                     >
-                      <X className="w-4 h-4" />
+                      <ZoomIn className="w-4 h-4" />
                     </button>
 
+                    <Button 
+                      onClick={() => openPlaceGallery(place.id)}
+                      variant="outline" 
+                      size="sm"
+                      className="mt-2"
+                    >
+                      <Grid3X3 className="w-4 h-4 mr-2" />
+                      Ver galería
+                    </Button>
+
                     <div className="absolute top-4 left-4">
-                      <Badge className={getCategoryColor(place.categoria)}>
+                      {/* ✅ USANDO getCategoryColor de useCategories */}
+                      <Badge className={cn(getCategoryColor(place.categoria), "text-white")}>
                         {place.categoria || 'Turismo'}
                       </Badge>
                     </div>
@@ -974,7 +870,7 @@ useEffect(() => {
                         <div className="flex items-center gap-2">
                           <Rating 
                             rating={displayRating}
-                            onRatingChange={(rating) => handleRatingChange(place.id, place.nombre, rating)}
+                            onRatingChange={(rating) => handleRatingChange(place.id, rating)}
                             totalRatings={place.total_calificaciones || 0}
                             size="sm"
                             readonly={isCurrentlyRating}
@@ -1002,9 +898,10 @@ useEffect(() => {
                         </p>
                       )}
                       
-                      {!user && !userHasRated && (
+                      {/* ✅ CORREGIDO: Mensaje simplificado sin referencia a user */}
+                      {!userHasRated && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Califica sin registro (aceptarás términos de privacidad)
+                          Califica este lugar (aceptarás términos de privacidad)
                         </p>
                       )}
                       
@@ -1099,11 +996,12 @@ useEffect(() => {
         placeName={pendingRating?.placeName || ''}
       />
 
-      <ImageModal
-        src={selectedImage?.src || ''}
-        alt={selectedImage?.alt || ''}
-        isOpen={!!selectedImage}
-        onClose={() => setSelectedImage(null)}
+      <ImageGalleryModal
+        images={galleryModal.images}
+        initialIndex={galleryModal.initialIndex}
+        isOpen={galleryModal.isOpen}
+        onClose={() => setGalleryModal(prev => ({ ...prev, isOpen: false }))}
+        title="Galería del lugar"
       />
     </>
   );
