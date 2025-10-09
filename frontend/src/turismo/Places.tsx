@@ -1,12 +1,12 @@
-// components/Places.tsx - VERSIÓN ACTUALIZADA
+// components/Places.tsx - VERSIÓN MODIFICADA SIN BOTÓN "VER GALERÍA"
 import { ImageGalleryModal } from '@/components/galeria/ImageGalleryModal';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { TermsAndConditionsDialog } from '@/components/TermsAndConditionsDialog'; 
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Users, Star, BarChart3, ThumbsUp, Loader2, Grid3X3, ZoomIn } from 'lucide-react';
-import { usePlaces } from '@/hooks/usePlaces';
-import { useCategories } from '@/hooks/useCategories'; // ✅ NUEVO: Importar useCategories
+import { MapPin, Clock, Users, Star, BarChart3, ThumbsUp, Loader2 } from 'lucide-react';
+import { usePlaces, type GalleryImage } from '@/hooks/usePlaces';
+import { useCategories } from '@/hooks/useCategories';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
@@ -216,19 +216,19 @@ const RatingStatsDialog = ({
       secondary: "bg-yellow-200 text-yellow-800 hover:bg-yellow-300"
     },
     trail: {
-      primary: "bg-gradient-to-r from-teal-500 to-cyan-600 text-white shadow-md hover:from-teal-600 hover:to-cyan-700",
+      primary: "bg-gradient-to-r from-teal-500 to-cyan-600 text-white hover:from-teal-600 hover:to-cyan-700",
       secondary: "bg-teal-200 text-teal-800 hover:bg-teal-300"
     },
     montain: {
-      primary: "bg-gradient-to-r from-gray-600 to-gray-800 text-white shadow-md hover:from-gray-700 hover:to-black",
+      primary: "bg-gradient-to-r from-gray-600 to-gray-800 text-white hover:from-gray-700 hover:to-black",
       secondary: "bg-gray-200 text-gray-800 hover:bg-gray-300"
     },
     river: {
-      primary: "bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-md hover:from-blue-700 hover:to-black",
+      primary: "bg-gradient-to-r from-blue-600 to-blue-800 text-white hover:from-blue-700 hover:to-black",
       secondary: "bg-blue-200 text-blue-800 hover:bg-blue-300"
     },
     path: {
-      primary: "bg-gradient-to-r from-teal-500 to-cyan-600 text-white shadow-md hover:from-teal-600 hover:to-cyan-700",
+      primary: "bg-gradient-to-r from-teal-500 to-cyan-600 text-white hover:from-teal-600 hover:to-cyan-700",
       secondary: "bg-teal-200 text-teal-800 hover:bg-teal-300"
     }
   };
@@ -405,23 +405,25 @@ const Places = () => {
     getRatingStats, 
     isRating,
     getUserCurrentRating,
-    hasUserRated
+    hasUserRated,
+    getPlaceGallery
   } = usePlaces();
   
-  // ✅ NUEVO: Usar useCategories en lugar de manejar categorías internamente
   const { getCategoryColor } = useCategories();
   
   const { toast } = useToast();
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [ratingStats, setRatingStats] = useState<Record<string, RatingStats>>({});
   const [loadingStats, setLoadingStats] = useState<Record<string, boolean>>({});
+  const [loadingGalleries, setLoadingGalleries] = useState<Record<string, boolean>>({});
+  const [placeGalleries, setPlaceGalleries] = useState<Record<string, GalleryImage[]>>({});
   const [galleryModal, setGalleryModal] = useState<{
     isOpen: boolean;
-    images: Array<{ id: string; url_foto: string; descripcion: string }>;
+    placeId: string; // ✅ CAMBIO: Ahora guardamos el placeId en lugar de las imágenes
     initialIndex: number;
   }>({
     isOpen: false,
-    images: [],
+    placeId: '',
     initialIndex: 0
   });
   const [theme, setTheme] = useState<'default' | 'nature' | 'waterfall' | 'cultural' | 'history' | 'bridge' | 'viewpoint' | 'trail' | 'montain' | 'river' | 'path'>('default');
@@ -588,7 +590,82 @@ const Places = () => {
     }
   }, [places, getRatingStats]);
 
-  // ✅ CORREGIDO: Función para manejar calificaciones (sin parámetro extra placeName)
+  // ✅ CORREGIDO: Función para cargar la galería de un lugar específico
+  const loadPlaceGallery = useCallback(async (placeId: string): Promise<GalleryImage[]> => {
+    try {
+      setLoadingGalleries(prev => ({ ...prev, [placeId]: true }));
+      console.log('🔄 [Places] Cargando galería para:', placeId);
+      
+      const gallery = await getPlaceGallery(placeId);
+      console.log('✅ [Places] Galería cargada:', gallery.length, 'imágenes');
+      
+      setPlaceGalleries(prev => ({ ...prev, [placeId]: gallery }));
+      return gallery;
+    } catch (error) {
+      console.error('❌ [Places] Error cargando galería:', error);
+      
+      // Fallback: usar la imagen principal si la galería falla
+      const place = places.find(p => p.id === placeId);
+      if (place) {
+        const fallbackGallery: GalleryImage[] = [{
+          id: 'main',
+          url_foto: place.foto_principal_url || '/placeholder.svg',
+          descripcion: place.descripcion || place.nombre,
+          es_principal: true,
+          orden: 1,
+          creado_en: new Date().toISOString()
+        }];
+        
+        setPlaceGalleries(prev => ({ ...prev, [placeId]: fallbackGallery }));
+        return fallbackGallery;
+      }
+      
+      return [];
+    } finally {
+      setLoadingGalleries(prev => ({ ...prev, [placeId]: false }));
+    }
+  }, [getPlaceGallery, places]);
+
+  // ✅ CORREGIDO: Función simplificada para abrir la galería desde la imagen principal
+  const openGalleryFromImage = async (placeId: string) => {
+    try {
+      console.log('🔄 [Places] Abriendo galería desde imagen para:', placeId);
+      
+      // Cargar la galería si no está en cache
+      if (!placeGalleries[placeId]) {
+        await loadPlaceGallery(placeId);
+      }
+      
+      // Abrir el modal con el placeId
+      setGalleryModal({
+        isOpen: true,
+        placeId: placeId,
+        initialIndex: 0
+      });
+      
+      console.log('🎉 [Places] Galería abierta para placeId:', placeId);
+      
+    } catch (error) {
+      console.error('❌ [Places] Error abriendo galería desde imagen:', error);
+      toast({
+        title: 'Error',
+        description: 'No se pudo cargar la galería de imágenes',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // ✅ CORREGIDO: Función handleImageClick simplificada
+  const handleImageClick = (placeId: string) => {
+    openGalleryFromImage(placeId);
+  };
+
+  // ✅ CORREGIDO: Función handleImageError simplificada
+  const handleImageError = (imageUrl: string) => {
+    console.error('❌ Error cargando imagen:', imageUrl);
+  };
+
+  // ✅ CORREGIDO: Función para manejar calificaciones
   const handleRatingChange = async (placeId: string, newRating: number) => {
     try {
       const place = places.find(p => p.id === placeId);
@@ -598,7 +675,6 @@ const Places = () => {
       const currentUserRating = userRatings[placeId];
       const isUpdating = currentUserRating !== undefined;
       
-      // ✅ CORREGIDO: Solo 3 argumentos (placeId, calificacion, comentario)
       const success = await ratePlace(placeId, newRating);
       
       if (success) {
@@ -647,7 +723,6 @@ const Places = () => {
       const { placeId, rating } = pendingRating;
       
       try {
-        // ✅ CORREGIDO: Solo 3 argumentos
         const success = await ratePlace(placeId, rating);
         if (success) {
           setUserRatings(prev => ({ ...prev, [placeId]: rating }));
@@ -675,52 +750,6 @@ const Places = () => {
       setPendingRating(null);
       setShowTermsDialog(false);
     }
-  };
-
-  // ✅ CORREGIDO: Función para abrir la galería (sin parámetro id no utilizado)
-  const openGalleryFromImage = (placeId: string, imageIndex: number = 0) => {
-    const place = places.find(p => p.id === placeId);
-    if (!place) return;
-
-    const galleryImages = [{
-      id: 'main',
-      url_foto: place.foto_principal_url || '/placeholder.svg',
-      descripcion: place.descripcion || place.nombre
-    }];
-
-    setGalleryModal({
-      isOpen: true,
-      images: galleryImages,
-      initialIndex: imageIndex
-    });
-  };
-
-  // Función para abrir la galería completa del lugar
-  const openPlaceGallery = (placeId: string) => {
-    const place = places.find(p => p.id === placeId);
-    if (!place) return;
-
-    const galleryImages = [{
-      id: 'main',
-      url_foto: place.foto_principal_url || '/placeholder.svg',
-      descripcion: place.descripcion || place.nombre
-    }];
-
-    setGalleryModal({
-      isOpen: true,
-      images: galleryImages,
-      initialIndex: 0
-    });
-  };
-
-  // ✅ CORREGIDO: Función handleImageClick simplificada
-  const handleImageClick = (placeId: string) => {
-    openGalleryFromImage(placeId, 0);
-  };
-
-  // ✅ CORREGIDO: Función handleImageError simplificada
-  const handleImageError = (imageUrl: string) => {
-    console.error('❌ Error cargando imagen:', imageUrl);
   };
 
   const getPlaceFeatures = (description: string | null): string[] => {
@@ -777,7 +806,6 @@ const Places = () => {
     );
   }
 
-  // ✅ CORREGIDO: Removida la referencia a 'user' que no existe
   return (
     <>
       <section id="places" className={`py-20 ${themeClasses[theme]?.bg || 'bg-background'}`}>
@@ -799,7 +827,6 @@ const Places = () => {
             </p>
           </div>
 
-          {/* ✅ CORREGIDO: Mostrar banner de invitación siempre (sin verificación de user) */}
           <UpdatedRatingInvitationBanner theme={theme} />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -826,30 +853,15 @@ const Places = () => {
                       onError={() => handleImageError(imageUrl)}
                     />
                     
-                    <button
-                      onClick={() => handleImageClick(place.id)}
-                      className="absolute top-2 right-2 bg-black/50 text-white p-2 rounded-lg hover:bg-black/70 transition-colors"
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                    </button>
-
-                    <Button 
-                      onClick={() => openPlaceGallery(place.id)}
-                      variant="outline" 
-                      size="sm"
-                      className="mt-2"
-                    >
-                      <Grid3X3 className="w-4 h-4 mr-2" />
-                      Ver galería
-                    </Button>
+                    {/* ✅ ELIMINADO: Botón de zoom individual */}
+                    {/* ✅ ELIMINADO: Botón "Ver galería" completo */}
 
                     <div className="absolute top-4 left-4">
-                      {/* ✅ USANDO getCategoryColor de useCategories */}
                       <Badge className={cn(getCategoryColor(place.categoria), "text-white")}>
                         {place.categoria || 'Turismo'}
                       </Badge>
                     </div>
-                    <div className="absolute top-4 right-12 bg-black/50 backdrop-blur-sm rounded-lg px-2 py-1 text-white text-sm font-medium">
+                    <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-sm rounded-lg px-2 py-1 text-white text-sm font-medium">
                       Gratuito
                     </div>
                   </div>
@@ -898,7 +910,6 @@ const Places = () => {
                         </p>
                       )}
                       
-                      {/* ✅ CORREGIDO: Mensaje simplificado sin referencia a user */}
                       {!userHasRated && (
                         <p className="text-xs text-muted-foreground mt-1">
                           Califica este lugar (aceptarás términos de privacidad)
@@ -996,8 +1007,9 @@ const Places = () => {
         placeName={pendingRating?.placeName || ''}
       />
 
+      {/* ✅ MODIFICADO: ImageGalleryModal ahora recibe placeId en lugar de images */}
       <ImageGalleryModal
-        images={galleryModal.images}
+        placeId={galleryModal.placeId}
         initialIndex={galleryModal.initialIndex}
         isOpen={galleryModal.isOpen}
         onClose={() => setGalleryModal(prev => ({ ...prev, isOpen: false }))}

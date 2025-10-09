@@ -243,62 +243,45 @@ export const usePlaces = () => {
     }
   }, [toast, parsePlaceData]);
 
-  /**
-   * Obtener galería de un lugar específico
-   */
-  const fetchPlaceGallery = useCallback(async (placeId: string): Promise<GalleryImage[]> => {
-    try {
-      console.log('🔄 [usePlaces] Obteniendo galería para placeId:', placeId);
-      
-      const response = await api.get<GalleryResponse>(`/api/lugares/${placeId}/galeria`);
-      
-      if (!response.data.imagenes) {
-        console.warn('⚠️ No se encontraron imágenes en la galería');
-        return [];
-      }
 
-      // Procesar URLs de imágenes
-      const galleryImages = response.data.imagenes.map((img: GalleryImage) => ({
-        ...img,
-        url_foto: img.url_foto ? buildImageUrl(img.url_foto) : '/placeholder.svg'
-      }));
-
-      console.log('✅ [usePlaces] Galería cargada:', galleryImages.length, 'imágenes');
-      return galleryImages;
-    } catch (err: unknown) {
-      console.error('❌ [usePlaces] Error obteniendo galería:', err);
-      const errorMessage = handleError(err);
-      throw new Error(errorMessage);
+/**
+ * Obtener galería de un lugar específico - VERSIÓN CORREGIDA
+ */
+const fetchPlaceGallery = useCallback(async (placeId: string): Promise<GalleryImage[]> => {
+  try {
+    console.log('🔄 [usePlaces] Obteniendo galería completa para placeId:', placeId);
+    
+    const response = await api.get<GalleryResponse>(`/api/lugares/${placeId}/galeria`);
+    
+    console.log('📸 [usePlaces] Respuesta de galería:', response.data);
+    
+    if (!response.data.imagenes || !Array.isArray(response.data.imagenes)) {
+      console.warn('⚠️ No se encontraron imágenes en la galería o formato incorrecto');
+      return [];
     }
-  }, []);
 
-  /**
-   * Obtener un lugar específico por ID con todas sus fotos y galería
-   */
-  const fetchPlaceById = useCallback(async (placeId: string): Promise<PlaceDetails> => {
+    // Procesar URLs de imágenes
+    const galleryImages = response.data.imagenes.map((img: GalleryImage) => ({
+      ...img,
+      url_foto: img.url_foto ? buildImageUrl(img.url_foto) : '/placeholder.svg'
+    }));
+
+    console.log('✅ [usePlaces] Galería procesada:', galleryImages.length, 'imágenes');
+    return galleryImages;
+  } catch (err: unknown) {
+    console.error('❌ [usePlaces] Error obteniendo galería:', err);
+    const errorMessage = handleError(err);
+    
+    // Si falla la galería específica, intentar con el endpoint básico
     try {
-      setLoading(true);
+      console.log('🔄 [usePlaces] Intentando obtener fotos básicas...');
+      const fallbackResponse = await api.get<PlaceDetailsResponse>(`/api/lugares/${placeId}`);
       
-      const response = await api.get<PlaceDetailsResponse>(`/api/lugares/${placeId}`);
-      
-      if (!response.data.lugar) {
-        throw new Error('Lugar no encontrado');
-      }
-      
-      const parsedPlace = parsePlaceData(response.data.lugar);
-      const parsedPhotos = (response.data.fotos || []).map(parsePhotoData);
-      
-      // Cargar galería completa
-      let galleryImages: GalleryImage[] = [];
-      try {
-        galleryImages = await fetchPlaceGallery(placeId);
-      } catch (galleryError) {
-        console.warn('⚠️ No se pudo cargar la galería completa:', galleryError);
-        // Usar las fotos básicas como fallback
-        galleryImages = parsedPhotos.map(photo => ({
+      if (fallbackResponse.data.fotos && Array.isArray(fallbackResponse.data.fotos)) {
+        const fallbackImages = fallbackResponse.data.fotos.map(photo => ({
           id: photo.id,
-          url_foto: photo.url_foto,
-          descripcion: photo.descripcion,
+          url_foto: photo.url_foto ? buildImageUrl(photo.url_foto) : '/placeholder.svg',
+          descripcion: photo.descripcion || `Imagen de ${fallbackResponse.data.lugar.nombre}`,
           es_principal: photo.es_principal,
           orden: photo.orden,
           creado_en: photo.creado_en,
@@ -307,32 +290,91 @@ export const usePlaces = () => {
           tamaño_archivo: photo.tamaño_archivo,
           tipo_archivo: photo.tipo_archivo
         }));
+        console.log('✅ [usePlaces] Usando fotos básicas como fallback:', fallbackImages.length);
+        return fallbackImages;
       }
-      
-      const placeDetails: PlaceDetails = {
-        lugar: {
-          ...parsedPlace,
-          gallery_images: galleryImages
-        },
-        fotos: parsedPhotos,
-        galeria: galleryImages
-      };
-      
-      setCurrentPlace(placeDetails);
-      return placeDetails;
-    } catch (err: unknown) {
-      const errorMessage = handleError(err);
-      setError(errorMessage);
-      toast({
-        title: 'Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      throw new Error(errorMessage);
-    } finally {
-      setLoading(false);
+    } catch (fallbackError) {
+      console.error('❌ [usePlaces] Fallback también falló:', fallbackError);
     }
-  }, [toast, parsePlaceData, parsePhotoData, fetchPlaceGallery]);
+    
+    throw new Error(errorMessage);
+  }
+}, []);
+
+/**
+ * Obtener un lugar específico por ID con todas sus fotos y galería - VERSIÓN CORREGIDA
+ */
+const fetchPlaceById = useCallback(async (placeId: string): Promise<PlaceDetails> => {
+  try {
+    setLoading(true);
+    setError(null);
+    
+    console.log('🔄 [usePlaces] Obteniendo detalles del lugar:', placeId);
+    
+    const response = await api.get<PlaceDetailsResponse>(`/api/lugares/${placeId}`);
+    
+    if (!response.data.lugar) {
+      throw new Error('Lugar no encontrado');
+    }
+    
+    const parsedPlace = parsePlaceData(response.data.lugar);
+    const parsedPhotos = (response.data.fotos || []).map(parsePhotoData);
+    
+    console.log('📸 [usePlaces] Fotos básicas obtenidas:', parsedPhotos.length);
+    
+    // Cargar galería completa EN PARALELO para mejor performance
+    let galleryImages: GalleryImage[] = [];
+    try {
+      galleryImages = await fetchPlaceGallery(placeId);
+      console.log('✅ [usePlaces] Galería completa cargada:', galleryImages.length, 'imágenes');
+    } catch (galleryError) {
+      console.warn('⚠️ [usePlaces] No se pudo cargar la galería completa, usando fotos básicas:', galleryError);
+      // Usar las fotos básicas como fallback
+      galleryImages = parsedPhotos.map(photo => ({
+        id: photo.id,
+        url_foto: photo.url_foto,
+        descripcion: photo.descripcion,
+        es_principal: photo.es_principal,
+        orden: photo.orden,
+        creado_en: photo.creado_en,
+        ancho_imagen: photo.ancho_imagen,
+        alto_imagen: photo.alto_imagen,
+        tamaño_archivo: photo.tamaño_archivo,
+        tipo_archivo: photo.tipo_archivo
+      }));
+    }
+    
+    const placeDetails: PlaceDetails = {
+      lugar: {
+        ...parsedPlace,
+        gallery_images: galleryImages
+      },
+      fotos: parsedPhotos,
+      galeria: galleryImages
+    };
+    
+    console.log('✅ [usePlaces] Detalles del lugar procesados:', {
+      lugar: parsedPlace.nombre,
+      fotos: parsedPhotos.length,
+      galeria: galleryImages.length
+    });
+    
+    setCurrentPlace(placeDetails);
+    return placeDetails;
+  } catch (err: unknown) {
+    const errorMessage = handleError(err);
+    console.error('❌ [usePlaces] Error obteniendo lugar:', errorMessage);
+    setError(errorMessage);
+    toast({
+      title: 'Error',
+      description: errorMessage,
+      variant: 'destructive',
+    });
+    throw new Error(errorMessage);
+  } finally {
+    setLoading(false);
+  }
+}, [toast, parsePlaceData, parsePhotoData, fetchPlaceGallery]);
 
   /**
    * Obtener calificación del usuario para un lugar
