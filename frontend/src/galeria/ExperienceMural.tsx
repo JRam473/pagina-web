@@ -267,11 +267,6 @@ export const ExperienceMural = () => {
     });
   };
 
-  const getPlaceName = (lugarId?: string) => {
-    if (!lugarId) return null;
-    const place = places.find(p => p.id === lugarId);
-    return place?.nombre || null;
-  };
 
   if (loading && experiences.length === 0) {
     return (
@@ -624,16 +619,15 @@ export const ExperienceMural = () => {
 
       {/* Diálogo de términos y condiciones */}
       <TermsAndConditionsDialog
-        isOpen={showTermsDialog}
-        onClose={() => {
-          setShowTermsDialog(false);
-          setPendingExperience(null);
-        }}
-        onAccept={handleTermsAccept}
-        type="experience"
-        title="Términos para Compartir Experiencias"
-        description="Al compartir tu experiencia, aceptas nuestros términos de uso y política de privacidad."
-      />
+              isOpen={showTermsDialog}
+              onClose={() => {
+                  setShowTermsDialog(false);
+                  setPendingExperience(null);
+              } }
+              onAccept={handleTermsAccept}
+              type="experience"
+              title="Términos para Compartir Experiencias"
+              description="Al compartir tu experiencia, aceptas nuestros términos de uso y política de privacidad." placeName={''}      />
     </>
   );
 };
