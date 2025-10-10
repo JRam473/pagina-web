@@ -44,6 +44,7 @@ interface ApiError {
 
 export const useExperiences = () => {
   const [experiences, setExperiences] = useState<Experience[]>([]);
+  const [myExperiences, setMyExperiences] = useState<Experience[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +119,32 @@ export const useExperiences = () => {
   }, [toast]);
 
   /**
+   * Obtener experiencias del usuario actual
+   */
+  const fetchMyExperiences = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/api/experiencias/usuario/mis-experiencias');
+      const experiencesData = response.data.experiencias || [];
+      
+      // Procesar URLs de imágenes
+      const parsedExperiences = experiencesData.map(exp => ({
+        ...exp,
+        url_foto: buildImageUrl(exp.url_foto)
+      }));
+      
+      setMyExperiences(parsedExperiences);
+      return parsedExperiences;
+    } catch (err: unknown) {
+      const errorMessage = handleError(err);
+      console.error('Error obteniendo mis experiencias:', errorMessage);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /**
    * Subir nueva experiencia
    */
   const uploadExperience = useCallback(async (
@@ -139,21 +166,24 @@ export const useExperiences = () => {
       formData.append('imagen', imageFile);
       formData.append('descripcion', descripcion);
       if (lugarId) {
-        formData.append('lugarId', lugarId);
+        formData.append('lugar_id', lugarId);
       }
 
-      await api.post('/api/experiencias/subir', formData, {
+      const response = await api.post('/api/experiencias/subir', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
-      // Recargar experiencias después de subir
-      await fetchExperiences();
+      // Recargar ambas listas después de subir
+      await Promise.all([
+        fetchExperiences(),
+        fetchMyExperiences()
+      ]);
 
       toast({
         title: '✅ Experiencia subida',
-        description: 'Tu experiencia ha sido enviada para moderación. Será publicada una vez aprobada.',
+        description: `Tu experiencia ha sido enviada para moderación. ${response.data.experiencia?.limite_restante ? `Te quedan ${response.data.experiencia.limite_restante} experiencias hoy.` : ''}`,
         variant: 'default',
       });
 
@@ -173,7 +203,7 @@ export const useExperiences = () => {
     } finally {
       setUploading(false);
     }
-  }, [toast, fetchExperiences]);
+  }, [toast, fetchExperiences, fetchMyExperiences]);
 
   /**
    * Obtener estadísticas de experiencias (admin)
@@ -202,12 +232,14 @@ export const useExperiences = () => {
   return {
     // Estado
     experiences,
+    myExperiences,
     loading,
     uploading,
     error,
     
     // Acciones
     fetchExperiences,
+    fetchMyExperiences,
     uploadExperience,
     getExperienceStats,
     incrementViewCount,
