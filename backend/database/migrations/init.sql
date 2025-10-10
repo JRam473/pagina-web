@@ -415,3 +415,300 @@ FROM information_schema.columns
 WHERE table_name = 'calificaciones_lugares';
 
 
+
+
+
+-- Función para asegurar que solo haya UNA imagen principal por lugar
+CREATE OR REPLACE FUNCTION asegurar_foto_principal_unica()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Si se está estableciendo una nueva imagen como principal
+    IF NEW.es_principal = true THEN
+        -- Quitar el estado de principal de todas las demás imágenes del mismo lugar
+        UPDATE fotos_lugares 
+        SET es_principal = false 
+        WHERE lugar_id = NEW.lugar_id 
+        AND id != NEW.id;
+        
+        -- Actualizar la foto_principal_url en la tabla lugares
+        UPDATE lugares 
+        SET foto_principal_url = NEW.url_foto 
+        WHERE id = NEW.lugar_id;
+        
+        RAISE NOTICE '✅ Imagen % establecida como principal para lugar %', NEW.id, NEW.lugar_id;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- CORREGIR: Función para manejar la sincronización cuando se INSERTA una nueva imagen
+CREATE OR REPLACE FUNCTION sync_principal_image_on_insert()
+RETURNS TRIGGER AS $$
+DECLARE
+    total_imagenes INTEGER;
+BEGIN
+    -- Contar imágenes existentes para este lugar
+    SELECT COUNT(*) INTO total_imagenes 
+    FROM fotos_lugares 
+    WHERE lugar_id = NEW.lugar_id;
+    
+    -- SOLO establecer como principal si es la PRIMERA imagen del lugar
+    -- y si no se está forzando explícitamente a no ser principal
+    IF total_imagenes = 0 AND (NEW.es_principal IS NULL OR NEW.es_principal = true) THEN
+        NEW.es_principal := true;
+        RAISE NOTICE '🔄 Primera imagen del lugar %, establecida como principal automáticamente', NEW.lugar_id;
+    ELSIF total_imagenes > 0 THEN
+        -- Para imágenes adicionales, NO establecer como principal automáticamente
+        NEW.es_principal := false;
+        RAISE NOTICE '📸 Imagen adicional del lugar %, NO establecida como principal', NEW.lugar_id;
+    END IF;
+    
+    -- Si se inserta como principal, sincronizar con la tabla lugares
+    IF NEW.es_principal = true THEN
+        UPDATE lugares 
+        SET foto_principal_url = NEW.url_foto 
+        WHERE id = NEW.lugar_id;
+        RAISE NOTICE '✅ Sincronizada imagen principal en INSERT para lugar %', NEW.lugar_id;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- CORREGIR: Función para manejar la sincronización cuando se ACTUALIZA una imagen
+CREATE OR REPLACE FUNCTION sync_principal_image_on_update()
+RETURNS TRIGGER AS $$
+DECLARE
+    nueva_principal_id UUID;
+    nueva_principal_url TEXT;
+BEGIN
+    -- Si se cambió de no-principal a principal
+    IF NEW.es_principal = true AND (OLD.es_principal = false OR OLD.es_principal IS NULL) THEN
+        UPDATE lugares 
+        SET foto_principal_url = NEW.url_foto 
+        WHERE id = NEW.lugar_id;
+        RAISE NOTICE '✅ Sincronizada imagen principal en UPDATE para lugar %', NEW.lugar_id;
+    
+    -- Si se cambió de principal a no-principal
+    ELSIF NEW.es_principal = false AND OLD.es_principal = true THEN
+        -- Buscar si hay otra imagen para establecer como principal (SIN CTE)
+        SELECT id, url_foto INTO nueva_principal_id, nueva_principal_url
+        FROM fotos_lugares 
+        WHERE lugar_id = NEW.lugar_id 
+        AND id != NEW.id
+        AND es_principal = false
+        ORDER BY orden ASC, creado_en ASC 
+        LIMIT 1;
+        
+        -- Actualizar la tabla lugares
+        IF nueva_principal_id IS NOT NULL THEN
+            UPDATE lugares 
+            SET foto_principal_url = nueva_principal_url
+            WHERE id = NEW.lugar_id;
+            RAISE NOTICE '🔄 Nueva imagen principal establecida automáticamente para lugar %', NEW.lugar_id;
+        ELSE
+            UPDATE lugares 
+            SET foto_principal_url = NULL 
+            WHERE id = NEW.lugar_id;
+            RAISE NOTICE '⚠️ No hay más imágenes para lugar %, foto_principal_url establecida como NULL', NEW.lugar_id;
+        END IF;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- CORREGIR: Función para manejar la ELIMINACIÓN de imágenes
+CREATE OR REPLACE FUNCTION handle_principal_image_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+    nueva_principal_id UUID;
+    nueva_principal_url TEXT;
+BEGIN
+    -- Si se está eliminando la imagen principal
+    IF OLD.es_principal = true THEN
+        RAISE NOTICE '🗑️ Eliminando imagen principal para lugar %', OLD.lugar_id;
+        
+        -- Buscar si hay otra imagen para establecer como principal (SIN CTE)
+        SELECT id, url_foto INTO nueva_principal_id, nueva_principal_url
+        FROM fotos_lugares 
+        WHERE lugar_id = OLD.lugar_id 
+        AND id != OLD.id
+        ORDER BY orden ASC, creado_en ASC 
+        LIMIT 1;
+        
+        -- Actualizar la tabla lugares
+        IF nueva_principal_id IS NOT NULL THEN
+            UPDATE lugares 
+            SET foto_principal_url = nueva_principal_url
+            WHERE id = OLD.lugar_id;
+            
+            -- Establecer la nueva imagen como principal en fotos_lugares
+            UPDATE fotos_lugares 
+            SET es_principal = true 
+            WHERE id = nueva_principal_id;
+            RAISE NOTICE '✅ Nueva imagen principal establecida automáticamente para lugar %', OLD.lugar_id;
+        ELSE
+            UPDATE lugares 
+            SET foto_principal_url = NULL 
+            WHERE id = OLD.lugar_id;
+            RAISE NOTICE '⚠️ No hay más imágenes para lugar %, foto_principal_url establecida como NULL', OLD.lugar_id;
+        END IF;
+    END IF;
+    
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+
+
+
+
+
+
+-- Verificar triggers corregidos
+SELECT trigger_name, action_timing, event_manipulation 
+FROM information_schema.triggers 
+WHERE event_object_table = 'fotos_lugares';
+
+-- Verificar que la tabla lugares tenga foto_principal_url
+SELECT column_name, data_type, is_nullable 
+FROM information_schema.columns 
+WHERE table_name = 'lugares' 
+AND column_name = 'foto_principal_url';
+
+-- Verificar datos actuales
+SELECT l.id, l.nombre, l.foto_principal_url,
+       COUNT(fl.id) as total_imagenes,
+       COUNT(fl.id FILTER (WHERE fl.es_principal = true)) as imagenes_principales
+FROM lugares l
+LEFT JOIN fotos_lugares fl ON l.id = fl.lugar_id
+GROUP BY l.id, l.nombre, l.foto_principal_url; 
+
+
+-- Trigger para asegurar foto principal única (BEFORE INSERT OR UPDATE)
+CREATE TRIGGER trigger_foto_principal_unica
+    BEFORE INSERT OR UPDATE ON fotos_lugares
+    FOR EACH ROW
+    EXECUTE FUNCTION asegurar_foto_principal_unica();
+
+-- Trigger para sincronización en INSERT (BEFORE INSERT)
+CREATE TRIGGER sync_principal_image_insert
+    BEFORE INSERT ON fotos_lugares
+    FOR EACH ROW
+    EXECUTE FUNCTION sync_principal_image_on_insert();
+
+-- Trigger para sincronización en UPDATE (BEFORE UPDATE)
+CREATE TRIGGER sync_principal_image_update
+    BEFORE UPDATE ON fotos_lugares
+    FOR EACH ROW
+    EXECUTE FUNCTION sync_principal_image_on_update();
+
+-- Trigger para manejar eliminaciones (BEFORE DELETE)
+CREATE TRIGGER handle_principal_image_delete
+    BEFORE DELETE ON fotos_lugares
+    FOR EACH ROW
+    EXECUTE FUNCTION handle_principal_image_delete();
+
+
+
+
+
+
+
+DO $$
+DECLARE
+    lugar_record RECORD;
+    foto_id UUID;
+BEGIN
+    RAISE NOTICE '🔄 Sincronizando imágenes principales para todos los lugares...';
+
+    -- Recorrer todos los lugares que tengan una foto_principal_url válida
+    FOR lugar_record IN 
+        SELECT id, nombre, foto_principal_url 
+        FROM lugares 
+        WHERE foto_principal_url IS NOT NULL 
+          AND TRIM(foto_principal_url) <> ''
+    LOOP
+        BEGIN
+            RAISE NOTICE '📍 Procesando: % (%).', lugar_record.nombre, lugar_record.id;
+            
+            -- Si ya existe una imagen principal para este lugar
+            IF EXISTS (
+                SELECT 1 FROM fotos_lugares 
+                WHERE lugar_id = lugar_record.id AND es_principal = true
+            ) THEN
+                RAISE NOTICE '   ⚙️ Ya tiene imagen principal registrada.';
+            ELSE
+                -- Buscar si existe una imagen con la misma URL
+                SELECT id INTO foto_id
+                FROM fotos_lugares 
+                WHERE lugar_id = lugar_record.id 
+                  AND url_foto = lugar_record.foto_principal_url
+                LIMIT 1;
+                
+                IF foto_id IS NOT NULL THEN
+                    -- Marcarla como principal
+                    UPDATE fotos_lugares 
+                    SET es_principal = true, actualizado_en = NOW()
+                    WHERE id = foto_id;
+                    RAISE NOTICE '   ✅ Imagen existente marcada como principal.';
+                ELSE
+                    -- Insertar una nueva imagen principal
+                    INSERT INTO fotos_lugares (
+                        lugar_id, 
+                        url_foto, 
+                        es_principal, 
+                        descripcion, 
+                        orden, 
+                        creado_en,
+                        actualizado_en
+                    ) VALUES (
+                        lugar_record.id,
+                        lugar_record.foto_principal_url,
+                        true,
+                        'Imagen principal del lugar',
+                        1,
+                        NOW(),
+                        NOW()
+                    );
+                    RAISE NOTICE '   🆕 Nueva imagen principal insertada.';
+                END IF;
+            END IF;
+        
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE '   ⚠️ Error procesando lugar %: %', lugar_record.id, SQLERRM;
+            CONTINUE; -- No detiene todo el bloque, sigue con el siguiente lugar
+        END;
+    END LOOP;
+
+    RAISE NOTICE '🎉 Sincronización completada exitosamente.';
+
+END $$;
+
+
+-- 🔧 Asegurar columnas actualizado_en en ambas tablas
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'lugares' AND column_name = 'actualizado_en'
+    ) THEN
+        ALTER TABLE lugares ADD COLUMN actualizado_en TIMESTAMP DEFAULT NOW();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'fotos_lugares' AND column_name = 'actualizado_en'
+    ) THEN
+        ALTER TABLE fotos_lugares ADD COLUMN actualizado_en TIMESTAMP DEFAULT NOW();
+    END IF;
+END $$;
+
+
+-- 🧹 Actualizar registros antiguos sin valor en actualizado_en
+UPDATE lugares SET actualizado_en = COALESCE(actualizado_en, creado_en, NOW());
+UPDATE fotos_lugares SET actualizado_en = COALESCE(actualizado_en, creado_en, NOW());
