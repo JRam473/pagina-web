@@ -381,5 +381,65 @@ export const experienciaController = {
       console.error('Error obteniendo estadísticas:', error);
       res.status(500).json({ error: 'Error al obtener estadísticas' });
     }
+  },
+/**
+ * Registrar vista de experiencia
+ */
+async registrarVista(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const ipUsuario = req.ip || req.connection.remoteAddress;
+    const agenteUsuario = req.get('User-Agent') || '';
+
+    console.log('👀 Registrando vista para experiencia:', { id, ip: ipUsuario });
+
+    // 1. Verificar que la experiencia existe y está aprobada
+    const expResult = await pool.query(
+      'SELECT id FROM experiencias WHERE id = $1 AND estado = $2',
+      [id, 'aprobado']
+    );
+
+    if (expResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Experiencia no encontrada' });
+    }
+
+    // 2. Verificar si ya existe una vista desde esta IP/User-Agent en las últimas 24 horas
+    const vistaExistente = await pool.query(
+      `SELECT id FROM vistas_experiencias 
+       WHERE experiencia_id = $1 AND ip_usuario = $2 
+       AND visto_en >= NOW() - INTERVAL '24 hours'
+       LIMIT 1`,
+      [id, ipUsuario]
+    );
+
+    if (vistaExistente.rows.length === 0) {
+      // 3. Insertar nueva vista
+      await pool.query(
+        `INSERT INTO vistas_experiencias 
+         (experiencia_id, ip_usuario, agente_usuario) 
+         VALUES ($1, $2, $3)`,
+        [id, ipUsuario, agenteUsuario]
+      );
+
+      console.log('✅ Nueva vista registrada para experiencia:', id);
+    } else {
+      console.log('⏭️ Vista duplicada ignorada para experiencia:', id);
+    }
+
+    // 4. Actualizar contador en la tabla experiencias (siempre)
+    await pool.query(
+      'UPDATE experiencias SET contador_vistas = contador_vistas + 1 WHERE id = $1',
+      [id]
+    );
+
+    res.json({ 
+      mensaje: 'Vista registrada exitosamente',
+      experiencia_id: id
+    });
+
+  } catch (error) {
+    console.error('❌ Error registrando vista:', error);
+    res.status(500).json({ error: 'Error al registrar vista' });
   }
+}
 };

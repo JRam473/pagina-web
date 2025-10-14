@@ -19,6 +19,7 @@ router.post('/subir', uploadExperienciaMiddleware, experienciaController.crearEx
 router.get('/usuario/mis-experiencias', experienciaController.obtenerMisExperiencias);
 router.put('/:id/editar', verificarPropiedadExperiencia, experienciaController.editarExperiencia);
 router.delete('/:id/eliminar', verificarPropiedadExperiencia, experienciaController.eliminarExperiencia);
+router.post('/:id/vista', experienciaController.registrarVista); // ✅ NUEVA RUTA
 
 // Rutas protegidas (admin only)
 router.get('/admin/pendientes', autenticarAdmin, experienciaController.obtenerExperienciasPendientes);

@@ -9,6 +9,7 @@ interface ResultadoModeracion {
   puntuacionGeneral: number;
 }
 
+
 export class ModeracionService {
   static async moderarExperiencia(experienciaId: string): Promise<ResultadoModeracion> {
     try {
@@ -28,95 +29,90 @@ export class ModeracionService {
 
       if (experiencia.moderado) {
         console.log(`✅ Experiencia ya moderada, estado: ${experiencia.estado}`);
-        const resultado: ResultadoModeracion = {
-          estado: experiencia.estado,
-          puntuacionGeneral: (experiencia.puntuacion_texto + experiencia.puntuacion_imagen) / 2
+        return {
+          estado: experiencia.estado as 'aprobado' | 'rechazado' | 'pendiente',
+          puntuacionGeneral: (experiencia.puntuacion_texto + experiencia.puntuacion_imagen) / 2,
+          motivo: experiencia.motivo_rechazo
         };
-        
-        if (experiencia.motivo_rechazo) {
-          resultado.motivo = experiencia.motivo_rechazo;
-        }
-        
-        return resultado;
       }
 
-      // 1. Moderación de texto
+      // 1. Moderación de texto (MEJORADA)
       console.log('📖 Analizando texto...');
       const resultadoTexto = ModeradorTexto.analizarTexto(experiencia.descripcion || '');
-      console.log(`📖 Resultado texto: ${resultadoTexto.puntuacion} - Aprobado: ${resultadoTexto.esAprobado}`);
+      console.log(`📖 Resultado texto: ${resultadoTexto.puntuacion} - Intención: ${resultadoTexto.intencion}`);
 
       // 2. Moderación de imagen
       console.log('🖼️ Analizando imagen...');
       const resultadoImagen = await ModeradorImagen.analizarImagenMulter(experiencia.ruta_almacenamiento);
       console.log(`🖼️ Resultado imagen: ${resultadoImagen.puntuacion} - Aprobado: ${resultadoImagen.esAprobado}`);
 
-      // 3. Calcular confianza del usuario
+      // 3. Calcular confianza del usuario (MÁS GENEROSO)
       console.log('👤 Calculando confianza usuario...');
       const confianzaUsuario = await this.calcularConfianzaUsuario(experiencia.hash_navegador);
       console.log(`👤 Confianza usuario: ${confianzaUsuario}`);
 
-      // 4. Calcular puntuación general CON NUEVOS PESOS
+      // 4. Calcular puntuación general (PESOS ACTUALIZADOS)
       let puntuacionGeneral = 0;
       try {
-        // ✅ PESOS CORREGIDOS - Menos dependencia de la confianza
+        // ✅ NUEVOS PESOS - Texto menos determinante
         puntuacionGeneral = (
-          resultadoTexto.puntuacion * 0.45 +    // Texto más importante
-          resultadoImagen.puntuacion * 0.45 +   // Imagen más importante  
-          confianzaUsuario * 0.10               // Confianza menos importante
+          resultadoTexto.puntuacion * 0.3 +      // Texto menos importante
+          resultadoImagen.puntuacion * 0.6 +     // Imagen más importante  
+          confianzaUsuario * 0.1                // Confianza mínima
         );
         
-        // ✅ VALIDACIÓN
         if (isNaN(puntuacionGeneral) || !isFinite(puntuacionGeneral)) {
-          console.warn('⚠️ Puntuación general inválida, usando promedio simple');
-          puntuacionGeneral = (resultadoTexto.puntuacion + resultadoImagen.puntuacion) / 2;
+          puntuacionGeneral = resultadoImagen.puntuacion; // Priorizar imagen
         }
       } catch (error) {
         console.error('❌ Error calculando puntuación general:', error);
-        puntuacionGeneral = (resultadoTexto.puntuacion + resultadoImagen.puntuacion) / 2;
+        puntuacionGeneral = resultadoImagen.puntuacion; // Fallback a imagen
       }
 
       const puntuacionFinal = Math.round(puntuacionGeneral * 100) / 100;
       console.log(`📊 Puntuación general: ${puntuacionFinal}`);
 
-      // 5. Tomar decisión con NUEVA LÓGICA INTELIGENTE
+      // 5. ✅ NUEVA LÓGICA DE DECISIÓN MÁS INTELIGENTE
       let estado: 'aprobado' | 'rechazado' | 'pendiente' = 'pendiente';
-      let motivo: string | undefined = undefined;
+      let motivo: string = this.generarMotivoRechazo(resultadoTexto, resultadoImagen);
 
-      const configResult = await pool.query(
-        `SELECT valor FROM config_moderacion WHERE clave = 'umbral_aprobacion'`
-      );
-      
-      const umbrales = configResult.rows[0]?.valor || { texto: 0.7, imagen: 0.8, general: 0.75 };
-      const umbralAprobacion = 0.70; // ✅ REDUCIDO para ser más inclusivo
-      const umbralRechazo = 0.40;
+      const umbralAprobacion = 0.60;  // ✅ MUCHO MÁS BAJO
+      const umbralRechazo = 0.30;     // ✅ SOLO RECHAZAR CONTENIDO MUY MALO
 
       console.log(`⚖️ Umbrales: Aprobación=${umbralAprobacion}, Rechazo=${umbralRechazo}`);
 
-      // ✅ LÓGICA MÁS INTELIGENTE DE APROBACIÓN
-      const textoAprobado = resultadoTexto.esAprobado;
-      const imagenAprobada = resultadoImagen.esAprobado;
-
-      if (puntuacionFinal >= umbralAprobacion && textoAprobado && imagenAprobada) {
+      // ✅ REGLA 1: Imagen aprobada + texto no spam = APROBADO
+      if (resultadoImagen.esAprobado && resultadoTexto.intencion !== 'spam') {
         estado = 'aprobado';
-        console.log('🎉 EXPERIENCIA APROBADA - Cumple todos los criterios');
-      } 
-      // ✅ APROBACIÓN AUTOMÁTICA PARA CONTENIDO DE ALTA CALIDAD
-      else if (resultadoTexto.puntuacion >= 0.8 && resultadoImagen.puntuacion >= 0.8) {
-        estado = 'aprobado';
-        console.log('🎉 EXPERIENCIA APROBADA - Contenido de alta calidad detectado');
+        console.log('🎉 EXPERIENCIA APROBADA - Imagen buena + texto no spam');
       }
-      else if (puntuacionFinal <= umbralRechazo || !textoAprobado || !imagenAprobada) {
+      // ✅ REGLA 2: Puntuación alta = APROBADO
+      else if (puntuacionFinal >= umbralAprobacion) {
+        estado = 'aprobado';
+        console.log('🎉 EXPERIENCIA APROBADA - Puntuación general alta');
+      }
+      // ✅ REGLA 3: Spam claro = RECHAZADO
+     if (resultadoTexto.intencion === 'spam' || !resultadoTexto.esAprobado) {
+  estado = 'rechazado';
+  motivo = resultadoTexto.razon || 'Contenido ofensivo detectado';
+  console.log(`❌ EXPERIENCIA RECHAZADA: Texto ofensivo - ${motivo}`);
+}
+      // ✅ REGLA 4: Imagen rechazada = RECHAZADO
+      else if (!resultadoImagen.esAprobado) {
         estado = 'rechazado';
-        motivo = this.generarMotivoRechazo(resultadoTexto, resultadoImagen);
-        console.log(`❌ EXPERIENCIA RECHAZADA: ${motivo}`);
-      } else {
-        // ✅ APROBAR SI ESTÁ MUY CERCA DEL UMBRAL
-        if (puntuacionFinal >= 0.65 && textoAprobado && imagenAprobada) {
-          estado = 'aprobado';
-          console.log('🎉 EXPERIENCIA APROBADA - Umbral flexible aplicado');
-        } else {
-          console.log('⏳ EXPERIENCIA PENDIENTE - En zona gris de decisión');
-        }
+        motivo = resultadoImagen.razon || 'La imagen no cumple con los criterios de calidad';
+        console.log(`❌ EXPERIENCIA RECHAZADA: Imagen inapropiada`);
+      }
+      // ✅ REGLA 5: Puntuación muy baja = RECHAZADO
+      else if (puntuacionFinal <= umbralRechazo) {
+        estado = 'rechazado';
+        motivo = 'No cumple con los criterios mínimos de calidad';
+        console.log(`❌ EXPERIENCIA RECHAZADA: Puntuación muy baja`);
+      }
+      // ✅ REGLA 6: Todo lo demás = APROBADO (ser más permisivos)
+      else {
+        estado = 'aprobado';
+        console.log('🎉 EXPERIENCIA APROBADA - Regla permisiva aplicada');
       }
 
       // 6. Actualizar experiencia en BD
@@ -143,7 +139,7 @@ export class ModeracionService {
           resultadoTexto.palabrasProhibidas,
           JSON.stringify(resultadoImagen.categorias),
           confianzaUsuario,
-          estado !== 'pendiente',
+          estado !== 'rechazado',
           motivo,
           experienciaId
         ]
@@ -151,31 +147,37 @@ export class ModeracionService {
 
       console.log(`✅ Experiencia ${experienciaId} moderada: ${estado} (Puntuación: ${puntuacionFinal})`);
 
-      const resultado: ResultadoModeracion = {
+      return {
         estado,
-        puntuacionGeneral: puntuacionFinal
+        puntuacionGeneral: puntuacionFinal,
+        motivo
       };
-      
-      if (motivo) {
-        resultado.motivo = motivo;
-      }
-      
-      return resultado;
 
     } catch (error) {
       console.error(`❌ Error moderando experiencia ${experienciaId}:`, error);
       
+      // ✅ EN CASO DE ERROR, SER MÁS PERMISIVOS
       await pool.query(
-        `UPDATE experiencias SET procesado_en = NOW(), actualizado_en = NOW() WHERE id = $1`,
+        `UPDATE experiencias SET 
+          estado = 'aprobado', 
+          moderado = true,
+          aprobado_automatico = false,
+          motivo_rechazo = 'Aprobado por fallo en moderación automática',
+          procesado_en = NOW(), 
+          actualizado_en = NOW() 
+         WHERE id = $1`,
         [experienciaId]
       );
 
       return {
-        estado: 'pendiente',
-        puntuacionGeneral: 0
+        estado: 'aprobado',
+        puntuacionGeneral: 0.7,
+        motivo: 'Aprobado por fallo en moderación automática'
       };
     }
   }
+
+  
 
   private static async calcularConfianzaUsuario(hashNavegador: string): Promise<number> {
     try {

@@ -21,6 +21,7 @@ import lugarRoutes from './rutas/lugarRoutes';
 import experienciaRoutes from './rutas/experienciaRoutes';
 import calificacionRoutes from './rutas/calificacionRoutes';
 import archivosRoutes from './rutas/archivosRoutes';
+import { DebugModeracion } from './utils/debugModeracion';
 
 const app = express();
 
