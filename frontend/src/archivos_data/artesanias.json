@@ -1,0 +1,208 @@
+{
+  "artesanias": [
+    {
+      "id": 1,
+      "name": "Tapiz Tradicional de Lana",
+      "category": "textiles",
+      "description": "Hermoso tapiz tejido en telar de cintura con lana de oveja local teñida con pigmentos naturales extraídos de plantas de la región.",
+      "materials": ["Lana de oveja criolla", "Tintes de cempasúchil", "Hilo de algodón natural", "Madera de ayacahuite"],
+      "techniques": ["Telar de cintura ancestral", "Tejido con técnica purépecha", "Tinte natural por inmersión", "Secado al sol"],
+      "timeRequired": "2-3 semanas",
+      "priceRange": "$800 - $1,200 MXN",
+      "artisan": {
+        "name": "Doña María Hernández",
+        "experience": "45 años de experiencia",
+        "location": "San Juan Tahitic Centro"
+      },
+      "image": "/images/cultura/artesanias/tapiz-lana.png",
+      "story": "Esta técnica fue enseñada por mi abuela cuando tenía 8 años. Cada símbolo en el tapiz representa elementos de nuestra naturaleza y creencias ancestrales. Los colores los obtenemos de flores que crecen en el cerro sagrado."
+    },
+    {
+      "id": 2,
+      "name": "Rebozo de Seda Natural",
+      "category": "textiles",
+      "description": "Rebozo fino tejido en telar de pedales con seda natural y bordado tradicional que cuenta historias de la comunidad.",
+      "materials": ["Seda natural local", "Hilo de algodón mercerizado", "Tintes de grana cochinilla", "Agujas de madera"],
+      "techniques": ["Telar de pedales manual", "Bordado a mano punto cruz", "Teñido por reserva", "Acabado con cera"],
+      "timeRequired": "5-6 semanas",
+      "priceRange": "$2,500 - $4,000 MXN",
+      "artisan": {
+        "name": "Señora Elena Morales",
+        "experience": "35 años de experiencia",
+        "location": "Valle de los Tejedores"
+      },
+      "image": "/images/cultura/artesanias/tapiz-lana.png",
+      "story": "El rebozo es más que una prenda, es la historia de nuestras mujeres. Cada patrón tiene un significado especial que se transmite de madre a hija. Los diseños representan el río, las montañas y el ciclo de la vida."
+    },
+    {
+      "id": 3,
+      "name": "Faja Ceremonial de Lana",
+      "category": "textiles",
+      "description": "Faja tradicional utilizada en ceremonias importantes, tejida con símbolos que representan la cosmovisión local.",
+      "materials": ["Lana cardada a mano", "Tintes de nogal y añil", "Hilos metálicos decorativos", "Fibra de maguey"],
+      "techniques": ["Tejido en telar de cintura", "Técnica de brocado", "Teñido por amarre", "Acabado con piedra pómez"],
+      "timeRequired": "3-4 semanas",
+      "priceRange": "$1,200 - $1,800 MXN",
+      "artisan": {
+        "name": "Doña Carmen Ruiz",
+        "experience": "28 años de experiencia",
+        "location": "Cerro de las Tejedoras"
+      },
+      "image": "/images/cultura/artesanias/tapiz-lana.png",
+      "story": "Cada faja cuenta la historia de quien la porta. Los símbolos representan logros, sueños y protecciones. Mi bisabuela me enseñó que el tejido es una conversación con los ancestros, cada puntada es una palabra."
+    },
+    {
+      "id": 4,
+      "name": "Mantel Bordado a Mano",
+      "category": "textiles",
+      "description": "Mantel ceremonial bordado completamente a mano con motivos florales y animales de la región, ideal para festividades.",
+      "materials": ["Lienzo de algodón puro", "Hilos de seda teñidos", "Hilos de oro y plata", "Tela de respaldo"],
+      "techniques": ["Bordado a mano punto de cruz", "Aplicación de tela", "Deshilado tradicional", "Planchado con piedra"],
+      "timeRequired": "6-8 semanas",
+      "priceRange": "$3,000 - $4,500 MXN",
+      "artisan": {
+        "name": "Señora Guadalupe Torres",
+        "experience": "40 años de experiencia",
+        "location": "Barrio de los Bordadores"
+      },
+      "image": "/images/cultura/artesanias/tapiz-lana.png",
+      "story": "Este mantel representa las bodas de nuestra comunidad. Cada flor bordada simboliza un deseo de felicidad para la pareja. Las técnicas las aprendí de las mujeres sabias del pueblo cuando era niña."
+    },
+    {
+      "id": 5,
+      "name": "Vasija de Barro Negro",
+      "category": "ceramica",
+      "description": "Vasija ceremonial elaborada con la técnica ancestral de barro negro pulido a mano, única en la región.",
+      "materials": ["Barro negro local", "Arcilla roja refractaria", "Piedra de río para pulir", "Agua de manantial"],
+      "techniques": ["Modelado a mano sin torno", "Pulido con piedra de río", "Cocción en horno de leña", "Ahumado controlado"],
+      "timeRequired": "3-4 semanas",
+      "priceRange": "$1,500 - $2,000 MXN",
+      "artisan": {
+        "name": "Don José Martínez",
+        "experience": "30 años de experiencia",
+        "location": "Barrio de los Alfareros"
+      },
+      "image": "/images/cultura/artesanias/vasija-barro.png",
+      "story": "El barro negro de nuestra región es único en el mundo. Lo recolectamos en la temporada de lluvias y cada pieza lleva la esencia de nuestra tierra. El pulido con piedra le da ese brillo característico."
+    },
+    {
+      "id": 6,
+      "name": "Jarra de Agua Fresca",
+      "category": "ceramica",
+      "description": "Jarra tradicional para agua fresca con filtro natural incorporado y diseño ergonómico que mantiene la temperatura.",
+      "materials": ["Barro rojo poroso", "Arena de río tamizada", "Esmalte natural de plomo", "Pigmentos minerales"],
+      "techniques": ["Torno alfarero manual", "Esgrafiado con punzón", "Vidriado tradicional", "Doble cocción"],
+      "timeRequired": "2 semanas",
+      "priceRange": "$600 - $900 MXN",
+      "artisan": {
+        "name": "Familia Rodríguez",
+        "experience": "3 generaciones",
+        "location": "Zona Alfarera Tradicional"
+      },
+      "image": "/images/cultura/artesanias/vasija-barro.png",
+      "story": "Nuestra familia ha elaborado estas jarras por más de 80 años. El diseño mantiene el agua fresca naturalmente gracias al grosor del barro. Cada jarra es probada personalmente antes de la venta."
+    },
+    {
+      "id": 7,
+      "name": "Comal Tradicional de Barro",
+      "category": "ceramica",
+      "description": "Comal circular para tortillas hecho con barro especial que distribuye el calor uniformemente, esencial en cocinas locales.",
+      "materials": ["Barro refractario", "Arena volcánica", "Arcilla de grano fino", "Minerales locales"],
+      "techniques": ["Prensado manual", "Secado a sombra", "Cocción a alta temperatura", "Pulido con trapo"],
+      "timeRequired": "10-12 días",
+      "priceRange": "$400 - $600 MXN",
+      "artisan": {
+        "name": "Doña Rosa Mendoza",
+        "experience": "25 años de experiencia",
+        "location": "Colonia de los Comaleros"
+      },
+      "image": "/images/cultura/artesanias/vasija-barro.png",
+      "story": "El comal perfecto debe cocer las tortillas sin quemarlas. Esta sabiduría viene de mis antepasados que descubrieron la mezcla exacta de barros para lograr el punto ideal de cocción."
+    },
+    {
+      "id": 8,
+      "name": "Árbol de la Vida",
+      "category": "ceramica",
+      "description": "Escultura de barro policromado que representa el árbol de la vida, con figuras que narran la creación del mundo.",
+      "materials": ["Barro blanco modelable", "Pigmentos minerales", "Barniz natural", "Alambre de soporte"],
+      "techniques": ["Modelado por piezas", "Ensamblado manual", "Pintura con pincel de pelo", "Horneado por etapas"],
+      "timeRequired": "4-5 semanas",
+      "priceRange": "$2,800 - $3,500 MXN",
+      "artisan": {
+        "name": "Maestro Alberto Cruz",
+        "experience": "20 años de experiencia",
+        "location": "Taller del Árbol Sagrado"
+      },
+      "image": "/images/cultura/artesanias/vasija-barro.png",
+      "story": "Cada árbol de la vida cuenta una historia diferente. El mío representa la leyenda de cómo nuestro pueblo fue fundado por los dioses del maíz y la lluvia. Es mi manera de preservar nuestras creencias."
+    },
+    {
+      "id": 9,
+      "name": "Máscara Ritual Tallada",
+      "category": "madera",
+      "description": "Máscara ceremonial tallada en madera de copal con representaciones de deidades ancestrales y espíritus guardianes.",
+      "materials": ["Madera de copal sagrado", "Pigmentos minerales locales", "Cera de abeja virgen", "Fibras naturales"],
+      "techniques": ["Tallado a mano con gubias", "Pirograbado con hierro", "Patinado natural con tierra", "Pulido con hoja de maíz"],
+      "timeRequired": "4-5 semanas",
+      "priceRange": "$2,000 - $3,500 MXN",
+      "artisan": {
+        "name": "Maestro Carlos Ruiz",
+        "experience": "25 años de experiencia",
+        "location": "Cerro del Artesano"
+      },
+      "image": "/images/cultura/artesanias/mascara-ritual.png",
+      "story": "Cada máscara cuenta una historia de nuestros antepasados. Los símbolos representan la conexión entre el mundo terrenal y el espiritual. Solo uso maderas que caen naturalmente, nunca corto árboles vivos."
+    },
+    {
+      "id": 10,
+      "name": "Juguete Tradicional de Madera",
+      "category": "madera",
+      "description": "Juguetes educativos tallados en maderas locales con acabado natural seguro para niños, que enseñan sobre la cultura local.",
+      "materials": ["Madera de pino oyamel", "Aceite de linaza natural", "Cera de candelilla", "Pigmentos vegetales"],
+      "techniques": ["Tallado con gubias especiales", "Lijado manual progresivo", "Acabado natural no tóxico", "Ensamblado sin clavos"],
+      "timeRequired": "1 semana",
+      "priceRange": "$200 - $500 MXN",
+      "artisan": {
+        "name": "Don Roberto Silva",
+        "experience": "40 años de experiencia",
+        "location": "Taller del Bosque"
+      },
+      "image": "/images/cultura/artesanias/mascara-ritual.png",
+      "story": "Creo juguetes que duran generaciones, como los que mi abuelo me hizo a mí. Cada pieza enseña sobre nuestra cultura y valores. Los niños aprenden jugando sobre los animales y plantas de nuestra región."
+    },
+    {
+      "id": 11,
+      "name": "Baúl Tallado con Historias",
+      "category": "madera",
+      "description": "Baúl de madera tallado con escenas de la vida cotidiana y mitos fundacionales del pueblo, perfecto para guardar tesoros familiares.",
+      "materials": ["Madera de cedro rojo", "Clavos de latón", "Bisagras forjadas", "Aceite de naranja"],
+      "techniques": ["Tallado en relieve", "Ensamblado a cola de milano", "Pátina natural con humo", "Pulido con raíces"],
+      "timeRequired": "6-7 semanas",
+      "priceRange": "$4,500 - $6,000 MXN",
+      "artisan": {
+        "name": "Don Fernando Herrera",
+        "experience": "35 años de experiencia",
+        "location": "Barrio de los Carpinteros"
+      },
+      "image": "/images/cultura/artesanias/mascara-ritual.png",
+      "story": "Cada baúl es como un libro abierto. En este cuento la historia de cómo las mariposas monarca guiaron a nuestros ancestros hasta estas tierras. Las técnicas de tallado las aprendí de los viejos maestros del pueblo."
+    },
+    {
+      "id": 12,
+      "name": "Instrumento Musical Ancestral",
+      "category": "madera",
+      "description": "Flauta tradicional tallada en una sola pieza de madera, afinada según las escalas musicales ancestrales de la región.",
+      "materials": ["Madera de huizache curada", "Cera de abejas meliponas", "Aceite de chicalote", "Resina de pino"],
+      "techniques": ["Tallado con cuchillo especial", "Perforado con barrenos manuales", "Afinado por oído tradicional", "Curado con humo controlado"],
+      "timeRequired": "2-3 semanas",
+      "priceRange": "$1,800 - $2,500 MXN",
+      "artisan": {
+        "name": "Maestro Tomás Vargas",
+        "experience": "30 años de experiencia",
+        "location": "Loma de los Músicos"
+      },
+      "image": "/images/cultura/artesanias/mascara-ritual.png",
+      "story": "Cada flauta tiene su propia voz. Elijo la madera según la luna y la estación del año. El sonido que produce debe imitar a los pájaros del bosque y el viento en las montañas, como me enseñó mi abuelo."
+    }
+  ]
+}

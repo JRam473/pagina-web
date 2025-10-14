@@ -650,6 +650,63 @@ const getPlacePdfUrl = useCallback((place: Place): string | null => {
   }, [userRatings]);
 
   /**
+ * Extraer coordenadas del campo ubicación
+ */
+const extractCoordinatesFromUbicacion = useCallback((ubicacion: string): { lat: number; lng: number } | null => {
+  if (!ubicacion) return null;
+  
+  try {
+    // Buscar patrones de coordenadas en el string
+    const coordinatePattern = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
+    const match = ubicacion.match(coordinatePattern);
+    
+    if (match && match[1] && match[2]) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      
+      // Validar que las coordenadas estén en rangos razonables para México
+      if (lat >= 19.8 && lat <= 20.0 && lng >= -97.6 && lng <= -97.5) {
+        return { lat, lng };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error extrayendo coordenadas:', error);
+    return null;
+  }
+}, []);
+
+/**
+ * Obtener ubicación con coordenadas para el MapRouteViewer
+ */
+const getPlaceLocation = useCallback((place: Place): { 
+  address: string; 
+  lat: number; 
+  lng: number;
+  hasCoordinates: boolean;
+} => {
+  const coordinates = extractCoordinatesFromUbicacion(place.ubicacion);
+  
+  if (coordinates) {
+    return {
+      address: place.ubicacion,
+      lat: coordinates.lat,
+      lng: coordinates.lng,
+      hasCoordinates: true
+    };
+  }
+  
+  // Fallback: usar coordenadas por defecto de San Juan Tahitic
+  return {
+    address: place.ubicacion || 'San Juan Tahitic, Puebla',
+    lat: 19.939088388469845,
+    lng: -97.55492145455479,
+    hasCoordinates: false
+  };
+}, [extractCoordinatesFromUbicacion]);
+
+  /**
    * Limpiar calificación del usuario para un lugar
    */
   const clearUserRating = useCallback((placeId: string) => {
@@ -698,6 +755,8 @@ const getPlacePdfUrl = useCallback((place: Place): string | null => {
     getUserCurrentRating,
     clearUserRating,
     getPlacePdfUrl,
+    extractCoordinatesFromUbicacion,
+    getPlaceLocation,
     
     // Re-fetch
     refetch: fetchPlaces,

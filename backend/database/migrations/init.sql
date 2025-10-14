@@ -113,7 +113,7 @@ TABLESPACE pg_default;
 ALTER TABLE IF EXISTS public.calificaciones_lugares
     OWNER to root;
 
--- Tabla principal de experiencias (mural anónimo)
+-- Tabla principal de experiencias (mural anónimo) - VERSIÓN COMPLETA CON MODERACIÓN
 CREATE TABLE IF NOT EXISTS public.experiencias
 (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -134,6 +134,19 @@ CREATE TABLE IF NOT EXISTS public.experiencias
     busqueda_segura_violencia text COLLATE pg_catalog."default",
     busqueda_segura_provocativo text COLLATE pg_catalog."default",
     banderas_moderacion_texto jsonb,
+    -- NUEVAS COLUMNAS PARA MODERACIÓN AUTOMÁTICA
+    ip_usuario text COLLATE pg_catalog."default",
+    hash_navegador text COLLATE pg_catalog."default",
+    actualizado_en timestamp with time zone DEFAULT now(),
+    moderado boolean DEFAULT false,
+    puntuacion_texto numeric DEFAULT 1.0,
+    puntuacion_imagen numeric DEFAULT 1.0,
+    palabras_prohibidas_encontradas text[] DEFAULT '{}',
+    categorias_imagen jsonb,
+    confianza_usuario numeric DEFAULT 1.0,
+    aprobado_automatico boolean DEFAULT false,
+    motivo_rechazo text COLLATE pg_catalog."default",
+    procesado_en timestamp with time zone,
     CONSTRAINT experiencias_pkey PRIMARY KEY (id),
     CONSTRAINT experiencias_lugar_id_fkey FOREIGN KEY (lugar_id)
         REFERENCES public.lugares (id) MATCH SIMPLE
@@ -165,6 +178,23 @@ CREATE TABLE IF NOT EXISTS public.vistas_experiencias
 TABLESPACE pg_default;
 
 ALTER TABLE IF EXISTS public.vistas_experiencias
+    OWNER to root;
+
+-- Tabla para configuración de moderación
+CREATE TABLE IF NOT EXISTS public.config_moderacion
+(
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    clave text COLLATE pg_catalog."default" NOT NULL,
+    valor jsonb NOT NULL,
+    descripcion text COLLATE pg_catalog."default",
+    actualizado_en timestamp with time zone DEFAULT now(),
+    CONSTRAINT config_moderacion_pkey PRIMARY KEY (id),
+    CONSTRAINT config_moderacion_clave_key UNIQUE (clave)
+)
+
+TABLESPACE pg_default;
+
+ALTER TABLE IF EXISTS public.config_moderacion
     OWNER to root;
 
 -- Índices para optimización
@@ -223,6 +253,22 @@ CREATE INDEX IF NOT EXISTS idx_vistas_experiencias_visto_en
     ON public.vistas_experiencias USING btree
     (visto_en DESC NULLS LAST)
     TABLESPACE pg_default;
+
+-- NUEVOS ÍNDICES PARA MODERACIÓN
+CREATE INDEX IF NOT EXISTS idx_experiencias_moderado 
+    ON public.experiencias (moderado, estado);
+
+CREATE INDEX IF NOT EXISTS idx_experiencias_puntuaciones 
+    ON public.experiencias (puntuacion_texto, puntuacion_imagen);
+
+CREATE INDEX IF NOT EXISTS idx_experiencias_confianza 
+    ON public.experiencias (confianza_usuario);
+
+CREATE INDEX IF NOT EXISTS idx_experiencias_procesado 
+    ON public.experiencias (procesado_en);
+
+CREATE INDEX IF NOT EXISTS idx_experiencias_hash_navegador 
+    ON public.experiencias (hash_navegador);
 
 -- Insertar usuario administrador con contraseña VACÍA para OAuth
 INSERT INTO public.administradores (usuario, email, contraseña, proveedor, rol, verificado) VALUES
@@ -323,13 +369,25 @@ SELECT
 FROM public.lugares WHERE nombre = 'Cascada Salto de La Paz – Monte Virgen'
 ON CONFLICT DO NOTHING;
 
+-- Insertar configuración inicial de moderación
+INSERT INTO public.config_moderacion (clave, valor, descripcion) VALUES
+('umbral_aprobacion', '{"texto": 0.7, "imagen": 0.8, "general": 0.75}'::jsonb, 'Umbrales mínimos para aprobación automática'),
+('palabras_prohibidas', '["spam", "publicidad", "comprar", "vender", "oferta", "promoción"]'::jsonb, 'Lista de palabras prohibidas'),
+('categorias_rechazo_imagen', '["Porn", "Hentai", "Sexy"]'::jsonb, 'Categorías de NSFW que causan rechazo automático'),
+('limites_usuario', '{"max_diario": 5, "max_pendientes": 3}'::jsonb, 'Límites por usuario')
+ON CONFLICT (clave) DO UPDATE SET
+    valor = EXCLUDED.valor,
+    descripcion = EXCLUDED.descripcion,
+    actualizado_en = NOW();
+
 -- Comentarios en las tablas
 COMMENT ON TABLE public.lugares IS 'Lugares disponibles para experiencias y calificaciones';
 COMMENT ON TABLE public.fotos_lugares IS 'Múltiples fotos por lugar para galerías';
 COMMENT ON TABLE public.calificaciones_lugares IS 'Calificaciones con control por IP/navegador para evitar duplicados';
-COMMENT ON TABLE public.experiencias IS 'Experiencias anónimas del mural digital';
+COMMENT ON TABLE public.experiencias IS 'Experiencias anónimas del mural digital con sistema de moderación automática';
 COMMENT ON TABLE public.vistas_experiencias IS 'Registro de vistas anónimas a experiencias';
 COMMENT ON TABLE public.administradores IS 'Usuarios administradores del sistema para OAuth/JWT';
+COMMENT ON TABLE public.config_moderacion IS 'Configuración del sistema de moderación automática';
 
 -- Función para actualizar automáticamente las puntuaciones de lugares
 CREATE OR REPLACE FUNCTION actualizar_puntuaciones_lugar()
@@ -380,67 +438,6 @@ CREATE TRIGGER trigger_foto_principal_unica
     FOR EACH ROW
     WHEN (NEW.es_principal = true)
     EXECUTE FUNCTION asegurar_foto_principal_unica();
-
--- Permisos
-GRANT ALL PRIVILEGES ON DATABASE tahiticc TO root;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO root;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO root;
-GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO root;
-
-
--- Después de ejecutar el script:
-SELECT nombre, puntuacion_promedio, total_calificaciones, creado_en 
-FROM lugares 
-ORDER BY creado_en DESC;
-
-select * from lugares;
-
-UPDATE lugares
-SET foto_principal_url = regexp_replace(foto_principal_url, '^/images/', '/images/lugares/');
-
-
-select *from calificaciones_lugares;
-select *from lugares;
-
-UPDATE administradores
-SET usuario = 'Juan Ramiro'
-WHERE id = '26450473-894d-4511-bc32-8ca69923f691';
-
-SELECT column_name, data_type, is_nullable
-FROM information_schema.columns
-WHERE table_name = 'fotos_lugares';
-
-SELECT column_name, data_type, is_nullable
-FROM information_schema.columns
-WHERE table_name = 'calificaciones_lugares';
-
-
-
-
-
--- Función para asegurar que solo haya UNA imagen principal por lugar
-CREATE OR REPLACE FUNCTION asegurar_foto_principal_unica()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Si se está estableciendo una nueva imagen como principal
-    IF NEW.es_principal = true THEN
-        -- Quitar el estado de principal de todas las demás imágenes del mismo lugar
-        UPDATE fotos_lugares 
-        SET es_principal = false 
-        WHERE lugar_id = NEW.lugar_id 
-        AND id != NEW.id;
-        
-        -- Actualizar la foto_principal_url en la tabla lugares
-        UPDATE lugares 
-        SET foto_principal_url = NEW.url_foto 
-        WHERE id = NEW.lugar_id;
-        
-        RAISE NOTICE '✅ Imagen % establecida como principal para lugar %', NEW.id, NEW.lugar_id;
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
 
 -- CORREGIR: Función para manejar la sincronización cuando se INSERTA una nueva imagen
 CREATE OR REPLACE FUNCTION sync_principal_image_on_insert()
@@ -561,34 +558,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
-
-
-
-
-
-
-
--- Verificar triggers corregidos
-SELECT trigger_name, action_timing, event_manipulation 
-FROM information_schema.triggers 
-WHERE event_object_table = 'fotos_lugares';
-
--- Verificar que la tabla lugares tenga foto_principal_url
-SELECT column_name, data_type, is_nullable 
-FROM information_schema.columns 
-WHERE table_name = 'lugares' 
-AND column_name = 'foto_principal_url';
-
--- Verificar datos actuales
-SELECT l.id, l.nombre, l.foto_principal_url,
-       COUNT(fl.id) as total_imagenes,
-       COUNT(fl.id FILTER (WHERE fl.es_principal = true)) as imagenes_principales
-FROM lugares l
-LEFT JOIN fotos_lugares fl ON l.id = fl.lugar_id
-GROUP BY l.id, l.nombre, l.foto_principal_url; 
-
-
 -- Trigger para asegurar foto principal única (BEFORE INSERT OR UPDATE)
 CREATE TRIGGER trigger_foto_principal_unica
     BEFORE INSERT OR UPDATE ON fotos_lugares
@@ -613,102 +582,8 @@ CREATE TRIGGER handle_principal_image_delete
     FOR EACH ROW
     EXECUTE FUNCTION handle_principal_image_delete();
 
-
-
-
-
-
-
-DO $$
-DECLARE
-    lugar_record RECORD;
-    foto_id UUID;
-BEGIN
-    RAISE NOTICE '🔄 Sincronizando imágenes principales para todos los lugares...';
-
-    -- Recorrer todos los lugares que tengan una foto_principal_url válida
-    FOR lugar_record IN 
-        SELECT id, nombre, foto_principal_url 
-        FROM lugares 
-        WHERE foto_principal_url IS NOT NULL 
-          AND TRIM(foto_principal_url) <> ''
-    LOOP
-        BEGIN
-            RAISE NOTICE '📍 Procesando: % (%).', lugar_record.nombre, lugar_record.id;
-            
-            -- Si ya existe una imagen principal para este lugar
-            IF EXISTS (
-                SELECT 1 FROM fotos_lugares 
-                WHERE lugar_id = lugar_record.id AND es_principal = true
-            ) THEN
-                RAISE NOTICE '   ⚙️ Ya tiene imagen principal registrada.';
-            ELSE
-                -- Buscar si existe una imagen con la misma URL
-                SELECT id INTO foto_id
-                FROM fotos_lugares 
-                WHERE lugar_id = lugar_record.id 
-                  AND url_foto = lugar_record.foto_principal_url
-                LIMIT 1;
-                
-                IF foto_id IS NOT NULL THEN
-                    -- Marcarla como principal
-                    UPDATE fotos_lugares 
-                    SET es_principal = true, actualizado_en = NOW()
-                    WHERE id = foto_id;
-                    RAISE NOTICE '   ✅ Imagen existente marcada como principal.';
-                ELSE
-                    -- Insertar una nueva imagen principal
-                    INSERT INTO fotos_lugares (
-                        lugar_id, 
-                        url_foto, 
-                        es_principal, 
-                        descripcion, 
-                        orden, 
-                        creado_en,
-                        actualizado_en
-                    ) VALUES (
-                        lugar_record.id,
-                        lugar_record.foto_principal_url,
-                        true,
-                        'Imagen principal del lugar',
-                        1,
-                        NOW(),
-                        NOW()
-                    );
-                    RAISE NOTICE '   🆕 Nueva imagen principal insertada.';
-                END IF;
-            END IF;
-        
-        EXCEPTION WHEN OTHERS THEN
-            RAISE NOTICE '   ⚠️ Error procesando lugar %: %', lugar_record.id, SQLERRM;
-            CONTINUE; -- No detiene todo el bloque, sigue con el siguiente lugar
-        END;
-    END LOOP;
-
-    RAISE NOTICE '🎉 Sincronización completada exitosamente.';
-
-END $$;
-
-
--- 🔧 Asegurar columnas actualizado_en en ambas tablas
-DO $$ 
-BEGIN 
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'lugares' AND column_name = 'actualizado_en'
-    ) THEN
-        ALTER TABLE lugares ADD COLUMN actualizado_en TIMESTAMP DEFAULT NOW();
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'fotos_lugares' AND column_name = 'actualizado_en'
-    ) THEN
-        ALTER TABLE fotos_lugares ADD COLUMN actualizado_en TIMESTAMP DEFAULT NOW();
-    END IF;
-END $$;
-
-
--- 🧹 Actualizar registros antiguos sin valor en actualizado_en
-UPDATE lugares SET actualizado_en = COALESCE(actualizado_en, creado_en, NOW());
-UPDATE fotos_lugares SET actualizado_en = COALESCE(actualizado_en, creado_en, NOW());
+-- Permisos
+GRANT ALL PRIVILEGES ON DATABASE tahiticc TO root;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO root;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO root;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO root;

@@ -1,4 +1,4 @@
-//modelos/experiencia.ts
+// modelos/experiencia.ts
 export interface Experiencia {
   id: string;
   url_foto: string;
@@ -6,18 +6,28 @@ export interface Experiencia {
   creado_en: Date;
   ruta_almacenamiento: string;
   estado: 'pendiente' | 'aprobado' | 'rechazado';
-  puntuacion_moderacion: number;
-  categorias_moderacion?: any;
+  
+  // ✅ NUEVOS CAMPOS DE MODERACIÓN
+  moderado: boolean;
+  puntuacion_texto: number;
+  puntuacion_imagen: number;
+  palabras_prohibidas_encontradas: string[];
+  categorias_imagen: any;
+  confianza_usuario: number;
+  aprobado_automatico: boolean;
+  motivo_rechazo?: string;
+  procesado_en?: Date;
+  
+  // Campos existentes
   contador_vistas: number;
   lugar_id?: string;
   ancho_imagen?: number;
   alto_imagen?: number;
   tamaño_archivo?: number;
   tipo_archivo?: string;
-  busqueda_segura_adulto?: string;
-  busqueda_segura_violencia?: string;
-  busqueda_segura_provocativo?: string;
-  banderas_moderacion_texto?: any;
+  ip_usuario: string;
+  hash_navegador: string;
+  actualizado_en: Date;
 }
 
 export interface ExperienciaRequest {

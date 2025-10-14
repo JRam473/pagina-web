@@ -1,8 +1,12 @@
 import { motion } from "framer-motion";
 import { Mountain, Utensils, Users, Sun } from "lucide-react";
 import { type FC, type JSX } from "react";
-//import BirdsAnimation from "@/animations/BirdsAnimation";
+import { forwardRef } from 'react';
+// 💡 Aquí importarías tus nuevas animaciones
 import FishAnimation from "../animations/FishAnimation";
+import CasseroleAnimation from "../animations/CasseroleAnimation";
+import CommunityAnimation from "../animations/CommunityAnimation";
+import TraditionsAnimation from "../animations/TraditionsAnimation";
 /* ============================
   1. Tipos y datos
 =========================== */
@@ -14,6 +18,7 @@ interface HighlightSectionProps {
   gradient?: string;
   align?: "left" | "right" | "center";
   stats?: {value: string; label: string}[];
+  backgroundAnimation?: JSX.Element; // 👈 Nuevo prop para la animación
 }
 
 interface StatsBlockProps {
@@ -39,7 +44,8 @@ const sections: HighlightSectionProps[] = [
       {value: "150+",
         label: "Lugares turísticos"
       },
-    ]
+    ],
+    backgroundAnimation: <FishAnimation count={10} />,
   },
   {
     title: "Gastronomía",
@@ -56,7 +62,8 @@ const sections: HighlightSectionProps[] = [
     align: "left",
     stats:[
       {value: "20+", label:"Platillos típicos"},
-    ]
+    ],
+    backgroundAnimation: <CasseroleAnimation count={20}/>,
   },
   {
     title: "Comunidad",
@@ -74,7 +81,8 @@ const sections: HighlightSectionProps[] = [
       {value: "2500+",
         label: "Habitantes"
       },
-    ]
+    ],
+    backgroundAnimation: <CommunityAnimation count={20} />,
   },
   {
     title: "Tradiciones",
@@ -92,7 +100,8 @@ const sections: HighlightSectionProps[] = [
       {value: "400+",
         label: "Años de historia"
       },
-    ]
+    ],
+  backgroundAnimation: <TraditionsAnimation count={8} />,
   },
 ];
 
@@ -137,6 +146,7 @@ const HighlightSection: FC<HighlightSectionProps> = ({
   gradient = "from-black/80 to-black/40",
   align = "center",
   stats,
+  backgroundAnimation, // 👈 Recibir el nuevo prop
 }) => {
   const alignment = align === "left" ? "items-start text-left" : align === "right" ? "items-end text-right" : "items-center text-center";
 
@@ -155,7 +165,9 @@ const HighlightSection: FC<HighlightSectionProps> = ({
         />
       {/* Overlay degradado */}
       <div className={`absolute inset-0 bg-gradient-to-t ${gradient} z-0`} />
-      <FishAnimation count={15} />
+
+      {backgroundAnimation}
+
       {/* Contenido */}
       <div className={`relative z-10 max-w-4xl mx-auto px-6 md:px-10 flex flex-col gap-6 ${alignment}`}>
         {/* Ícono con animación */}
@@ -201,9 +213,10 @@ const HighlightSection: FC<HighlightSectionProps> = ({
 /* ===========================
    3. Componente principal
 =========================== */
-export function HeroHighlightsSection() {
+export const HeroHighlightsSection = forwardRef<HTMLDivElement>((props, ref) => {
   return (
-    <div className="w-full">
+    // 3. Adjuntamos la 'ref' directamente al div principal de la sección
+    <div ref={ref} className="w-full">
       {sections.map((section, index) => (
         <HighlightSection
           key={index}
@@ -214,8 +227,12 @@ export function HeroHighlightsSection() {
           gradient={section.gradient}
           align={section.align}
           stats={section.stats}
+          backgroundAnimation={section.backgroundAnimation}
         />
       ))}
     </div>
   );
-}
+});
+
+// Buena práctica: Añadir un displayName para facilitar la depuración en las DevTools de React
+HeroHighlightsSection.displayName = 'HeroHighlightsSection';

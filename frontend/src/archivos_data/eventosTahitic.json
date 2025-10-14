@@ -1,0 +1,124 @@
+{
+  "events": [
+    {
+      "date": "24 de octubre al 2 de noviembre",
+      "title": "Día de Muertos: Altares que Respiran Recuerdos",
+      "description": "Camina entre aromas de copal y flores de cempasúchil mientras los altares iluminan la memoria de los ancestros...",
+      "details": [
+        "Ruta de Altares Comunitarios",
+        "Taller de Pan de Muerto",
+        "Narraciones en Náhuatl",
+        "Velada con Música Tradicional"
+      ],
+      "category": "Cultural",
+      "stamp": "dia-muertos",
+      "videoThumbnail": "/videos/calendario/imagenes/Dia-muertos.png",
+      "videoPreview": "/videos/calendario/videos/dia_de_muertos.mp4"
+    },
+    {
+      "date": "Semana Santa (marzo-abril)",
+      "title": "Semana Santa: El Silencio que Habla con Fe",
+      "description": "Siente el peso de la devoción en cada paso de las procesiones que recorren las veredas de Tahitic...",
+      "details": [
+        "Procesión del Silencio",
+        "Representación de la Pasión",
+        "Artesanía Religiosa"
+      ],
+      "category": "Religioso",
+      "stamp": "semana-santa",
+      "videoThumbnail": "/videos/calendario/imagenes/semana-santa.png",
+      "videoPreview": "/videos/calendario/videos/cascada_enamorados.mp4"
+    },
+    {
+      "date": "13 de julio",
+      "title": "Bodas Tradicionales: El Vínculo Sagrado de la Sierra",
+      "description": "Sé testigo de un ritual ancestral donde el amor se celebra con danzas, música y bendiciones comunitarias...",
+      "details": [
+        "Ceremonia Comunitaria",
+        "Vestimenta Ceremonial",
+        "Banquete Serrano"
+      ],
+      "category": "Ceremonial",
+      "stamp": "bodas-tradicionales",
+      "videoThumbnail": "/videos/calendario/imagenes/bodas.png",
+      "videoPreview": "/videos/calendario/videos/dia_de_muertos.mp4"
+    },
+    {
+      "date": "23 de abril al 5 de mayo",
+      "title": "Feria de la Sierra: Orgullo y Resistencia en Zacapoaxtla",
+      "description": "Vibra con los danzantes, los jinetes y los músicos que celebran la victoria del 5 de mayo con pasión serrana...",
+      "details": [
+        "Danza de los Quetzales y Santiagos",
+        "Feria del Pulque",
+        "Taller de Bordado Serrano",
+        "Exposición Ganadera"
+      ],
+      "category": "Feria",
+      "stamp": "feria-sierra",
+      "videoThumbnail": "/videos/calendario/imagenes/feria.png",
+      "videoPreview": "/videos/calendario/videos/cascada_enamorados.mp4"
+    },
+    {
+      "date": "Todo el año (mayor afluencia: noviembre-abril)",
+      "title": "Cascada de los Enamorados: El Susurro del Río Xochiateno",
+      "description": "Siente el rocío en tu piel mientras desciendes por veredas que te llevan a un rincón escondido de la sierra...",
+      "details": [
+        "Senderismo Guiado",
+        "Fotografía Natural",
+        "Picnic Serrano"
+      ],
+      "category": "Naturaleza",
+      "stamp": "cascada-enamorados",
+      "videoThumbnail": "/videos/calendario/imagenes/Cascada-enamorados.webp",
+      "videoPreview": "/videos/calendario/videos/dia_de_muertos.mp4"
+    },
+    {
+      "date": "Marzo a Día de Muertos (marzo-noviembre)",
+      "title": "De la Semilla al Altar: El Viaje Sagrado del Maíz",
+      "description": "Siente cómo la tierra despierta con la primavera, mientras los campos se llenan de vida y los rituales honran cada etapa del cultivo...",
+      "details": [
+        "12 de marzo – Atado del Carrizo",
+        "21 de marzo – Equinoccio de Primavera",
+        "3 de mayo – Día de la Santa Cruz",
+        "15 de mayo – San Isidro Labrador",
+        "Junio a agosto – Temporada de lluvias",
+        "Septiembre – Cosecha temprana",
+        "Octubre a noviembre – Cosecha principal y Día de Muertos"
+      ],
+      "category": "Agricultura",
+      "stamp": "ciclo-agricola",
+      "videoThumbnail": "/videos/calendario/imagenes/maiz.png",
+      "videoPreview": "/videos/calendario/videos/cascada_enamorados.mp4"
+    },
+    {
+      "date": "Todo el año (énfasis en lunas nuevas y llenas)",
+      "title": "Lunas y Estrellas: El Reloj Celeste del Agricultor",
+      "description": "Observa cómo los abuelos leen el cielo para decidir cuándo sembrar, regar o cosechar, en una danza milenaria entre tierra y cosmos...",
+      "details": [
+        "Luna Nueva – Siembra raíces y plantas de crecimiento bajo",
+        "Luna Llena – Cosecha y almacenamiento",
+        "Constelaciones visibles: Orión y Pléyades",
+        "Observación comunitaria con jóvenes"
+      ],
+      "category": "Astronomía",
+      "stamp": "lunas-estrellas",
+      "videoThumbnail": "/videos/calendario/imagenes/luna.png",
+      "videoPreview": "/videos/calendario/videos/dia_de_muertos.mp4"
+    },
+    {
+      "date": "Todo el año (énfasis en lunas nuevas y llenas)",
+      "title": "Lunas y Estrellas: El Reloj Celeste del Agricultor",
+      "description": "Observa cómo los abuelos leen el cielo para decidir cuándo sembrar, regar o cosechar, en una danza milenaria entre tierra y cosmos...",
+      "details": [
+        "Luna Nueva – Siembra raíces y plantas de crecimiento bajo",
+        "Luna Llena – Cosecha y almacenamiento",
+        "Constelaciones visibles: Orión y Pléyades",
+        "Observación comunitaria con jóvenes"
+      ],
+      "category": "Galaxias",
+      "stamp": "estrellas-lunas",
+      "videoThumbnail": "/videos/calendario/imagenes/luna.png",
+      "videoPreview": "/videos/calendario/videos/dia_de_muertos.mp4"
+    }
+  ]
+}

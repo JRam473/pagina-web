@@ -10,6 +10,8 @@ import {
 // App principal
 import App from './App.tsx';
 import { MinimalLayout } from './MinimalLayout';
+
+// Rutas
 import { HomePage } from './pages/HomePage';
 import { TourismSection } from './pages/TourismSection.tsx';
 import { CulturePage } from './pages/CulturePage';
@@ -18,6 +20,9 @@ import { GallerySection } from './pages/GallerySection.tsx';
 import { ContactSection } from './ContactSection';
 import { OAuthCallback } from './pages/OAuthCallback';
 import { Login } from './pages/Login';
+import { CalendarPage } from './pages/CalendarPage';
+import { GastronomyPage } from './pages/GastronomyPage.tsx';
+
 import { AuthProvider } from '@/hooks/useAuth'; 
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ProfilePage } from './pages/ProfilePage';
@@ -29,7 +34,7 @@ const router = createBrowserRouter([
   {
     path: '/',
     element: <App />,
-    errorElement: <SilentRouteError />, // 👈 Recarga silenciosa
+    errorElement: <SilentRouteError />,
     children: [
       { index: true, element: <HomePage /> },
       { path: 'turismo', element: <TourismSection /> },
@@ -64,12 +69,27 @@ const router = createBrowserRouter([
     ),
   },
   {
+    path: '/calendario-cultural',
+    element: (
+      <MinimalLayout>
+        <CalendarPage />
+      </MinimalLayout>
+    )
+  },
+  {
+    path: '/section-gastronomia',
+    element: (
+      <MinimalLayout>
+        <GastronomyPage />
+      </MinimalLayout>
+    )
+  },
+  {
     path: '/oauth-callback',
     element: <OAuthCallback />,
   },
 ]);
 
-// Renderizar con protección silenciosa
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error('No se encontró el elemento root');
@@ -86,3 +106,4 @@ root.render(
     </SilentErrorBoundary>
   </StrictMode>
 );
+// Fin de main.tsx
