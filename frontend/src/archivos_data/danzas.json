@@ -1,0 +1,94 @@
+{
+  "dances": [
+    {
+      "id": 1,
+      "name": "Danza del Tigre",
+      "description": "Un ritual que simboliza la fuerza y el espíritu indomable de la naturaleza.",
+      "image": "/videos/calendario/imagenes/voladores.webp",
+      "video": "/videos/calendario/videos/voladores.mp4",
+      "details": {
+        "story": "Realizada en festivales patronales, esta danza invoca el poder del jaguar, guardián de la selva y símbolo de poder en las culturas prehispánicas. Los danzantes imitan sus movimientos con una energía cautivadora.",
+        "elements": [
+          { "icon": "Shirt", "title": "Vestimenta", "text": "Máscaras de madera tallada y trajes que simulan la piel del jaguar." },
+          { "icon": "Music", "title": "Música", "text": "Ritmos de tambor y flauta que marcan los pasos felinos." },
+          { "icon": "Sunrise", "title": "Simbolismo", "text": "Conexión con la tierra, la fuerza y el ciclo de la vida." }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "Danza de la Pluma",
+      "description": "Deslumbra con su vestimenta ceremonial y movimientos elegantes.",
+      "image": "/videos/calendario/imagenes/voladores.webp",
+      "video": "URL_A_TU_VIDEO_CORTO_2.mp4",
+      "details": {
+        "story": "Narra la historia de la conquista desde una perspectiva local. A pesar de su belleza, es una danza con una profunda carga histórica y de resistencia cultural. El enorme penacho de plumas es su rasgo más distintivo.",
+        "elements": [
+          { "icon": "Feather", "title": "Vestimenta", "text": "Impresionantes penachos de plumas de guacamayo y espejos." },
+          { "icon": "Wind", "title": "Movimiento", "text": "Giros y saltos que requieren una gran destreza física." },
+          { "icon": "BookOpen", "title": "Simbolismo", "text": "Memoria histórica, dualidad y sincretismo cultural." }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": "Danza del Venado",
+      "description": "Honra la conexión espiritual entre el hombre y el mundo animal.",
+      "image": "URL_A_IMAGEN_DE_PORTADA_DEL_VIDEO_3.jpg",
+      "video": "URL_A_TU_VIDEO_CORTO_3.mp4",
+      "details": {
+        "story": "Esta danza dramatiza la cacería del venado, un animal sagrado. Es un rito de agradecimiento a la naturaleza por su sustento, mostrando respeto por la vida que se toma.",
+        "elements": [
+          { "icon": "Leaf", "title": "Vestimenta", "text": "Tocados que simulan la cornamenta del venado y sonajas de tenábari." },
+          { "icon": "Footprints", "title": "Movimiento", "text": "Pasos ágiles y sigilosos que imitan al animal en la naturaleza." },
+          { "icon": "Heart", "title": "Simbolismo", "text": "Respeto por la naturaleza, el ciclo de la vida y la muerte." }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "name": "Danza del Venado 1",
+      "description": "Honra la conexión espiritual entre el hombre y el mundo animal.",
+      "image": "URL_A_IMAGEN_DE_PORTADA_DEL_VIDEO_3.jpg",
+      "video": "URL_A_TU_VIDEO_CORTO_3.mp4",
+      "details": {
+        "story": "Esta danza dramatiza la cacería del venado, un animal sagrado. Es un rito de agradecimiento a la naturaleza por su sustento, mostrando respeto por la vida que se toma.",
+        "elements": [
+          { "icon": "Leaf", "title": "Vestimenta", "text": "Tocados que simulan la cornamenta del venado y sonajas de tenábari." },
+          { "icon": "Footprints", "title": "Movimiento", "text": "Pasos ágiles y sigilosos que imitan al animal en la naturaleza." },
+          { "icon": "Heart", "title": "Simbolismo", "text": "Respeto por la naturaleza, el ciclo de la vida y la muerte." }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "name": "Danza del Venado 2",
+      "description": "Honra la conexión espiritual entre el hombre y el mundo animal.",
+      "image": "URL_A_IMAGEN_DE_PORTADA_DEL_VIDEO_3.jpg",
+      "video": "URL_A_TU_VIDEO_CORTO_3.mp4",
+      "details": {
+        "story": "Esta danza dramatiza la cacería del venado, un animal sagrado. Es un rito de agradecimiento a la naturaleza por su sustento, mostrando respeto por la vida que se toma.",
+        "elements": [
+          { "icon": "Leaf", "title": "Vestimenta", "text": "Tocados que simulan la cornamenta del venado y sonajas de tenábari." },
+          { "icon": "Footprints", "title": "Movimiento", "text": "Pasos ágiles y sigilosos que imitan al animal en la naturaleza." },
+          { "icon": "Heart", "title": "Simbolismo", "text": "Respeto por la naturaleza, el ciclo de la vida y la muerte." }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "name": "Danza del Venado 3",
+      "description": "Honra la conexión espiritual entre el hombre y el mundo animal.",
+      "image": "/videos/calendario/imagenes/maiz.png",
+      "video": "/videos/calendario/videos/cascada_enamorados.mp4",
+      "details": {
+        "story": "Esta danza dramatiza la cacería del venado, un animal sagrado. Es un rito de agradecimiento a la naturaleza por su sustento, mostrando respeto por la vida que se toma.",
+        "elements": [
+          { "icon": "Leaf", "title": "Vestimenta", "text": "Tocados que simulan la cornamenta del venado y sonajas de tenábari." },
+          { "icon": "Footprints", "title": "Movimiento", "text": "Pasos ágiles y sigilosos que imitan al animal en la naturaleza." },
+          { "icon": "Heart", "title": "Simbolismo", "text": "Respeto por la naturaleza, el ciclo de la vida y la muerte." }
+        ]
+      }
+    }
+  ]
+}

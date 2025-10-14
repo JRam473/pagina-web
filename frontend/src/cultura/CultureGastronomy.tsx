@@ -1,7 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
-import { Utensils, Leaf, Star, Calendar, Sparkles, Heart, MousePointer2 } from 'lucide-react';
+import { Utensils, Leaf, Star, Calendar, Sparkles, Heart, MousePointer2, ArrowDown, Cookie } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
 
 type Dish = {
   name: string;
@@ -263,14 +264,35 @@ export function CultureGastronomySection() {
         </div>
 
         {/* Call to action */}
-        <div className="text-center mt-16">
-          <a
-            href="#"
-            className="inline-flex items-center space-x-4 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white px-8 py-4 rounded-full font-semibold shadow-2xl transform hover:scale-105 transition-all duration-300 shadow-culture"
+        <div className="text-center mt-20 relative">
+        {/* Efecto de resplandor animado detrás del botón */}
+        <motion.div
+          className="absolute inset-0 flex justify-center"
+          animate={{ opacity: [0.4, 0.8, 0.4], scale: [1, 1.05, 1] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <div className="w-64 h-16 bg-gradient-to-r from-orange-400/30 via-amber-300/20 to-orange-400/30 rounded-full blur-3xl"></div>
+        </motion.div>
+
+        {/* Botón principal */}
+        <motion.a
+          href="/section-gastronomia"
+          whileHover={{
+            scale: 1.08,
+            boxShadow: "0 0 25px rgba(255, 140, 0, 0.6)",
+          }}
+          whileTap={{ scale: 0.95 }}
+          className="relative inline-flex items-center gap-3 bg-gradient-to-r from-orange-500 to-amber-600 text-white text-lg font-semibold px-10 py-4 rounded-full shadow-lg transition-all duration-300"
+        >
+          Explora Nuestra Cocina
+          <motion.span
+            animate={{ y: [0, -6, 0] }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
           >
-            Explora Nuestra Cocina
-          </a>
-        </div>
+            <Cookie className="w-6 h-6" />
+          </motion.span>
+        </motion.a>
+      </div>
       </div>
     </section>
   );

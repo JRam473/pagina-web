@@ -1,16 +1,18 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
-import { Users, Music, Palette, Book, Crown, Sparkles, Heart, Calendar } from 'lucide-react';
+import { Users, Music, Palette, Book, Crown, Sparkles, Heart, Calendar, ArrowDown, Star } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export function CultureSection() {
   const culturalAspects = [
     {
       icon: Music,
-      title: "Música Tradicional",
-      description: "Ritmos ancestrales que narran la historia de nuestro pueblo y mantienen vivas nuestras tradiciones más profundas.",
-      details: ["Instrumentos autóctonos", "Festivales musicales", "Grupos folklóricos locales"],
-      gradient: "from-orange-400 to-red-500",
-      bgColor: "bg-gradient-to-br from-orange-50 to-red-50"
+      title: "Danzas Tradicionales",
+      description: "Expresiones culturales que transmiten la historia, la espiritualidad y la identidad de San Juan Tahitic a través del movimiento y el ritmo.",
+      details: ["Coreografías ancestrales", "Vestimenta típica", "Fiestas patronales y rituales"],
+      gradient: "from-purple-400 to-pink-500",
+      bgColor: "bg-gradient-to-br from-purple-50 to-pink-50",
+      scrollTarget: "danzas", // 👈 destino del scroll
     },
     {
       icon: Palette,
@@ -18,23 +20,27 @@ export function CultureSection() {
       description: "Creaciones únicas elaboradas por artesanos locales con técnicas transmitidas de generación en generación.",
       details: ["Textiles tradicionales", "Cerámica artesanal", "Tallado en madera"],
       gradient: "from-amber-400 to-orange-600",
-      bgColor: "bg-gradient-to-br from-amber-50 to-orange-50"
+      bgColor: "bg-gradient-to-br from-amber-50 to-orange-50",
+      scrollTarget: "section-artesanias-locales", // 👈 destino del scroll
     },
     {
       icon: Book,
-      title: "Historia y Leyendas",
-      description: "Relatos que forman parte del patrimonio oral de nuestra comunidad y definen nuestra identidad cultural.",
-      details: ["Leyendas ancestrales", "Sitios históricos", "Tradición oral"],
+      title: "Idioma Náhuatl",
+      description: "Conoce el idioma náhuatl: origen, uso actual y expresiones comunes en San Juan Tahitic.",
+      details: ["Frases en náhuatl", "Lengua viva", "Identidad cultural"],
       gradient: "from-yellow-400 to-amber-600",
-      bgColor: "bg-gradient-to-br from-yellow-50 to-amber-50"
+      bgColor: "bg-gradient-to-br from-yellow-50 to-amber-50",
+      scrollTarget: "idioma", // 👈 destino del scroll
+
     },
     {
       icon: Users,
-      title: "Festividades",
-      description: "Celebraciones comunitarias que fortalecen los lazos sociales y preservan nuestras costumbres más queridas.",
-      details: ["Fiestas patronales", "Celebraciones estacionales", "Encuentros culturales"],
+      title: "Gastronomía",
+      description: "Explora los sabores tradicionales de San Juan Tahitic: ingredientes locales, platillos típicos y cocina artesanal.",
+      details: ["Comida típica", "Ingredientes regionales", "Recetas tradicionales"],
       gradient: "from-rose-400 to-pink-600",
-      bgColor: "bg-gradient-to-br from-rose-50 to-pink-50"
+      bgColor: "bg-gradient-to-br from-rose-50 to-pink-50",
+      scrollTarget: "gastronomia", // 👈 destino del scroll
     }
   ];
 
@@ -45,31 +51,21 @@ export function CultureSection() {
     { icon: Heart, number: "100%", label: "Tradición Viva", color: "text-red-600" }
   ];
 
+  const handleSmoothScroll = (targetId: string) => {
+    document.getElementById(targetId)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
   return (
-    <section id="cultura" className="py-24 bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 relative overflow-hidden">
+    <section id="cultura-section" className="py-24 bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 relative overflow-hidden">
       {/* Elementos decorativos de fondo */}
       <div className="absolute top-20 right-10 w-40 h-40 bg-orange-200/30 rounded-full blur-3xl animate-float"></div>
       <div className="absolute bottom-20 left-10 w-32 h-32 bg-amber-200/30 rounded-full blur-3xl animate-float" style={{ animationDelay: '1.5s' }}></div>
       <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-rose-200/20 rounded-full blur-3xl animate-float" style={{ animationDelay: '0.5s' }}></div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-        <div className="text-center mb-20">
-          <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-orange-100 to-amber-100 px-4 py-2 rounded-full mb-6">
-            <Sparkles className="h-5 w-5 text-orange-600" />
-            <span className="text-orange-800 font-medium">Herencia Cultural</span>
-          </div>
-          
-          <h2 className="text-5xl lg:text-6xl font-bold text-gray-900 mb-6">
-            Patrimonio{' '}
-            <span className="bg-gradient-to-r from-orange-600 via-amber-500 to-red-600 bg-clip-text text-transparent">
-              Cultural
-            </span>
-          </h2>
-          <p className="text-xl text-gray-700 max-w-4xl mx-auto leading-relaxed">
-            Nuestra rica herencia cultural es el alma de San Juan Tahitic. Descubre las tradiciones, 
-            arte y expresiones que han dado forma a nuestra identidad comunitaria a lo largo de los siglos.
-          </p>
-        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-20">
           {culturalAspects.map((aspect, index) => (
@@ -115,11 +111,64 @@ export function CultureSection() {
                 <div className="mt-6 h-2 bg-gray-100 rounded-full overflow-hidden">
                   <div className={`h-full bg-gradient-to-r ${aspect.gradient} transform -translate-x-full group-hover:translate-x-0 transition-transform duration-700 shadow-lg`}></div>
                 </div>
+                {/* 👇 Botón animado de scroll suave */}
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => handleSmoothScroll(aspect.scrollTarget)}
+                  className="mt-6 inline-flex items-center gap-2 bg-orange-600 text-white font-semibold px-5 py-2.5 rounded-full shadow-md hover:bg-orange-600 transition-colors"
+                >
+                  Explorar más
+                  <ArrowDown className="w-5 h-5" />
+                </motion.button>
               </CardContent>
             </Card>
           ))}
         </div>
+        {/* Botón destacado hacia el calendario cultural */}
+      <div className="flex justify-center my-16 relative">
+        {/* Efecto luminoso de fondo */}
+        <motion.div
+          className="absolute inset-0 bg-gradient-to-r from-orange-400/30 via-amber-300/20 to-orange-400/30 rounded-full blur-3xl"
+          animate={{ opacity: [0.4, 0.8, 0.4] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        />
 
+        {/* Botón principal MEJORADO */}
+      <motion.a
+        href="/calendario-cultural"
+        // Animación del botón al pasar el ratón
+        whileHover={{
+          scale: 1.08,
+          boxShadow: "0px 0px 35px rgba(255,140,0,0.9)", // Sombra más intensa
+          backgroundColor: "#ea580c",
+        }}
+        // Animación al hacer clic/tocar (más rápido y perceptible)
+        whileTap={{ scale: 0.95 }}
+        className="relative z-10 inline-flex items-center gap-6 bg-orange-600 text-white text-xl font-bold px-12 py-5 rounded-full shadow-2xl transition-all duration-300 overflow-hidden group"
+      >
+        {/* EFECTO DE BRILLO DESLIZANTE (Añade esta sección) */}
+        {/* Este span será el "reflejo" que se desliza */}
+        <motion.span
+          initial={{ x: "-100%" }}
+          whileHover={{ x: "100%" }}
+          transition={{ duration: 0.8, ease: "easeInOut" }}
+          className="absolute inset-0 w-full h-full bg-white opacity-20 transform -skew-x-12 pointer-events-none"
+        />
+
+        {/* Texto y flecha (Asegúrate de que el texto tenga z-index para estar por encima del brillo) */}
+        <span className="relative z-20">Descubre nuestras festividades</span>
+        
+        <motion.span
+        className="relative z-20" // Asegura que la flecha también esté por encima
+        animate={{ y: [0, -6, 0] }}
+        transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+      >
+        {/* Asegúrate de usar la clase 'text-2xl' o similar en tu icono si quieres que crezca con el texto. */}
+        <Star className="w-7 h-7" />
+      </motion.span>
+        </motion.a>
+      </div>
         {/* Sección de preservación cultural */}
         <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 lg:p-16 shadow-culture border border-orange-100 relative overflow-hidden">
           {/* Decoración de fondo */}
@@ -141,7 +190,7 @@ export function CultureSection() {
               <div className="absolute top-6 left-6 bg-white/95 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl">
                 <span className="text-orange-700 font-semibold text-sm flex items-center">
                   <Crown className="h-4 w-4 mr-1" />
-                  Patrimonio UNESCO
+                  Patrimonio
                 </span>
               </div>
               
@@ -204,17 +253,6 @@ export function CultureSection() {
           </div>
         </div>
 
-        {/* Call to action cultural */}
-        <div className="text-center mt-16">
-          <div className="inline-flex items-center space-x-4">
-            <button className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white px-8 py-4 rounded-full font-semibold shadow-2xl transform hover:scale-105 transition-all duration-300 shadow-culture">
-              Explora Nuestra Cultura
-            </button>
-            <button className="border-2 border-orange-500 text-orange-700 hover:bg-orange-50 px-8 py-4 rounded-full font-semibold transition-all duration-300 transform hover:scale-105">
-              Calendario Cultural
-            </button>
-          </div>
-        </div>
       </div>
     </section>
   );
