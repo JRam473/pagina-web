@@ -1,4 +1,4 @@
-// hooks/useRouteCalculator.ts
+// hooks/useRouteCalculator.ts - VERSIÓN CORREGIDA
 import { useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -9,7 +9,7 @@ interface Location {
 }
 
 type TravelMode = 'DRIVING' | 'WALKING' | 'BICYCLING';
-type RouteType = 'direct' | 'via_transport' | 'current_to_transport' | 'current_to_direct';
+type RouteType = 'origin_to_destination' | 'current_to_terminal' | 'terminal_to_destination' | 'current_to_destination';
 
 interface RouteSegment {
   distance: string;
@@ -22,7 +22,7 @@ interface RouteSegment {
   endLocation: Location;
 }
 
-interface CalculatedRoute {
+export interface CalculatedRoute {
   segments: RouteSegment[];
   totalDistance: string;
   totalDuration: string;
@@ -34,10 +34,58 @@ export const useRouteCalculator = () => {
   const [userLocation, setUserLocation] = useState<Location | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [hasLocationPermission, setHasLocationPermission] = useState<boolean>(false);
   const { toast } = useToast();
 
-  // ✅ Obtener ubicación actual del usuario con permisos
-  const getUserCurrentLocation = useCallback((): Promise<Location> => {
+    // ✅ Reverse geocoding para obtener dirección desde coordenadas
+  const reverseGeocode = useCallback(async (lat: number, lng: number): Promise<string> => {
+    if (!window.google) {
+      return 'Ubicación actual';
+    }
+
+    try {
+      const geocoder = new window.google.maps.Geocoder();
+      
+      return new Promise((resolve) => {
+        geocoder.geocode(
+          { location: { lat, lng } }, 
+          (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatus) => {
+            if (status === 'OK' && results && results[0]) {
+              resolve(results[0].formatted_address);
+            } else {
+              resolve('Ubicación actual');
+            }
+          }
+        );
+      });
+    } catch {
+      return 'Ubicación actual';
+    }
+  }, []);
+
+  // ✅ NUEVO: Verificar si ya tenemos permisos de ubicación
+  const checkLocationPermission = useCallback(async (): Promise<boolean> => {
+    if (!navigator.permissions) {
+      return false;
+    }
+    
+    try {
+      const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+      return permissionStatus.state === 'granted';
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // ✅ NUEVO: Inicializar con permisos existentes
+  const initializeLocationPermissions = useCallback(async () => {
+    const hasPermission = await checkLocationPermission();
+    setHasLocationPermission(hasPermission);
+    return hasPermission;
+  }, [checkLocationPermission]);
+
+  // ✅ MODIFICADO: Obtener ubicación con manejo mejorado de permisos
+  const getUserCurrentLocation = useCallback(async (): Promise<Location> => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
         reject(new Error('La geolocalización no es soportada por este navegador'));
@@ -68,10 +116,12 @@ export const useRouteCalculator = () => {
             };
 
             setUserLocation(location);
+            setHasLocationPermission(true);
             setIsGettingLocation(false);
             resolve(location);
-          } catch (error) {
+          } catch {
             // Si falla el reverse geocoding, usar coordenadas con dirección genérica
+            const { latitude, longitude } = position.coords;
             const location: Location = {
               address: 'Ubicación actual',
               lat: latitude,
@@ -79,17 +129,20 @@ export const useRouteCalculator = () => {
             };
 
             setUserLocation(location);
+            setHasLocationPermission(true);
             setIsGettingLocation(false);
             resolve(location);
           }
         },
-        (error) => {
+        (error: GeolocationPositionError) => {
           setIsGettingLocation(false);
+          setHasLocationPermission(false);
+          
           let errorMessage = 'No se pudo obtener la ubicación actual. ';
           
           switch (error.code) {
             case error.PERMISSION_DENIED:
-              errorMessage += 'Permiso de ubicación denegado. Por favor, habilita los permisos de ubicación en tu navegador.';
+              errorMessage += 'Permiso de ubicación denegado.';
               break;
             case error.POSITION_UNAVAILABLE:
               errorMessage += 'Información de ubicación no disponible.';
@@ -107,30 +160,47 @@ export const useRouteCalculator = () => {
         options
       );
     });
+  }, [reverseGeocode]);
+
+
+
+
+
+
+
+
+  // ✅ Formatear duración
+  const formatDuration = useCallback((seconds: number): string => {
+    if (seconds >= 3600) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.round((seconds % 3600) / 60);
+      return `${hours} h ${minutes} min`;
+    } else {
+      return `${Math.round(seconds / 60)} min`;
+    }
   }, []);
 
-  // ✅ Reverse geocoding para obtener dirección desde coordenadas
-  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
-    if (!window.google) {
-      return 'Ubicación actual';
+  // ✅ Formatear distancia
+  const formatDistance = useCallback((meters: number): string => {
+    if (meters >= 1000) {
+      return `${(meters / 1000).toFixed(1)} km`;
+    } else {
+      return `${Math.round(meters)} m`;
     }
+  }, []);
 
-    try {
-      const geocoder = new window.google.maps.Geocoder();
-      
-      return new Promise((resolve) => {
-        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-          if (status === 'OK' && results && results[0]) {
-            resolve(results[0].formatted_address);
-          } else {
-            resolve('Ubicación actual');
-          }
-        });
-      });
-    } catch (error) {
-      return 'Ubicación actual';
-    }
-  };
+  // ✅ Calcular distancia entre dos puntos (fórmula Haversine)
+  const calculateDistance = useCallback((point1: Location, point2: Location): number => {
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = (point2.lat - point1.lat) * Math.PI / 180;
+    const dLon = (point2.lng - point1.lng) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(point1.lat * Math.PI / 180) * Math.cos(point2.lat * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c * 1000; // Retornar en metros
+  }, []);
 
   // ✅ Calcular ruta entre dos puntos
   const calculateRoute = useCallback(async (
@@ -152,45 +222,48 @@ export const useRouteCalculator = () => {
         provideRouteAlternatives: false
       };
 
-      directionsService.route(request, (result, status) => {
-        if (status === 'OK' && result?.routes[0]?.legs) {
-          const legs = result.routes[0].legs;
-          
-          const segments: RouteSegment[] = legs.map((leg: any) => ({
-            distance: leg.distance?.text || '0 km',
-            duration: leg.duration?.text || '0 min',
-            mode: travelMode,
-            instructions: `De ${leg.start_address} a ${leg.end_address}`,
-            distanceMeters: leg.distance?.value || 0,
-            durationSeconds: leg.duration?.value || 0,
-            startLocation: {
-              address: leg.start_address,
-              lat: leg.start_location.lat(),
-              lng: leg.start_location.lng()
-            },
-            endLocation: {
-              address: leg.end_address,
-              lat: leg.end_location.lat(),
-              lng: leg.end_location.lng()
-            }
-          }));
+      directionsService.route(
+        request, 
+        (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
+          if (status === 'OK' && result?.routes[0]?.legs) {
+            const legs = result.routes[0].legs;
+            
+            const segments: RouteSegment[] = legs.map((leg: google.maps.DirectionsLeg) => ({
+              distance: leg.distance?.text || '0 km',
+              duration: leg.duration?.text || '0 min',
+              mode: travelMode,
+              instructions: `De ${leg.start_address} a ${leg.end_address}`,
+              distanceMeters: leg.distance?.value || 0,
+              durationSeconds: leg.duration?.value || 0,
+              startLocation: {
+                address: leg.start_address,
+                lat: leg.start_location.lat(),
+                lng: leg.start_location.lng()
+              },
+              endLocation: {
+                address: leg.end_address,
+                lat: leg.end_location.lat(),
+                lng: leg.end_location.lng()
+              }
+            }));
 
-          const totalDistanceMeters = segments.reduce((sum, seg) => sum + seg.distanceMeters, 0);
-          const totalDurationSeconds = segments.reduce((sum, seg) => sum + seg.durationSeconds, 0);
+            const totalDistanceMeters = segments.reduce((sum, seg) => sum + seg.distanceMeters, 0);
+            const totalDurationSeconds = segments.reduce((sum, seg) => sum + seg.durationSeconds, 0);
 
-          resolve({
-            segments,
-            totalDistance: formatDistance(totalDistanceMeters),
-            totalDuration: formatDuration(totalDurationSeconds),
-            totalDistanceMeters,
-            totalDurationSeconds
-          });
-        } else {
-          reject(new Error(`Error calculando ruta: ${status}`));
+            resolve({
+              segments,
+              totalDistance: formatDistance(totalDistanceMeters),
+              totalDuration: formatDuration(totalDurationSeconds),
+              totalDistanceMeters,
+              totalDurationSeconds
+            });
+          } else {
+            reject(new Error(`Error calculando ruta: ${status}`));
+          }
         }
-      });
+      );
     });
-  }, []);
+  }, [formatDistance, formatDuration]);
 
   // ✅ Calcular ruta compleja con múltiples segmentos
   const calculateComplexRoute = useCallback(async (
@@ -219,17 +292,38 @@ export const useRouteCalculator = () => {
       totalDistanceMeters,
       totalDurationSeconds
     };
-  }, [calculateRoute]);
+  }, [calculateRoute, formatDistance, formatDuration]);
 
-  // ✅ Determinar el mejor tipo de ruta basado en la ubicación del usuario
+
+
+   // ✅ NUEVO: Manejar respuesta del diálogo de permisos
+  const handlePermissionResponse = useCallback(async (granted: boolean) => {
+    if (granted) {
+      try {
+        const location = await getUserCurrentLocation();
+        setHasLocationPermission(true);
+        return location;
+      } catch (error) {
+        setHasLocationPermission(false);
+        throw error;
+      }
+    } else {
+      setHasLocationPermission(false);
+      throw new Error('Permiso de ubicación denegado por el usuario');
+    }
+  }, [getUserCurrentLocation]);
+
+  // ✅ MODIFICADO: Determinar ruta óptima mejorada
   const determineOptimalRoute = useCallback((
     userLoc: Location | null,
     origin: Location,
     destination: Location,
-    transportBase: Location
+    transportBase: Location,
+    hasPermission: boolean
   ): RouteType => {
-    if (!userLoc) {
-      return 'via_transport'; // Ruta por defecto sin ubicación del usuario
+    // Si no tenemos permisos o no hay ubicación del usuario, usar ruta por defecto
+    if (!hasPermission || !userLoc) {
+      return 'terminal_to_destination'; // Ruta por defecto sin ubicación del usuario
     }
 
     // Calcular distancias aproximadas
@@ -237,59 +331,41 @@ export const useRouteCalculator = () => {
     const distanceToTransport = calculateDistance(userLoc, transportBase);
     const distanceToDestination = calculateDistance(userLoc, destination);
 
-    // Lógica para determinar la mejor ruta
-    if (distanceToOrigin < 5) { // Menos de 5km del origen
-      return 'direct';
-    } else if (distanceToTransport < 10) { // Menos de 10km de la terminal
-      return 'via_transport';
-    } else if (distanceToDestination < 15) { // Cerca del destino
-      return 'current_to_direct';
+    // Lógica mejorada para determinar la mejor ruta
+    if (distanceToTransport < 2000) { // Menos de 2km de la terminal
+      return 'terminal_to_destination';
+    } else if (distanceToOrigin < 1000) { // Menos de 1km del origen
+      return 'origin_to_destination';
+    } else if (distanceToDestination < 5000) { // Menos de 5km del destino
+      return 'current_to_destination';
+    } else if (distanceToTransport < 10000) { // Menos de 10km de la terminal
+      return 'current_to_terminal';
     } else {
-      return 'current_to_transport'; // Ruta desde ubicación actual
+      // Si está lejos de todo, usar la opción más conveniente
+      const distances = {
+        'terminal_to_destination': distanceToTransport,
+        'origin_to_destination': distanceToOrigin,
+        'current_to_destination': distanceToDestination,
+        'current_to_terminal': distanceToTransport
+      };
+      
+      return Object.entries(distances).reduce((best, [route, distance]) => 
+        distance < distances[best as keyof typeof distances] ? route : best
+      ) as RouteType;
     }
-  }, []);
-
-  // ✅ Calcular distancia entre dos puntos (fórmula Haversine)
-  const calculateDistance = (point1: Location, point2: Location): number => {
-    const R = 6371; // Radio de la Tierra en km
-    const dLat = (point2.lat - point1.lat) * Math.PI / 180;
-    const dLon = (point2.lng - point1.lng) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(point1.lat * Math.PI / 180) * Math.cos(point2.lat * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-
-  // ✅ Formatear duración
-  const formatDuration = (seconds: number): string => {
-    if (seconds >= 3600) {
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.round((seconds % 3600) / 60);
-      return `${hours} h ${minutes} min`;
-    } else {
-      return `${Math.round(seconds / 60)} min`;
-    }
-  };
-
-  // ✅ Formatear distancia
-  const formatDistance = (meters: number): string => {
-    if (meters >= 1000) {
-      return `${(meters / 1000).toFixed(1)} km`;
-    } else {
-      return `${meters} m`;
-    }
-  };
+  }, [calculateDistance]);
 
   return {
     userLocation,
     isGettingLocation,
     locationError,
+    hasLocationPermission,
+    handlePermissionResponse,
     getUserCurrentLocation,
     calculateRoute,
     calculateComplexRoute,
     determineOptimalRoute,
+    initializeLocationPermissions,
     formatDuration,
     formatDistance
   };
