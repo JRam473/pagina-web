@@ -1,6 +1,6 @@
 // components/Places.tsx - VERSIÓN MODIFICADA
 import { ImageGalleryModal } from '@/components/galeria/ImageGalleryModal';
-import { MapRouteViewer } from '@/components/MapRouteViewer'; // ✅ NUEVO IMPORT
+import { MapRouteViewer } from '@/components/MapRouteViewer/MapRouteViewer'; // ✅ NUEVO IMPORT
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { TermsAndConditionsDialog } from '@/components/TermsAndConditionsDialog'; 

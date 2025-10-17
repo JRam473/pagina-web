@@ -1,17 +1,17 @@
-// hooks/useRouteCalculator.ts - VERSIÓN CORREGIDA
+// hooks/useRouteCalculator.ts - VERSIÓN COMPLETAMENTE CORREGIDA
 import { useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
-interface Location {
+export interface Location {
   address: string;
   lat: number;
   lng: number;
 }
 
-type TravelMode = 'DRIVING' | 'WALKING' | 'BICYCLING';
-type RouteType = 'origin_to_destination' | 'current_to_terminal' | 'terminal_to_destination' | 'current_to_destination';
+export type TravelMode = 'DRIVING' | 'WALKING' | 'BICYCLING';
+export type RouteType = 'via_transport_1' | 'via_transport_2' | 'current_to_direct' | 'current_to_transport';
 
-interface RouteSegment {
+export interface RouteSegment {
   distance: string;
   duration: string;
   mode: TravelMode;
@@ -35,9 +35,11 @@ export const useRouteCalculator = () => {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [hasLocationPermission, setHasLocationPermission] = useState<boolean>(false);
+  
+  // ✅ CORREGIDO: toast se usa en las funciones que se exportan
   const { toast } = useToast();
 
-    // ✅ Reverse geocoding para obtener dirección desde coordenadas
+  // ✅ Reverse geocoding para obtener dirección desde coordenadas
   const reverseGeocode = useCallback(async (lat: number, lng: number): Promise<string> => {
     if (!window.google) {
       return 'Ubicación actual';
@@ -63,28 +65,28 @@ export const useRouteCalculator = () => {
     }
   }, []);
 
-  // ✅ NUEVO: Verificar si ya tenemos permisos de ubicación
+  // ✅ Verificar si ya tenemos permisos de ubicación
   const checkLocationPermission = useCallback(async (): Promise<boolean> => {
     if (!navigator.permissions) {
       return false;
     }
     
     try {
-      const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+      const permissionStatus = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
       return permissionStatus.state === 'granted';
     } catch {
       return false;
     }
   }, []);
 
-  // ✅ NUEVO: Inicializar con permisos existentes
+  // ✅ Inicializar con permisos existentes
   const initializeLocationPermissions = useCallback(async () => {
     const hasPermission = await checkLocationPermission();
     setHasLocationPermission(hasPermission);
     return hasPermission;
   }, [checkLocationPermission]);
 
-  // ✅ MODIFICADO: Obtener ubicación con manejo mejorado de permisos
+  // ✅ Obtener ubicación con manejo mejorado de permisos
   const getUserCurrentLocation = useCallback(async (): Promise<Location> => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
@@ -161,13 +163,6 @@ export const useRouteCalculator = () => {
       );
     });
   }, [reverseGeocode]);
-
-
-
-
-
-
-
 
   // ✅ Formatear duración
   const formatDuration = useCallback((seconds: number): string => {
@@ -294,66 +289,125 @@ export const useRouteCalculator = () => {
     };
   }, [calculateRoute, formatDistance, formatDuration]);
 
-
-
-   // ✅ NUEVO: Manejar respuesta del diálogo de permisos
+  // ✅ CORREGIDO: Manejar respuesta del diálogo de permisos CON toast
   const handlePermissionResponse = useCallback(async (granted: boolean) => {
     if (granted) {
       try {
         const location = await getUserCurrentLocation();
         setHasLocationPermission(true);
+        
+        // ✅ USAR toast aquí
+        toast({
+          title: 'Ubicación obtenida',
+          description: 'Se ha obtenido tu ubicación actual correctamente',
+          variant: 'default',
+        });
+        
         return location;
       } catch (error) {
         setHasLocationPermission(false);
+        
+        // ✅ USAR toast aquí también
+        toast({
+          title: 'Error de ubicación',
+          description: 'No se pudo obtener la ubicación después de conceder permisos',
+          variant: 'destructive',
+        });
+        
         throw error;
       }
     } else {
       setHasLocationPermission(false);
+      
+      // ✅ USAR toast aquí también
+      toast({
+        title: 'Permisos denegados',
+        description: 'Usando rutas desde puntos fijos',
+        variant: 'default',
+      });
+      
       throw new Error('Permiso de ubicación denegado por el usuario');
     }
-  }, [getUserCurrentLocation]);
+  }, [getUserCurrentLocation, toast]);
 
-  // ✅ MODIFICADO: Determinar ruta óptima mejorada
-  const determineOptimalRoute = useCallback((
-    userLoc: Location | null,
-    origin: Location,
-    destination: Location,
-    transportBase: Location,
-    hasPermission: boolean
-  ): RouteType => {
-    // Si no tenemos permisos o no hay ubicación del usuario, usar ruta por defecto
-    if (!hasPermission || !userLoc) {
-      return 'terminal_to_destination'; // Ruta por defecto sin ubicación del usuario
+  // ✅ CORREGIDO: Determinar ruta óptima mejorada - SIN ERRORES DE TIPO
+// ✅ ACTUALIZAR determineOptimalRoute para usar las nuevas rutas
+const determineOptimalRoute = useCallback((
+  userLoc: Location | null,
+  origin: Location,
+  destination: Location,
+  transportBase: Location,
+  hasPermission: boolean
+): RouteType => {
+  // Si no tenemos permisos o no hay ubicación del usuario, usar ruta por defecto
+  if (!hasPermission || !userLoc) {
+    return 'via_transport_1'; // Ruta por defecto sin ubicación del usuario
+  }
+
+  // Calcular distancias aproximadas
+  const distanceToOrigin = calculateDistance(userLoc, origin);
+  const distanceToTransport = calculateDistance(userLoc, transportBase);
+  const distanceToDestination = calculateDistance(userLoc, destination);
+
+  // Lógica mejorada para determinar la mejor ruta
+  if (distanceToTransport < 2000) { // Menos de 2km de la terminal
+    return 'via_transport_1';
+  } else if (distanceToOrigin < 1000) { // Menos de 1km del origen
+    return 'via_transport_1'; // ✅ Cambiar a terminal principal
+  } else if (distanceToDestination < 5000) { // Menos de 5km del destino
+    return 'current_to_direct';
+  } else if (distanceToTransport < 10000) { // Menos de 10km de la terminal
+    return 'current_to_transport';
+  } else {
+    // Si está lejos de todo, usar la opción más conveniente
+    const distances: Record<RouteType, number> = {
+      'via_transport_1': distanceToTransport,
+      'via_transport_2': distanceToTransport + 500, // ✅ Dar preferencia a terminal 1
+      'current_to_direct': distanceToDestination,
+      'current_to_transport': distanceToTransport
+    };
+    
+    const bestRoute = Object.entries(distances).reduce((best, [route, distance]) => {
+      return distance < distances[best] ? route as RouteType : best;
+    }, 'via_transport_1' as RouteType);
+    
+    return bestRoute;
+  }
+}, [calculateDistance]);
+
+  // ✅ CORREGIDO: Función para verificar si se debe recalcular la ruta
+  const shouldRecalculateRoute = useCallback((
+    currentRouteType: RouteType,
+    currentTravelMode: TravelMode,
+    currentUserLocation: Location | null,
+    lastCalculation: { routeType: RouteType; travelMode: TravelMode } | null,
+    lastUserLocation: Location | null
+  ): boolean => {
+    if (!lastCalculation) return true;
+    
+    // Recalcular si cambió el tipo de ruta
+    if (lastCalculation.routeType !== currentRouteType) return true;
+    
+    // Recalcular si cambió el modo de transporte
+    if (lastCalculation.travelMode !== currentTravelMode) return true;
+    
+    // Recalcular si la ubicación del usuario cambió significativamente
+    if (currentUserLocation && lastUserLocation) {
+      const distance = calculateDistance(currentUserLocation, lastUserLocation);
+      if (distance > 100) return true; // Más de 100 metros de diferencia
     }
-
-    // Calcular distancias aproximadas
-    const distanceToOrigin = calculateDistance(userLoc, origin);
-    const distanceToTransport = calculateDistance(userLoc, transportBase);
-    const distanceToDestination = calculateDistance(userLoc, destination);
-
-    // Lógica mejorada para determinar la mejor ruta
-    if (distanceToTransport < 2000) { // Menos de 2km de la terminal
-      return 'terminal_to_destination';
-    } else if (distanceToOrigin < 1000) { // Menos de 1km del origen
-      return 'origin_to_destination';
-    } else if (distanceToDestination < 5000) { // Menos de 5km del destino
-      return 'current_to_destination';
-    } else if (distanceToTransport < 10000) { // Menos de 10km de la terminal
-      return 'current_to_terminal';
-    } else {
-      // Si está lejos de todo, usar la opción más conveniente
-      const distances = {
-        'terminal_to_destination': distanceToTransport,
-        'origin_to_destination': distanceToOrigin,
-        'current_to_destination': distanceToDestination,
-        'current_to_terminal': distanceToTransport
-      };
-      
-      return Object.entries(distances).reduce((best, [route, distance]) => 
-        distance < distances[best as keyof typeof distances] ? route : best
-      ) as RouteType;
-    }
+    
+    return false;
   }, [calculateDistance]);
+
+  // ✅ CORREGIDO: Función adicional para mostrar errores con toast
+  const showLocationError = useCallback((error: string) => {
+    toast({
+      title: 'Error de ubicación',
+      description: error,
+      variant: 'destructive',
+    });
+  }, [toast]);
 
   return {
     userLocation,
@@ -367,6 +421,8 @@ export const useRouteCalculator = () => {
     determineOptimalRoute,
     initializeLocationPermissions,
     formatDuration,
-    formatDistance
+    shouldRecalculateRoute,
+    formatDistance,
+    showLocationError // ✅ NUEVA función que usa toast
   };
 };
