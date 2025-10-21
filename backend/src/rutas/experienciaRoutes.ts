@@ -1,29 +1,33 @@
-// rutas/experienciaRoutes.ts
+// ✅ rutas/experienciaRoutes.ts (VERSIÓN CORREGIDA)
 import { Router } from 'express';
 import { experienciaController } from '../controladores/experienciaController';
-import { autenticarAdmin } from '../middleware/autenticacion';
-import { verificarPropiedadExperiencia } from '../middleware/verificarPropiedadExperiencia';
-import { uploadExperienciaMiddleware } from '../utils/multerExperiencias'; // ✅ NUEVO
-
-// rutas/experienciaRoutes.ts
-// ... imports anteriores
+import { uploadExperienciaMiddleware } from '../utils/multerExperiencias';
+import { moderacionEnTiempoReal } from '../middleware/moderacionEnTiempoReal';
 
 const router = Router();
 
-// Rutas públicas
+// ✅ RUTAS PÚBLICAS (SIN MODERACIÓN)
 router.get('/', experienciaController.obtenerExperiencias);
 router.get('/:id', experienciaController.obtenerExperienciaPorId);
-
-// ✅ NUEVAS RUTAS para usuario anónimo
-router.post('/subir', uploadExperienciaMiddleware, experienciaController.crearExperiencia);
+router.post('/:id/vista', experienciaController.registrarVista);
 router.get('/usuario/mis-experiencias', experienciaController.obtenerMisExperiencias);
-router.put('/:id/editar', verificarPropiedadExperiencia, experienciaController.editarExperiencia);
-router.delete('/:id/eliminar', verificarPropiedadExperiencia, experienciaController.eliminarExperiencia);
-router.post('/:id/vista', experienciaController.registrarVista); // ✅ NUEVA RUTA
+
+// ✅ RUTAS QUE CREAN CONTENIDO (CON MODERACIÓN)
+router.post('/',  // ✅ CAMBIAR de '/subir' a '/'
+  uploadExperienciaMiddleware, // Multer primero
+  moderacionEnTiempoReal,      // Luego moderación
+  experienciaController.crearExperiencia // Finalmente el controlador
+);
+
+// Para edición (con moderación)
+router.put('/:id',  // ✅ CAMBIAR de '/:id/editar' a '/:id'
+  moderacionEnTiempoReal,
+  experienciaController.editarExperiencia
+);
+
+router.delete('/:id', experienciaController.eliminarExperiencia); // ✅ CAMBIAR ruta
 
 // Rutas protegidas (admin only)
-router.get('/admin/pendientes', autenticarAdmin, experienciaController.obtenerExperienciasPendientes);
-router.get('/admin/estadisticas', autenticarAdmin, experienciaController.obtenerEstadisticas);
-router.patch('/:id/moderar', autenticarAdmin, experienciaController.moderarExperiencia);
+router.get('/admin/estadisticas', experienciaController.obtenerEstadisticas);
 
 export default router;

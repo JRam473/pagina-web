@@ -1,295 +1,230 @@
-// services/moderacionService.ts (VERSIÓN COMPLETAMENTE CORREGIDA)
+// backend/src/services/moderacionService.ts (VERSIÓN SIN PERSPECTIVE)
+import { AnalizadorTexto } from '../utils/analizadorTexto';
+import { AnalizadorImagen } from '../utils/analizadorImagen';
+import { AnalizadorPDF } from '../utils/analizadorPDF';
 import { pool } from '../utils/baseDeDatos';
-import { ModeradorTexto } from '../utils/moderacionTexto';
-import { ModeradorImagen } from '../utils/moderacionImagen';
-
-interface ResultadoModeracion {
-  estado: 'aprobado' | 'rechazado' | 'pendiente';
-  motivo?: string;
-  puntuacionGeneral: number;
-}
-
+import { ResultadoModeracion, AnalisisTexto, AnalisisImagen, AnalisisPDF } from '../types/moderacion';
 
 export class ModeracionService {
-  static async moderarExperiencia(experienciaId: string): Promise<ResultadoModeracion> {
-    try {
-      console.log(`🔍 Iniciando moderación para experiencia: ${experienciaId}`);
-      
-      const expResult = await pool.query(
-        `SELECT * FROM experiencias WHERE id = $1`,
-        [experienciaId]
-      );
+  private analizadorTexto: AnalizadorTexto;
+  private analizadorImagen: AnalizadorImagen;
+  private analizadorPDF: AnalizadorPDF;
 
-      if (expResult.rows.length === 0) {
-        throw new Error(`Experiencia ${experienciaId} no encontrada`);
-      }
+  constructor() {
+    this.analizadorTexto = new AnalizadorTexto();
+    this.analizadorImagen = new AnalizadorImagen();
+    this.analizadorPDF = new AnalizadorPDF();
+  }
 
-      const experiencia = expResult.rows[0];
-      console.log(`📝 Experiencia encontrada: "${experiencia.descripcion?.substring(0, 50)}..."`);
+  /**
+   * Moderación en tiempo real para todos los tipos de contenido
+   */
+  async moderarContenidoEnTiempoReal(data: {
+    texto?: string;
+    imagenBuffer?: Buffer;
+    imagenMimeType?: string;
+    pdfBuffer?: Buffer;
+    ipUsuario: string;
+    hashNavegador: string;
+  }): Promise<ResultadoModeracion> {
+    
+    console.log('🛡️ Iniciando moderación en tiempo real...');
 
-      if (experiencia.moderado) {
-        console.log(`✅ Experiencia ya moderada, estado: ${experiencia.estado}`);
-        return {
-          estado: experiencia.estado as 'aprobado' | 'rechazado' | 'pendiente',
-          puntuacionGeneral: (experiencia.puntuacion_texto + experiencia.puntuacion_imagen) / 2,
-          motivo: experiencia.motivo_rechazo
-        };
-      }
-
-      // 1. Moderación de texto (MEJORADA)
-      console.log('📖 Analizando texto...');
-      const resultadoTexto = ModeradorTexto.analizarTexto(experiencia.descripcion || '');
-      console.log(`📖 Resultado texto: ${resultadoTexto.puntuacion} - Intención: ${resultadoTexto.intencion}`);
-
-      // 2. Moderación de imagen
-      console.log('🖼️ Analizando imagen...');
-      const resultadoImagen = await ModeradorImagen.analizarImagenMulter(experiencia.ruta_almacenamiento);
-      console.log(`🖼️ Resultado imagen: ${resultadoImagen.puntuacion} - Aprobado: ${resultadoImagen.esAprobado}`);
-
-      // 3. Calcular confianza del usuario (MÁS GENEROSO)
-      console.log('👤 Calculando confianza usuario...');
-      const confianzaUsuario = await this.calcularConfianzaUsuario(experiencia.hash_navegador);
-      console.log(`👤 Confianza usuario: ${confianzaUsuario}`);
-
-      // 4. Calcular puntuación general (PESOS ACTUALIZADOS)
-      let puntuacionGeneral = 0;
-      try {
-        // ✅ NUEVOS PESOS - Texto menos determinante
-        puntuacionGeneral = (
-          resultadoTexto.puntuacion * 0.3 +      // Texto menos importante
-          resultadoImagen.puntuacion * 0.6 +     // Imagen más importante  
-          confianzaUsuario * 0.1                // Confianza mínima
-        );
-        
-        if (isNaN(puntuacionGeneral) || !isFinite(puntuacionGeneral)) {
-          puntuacionGeneral = resultadoImagen.puntuacion; // Priorizar imagen
+    // Validar y preparar archivos
+    const archivosValidos = await this.validarArchivos(data);
+    if (!archivosValidos.esValido) {
+      return {
+        esAprobado: false,
+        puntuacionGeneral: 0.1,
+        motivoRechazo: archivosValidos.motivo || 'Archivos no válidos', // Asegurar que no sea undefined
+        detalles: {
+          texto: undefined,
+          imagen: undefined,
+          pdf: undefined
         }
-      } catch (error) {
-        console.error('❌ Error calculando puntuación general:', error);
-        puntuacionGeneral = resultadoImagen.puntuacion; // Fallback a imagen
-      }
-
-      const puntuacionFinal = Math.round(puntuacionGeneral * 100) / 100;
-      console.log(`📊 Puntuación general: ${puntuacionFinal}`);
-
-      // 5. ✅ NUEVA LÓGICA DE DECISIÓN MÁS INTELIGENTE
-      let estado: 'aprobado' | 'rechazado' | 'pendiente' = 'pendiente';
-      let motivo: string = this.generarMotivoRechazo(resultadoTexto, resultadoImagen);
-
-      const umbralAprobacion = 0.60;  // ✅ MUCHO MÁS BAJO
-      const umbralRechazo = 0.30;     // ✅ SOLO RECHAZAR CONTENIDO MUY MALO
-
-      console.log(`⚖️ Umbrales: Aprobación=${umbralAprobacion}, Rechazo=${umbralRechazo}`);
-
-      // ✅ REGLA 1: Imagen aprobada + texto no spam = APROBADO
-      if (resultadoImagen.esAprobado && resultadoTexto.intencion !== 'spam') {
-        estado = 'aprobado';
-        console.log('🎉 EXPERIENCIA APROBADA - Imagen buena + texto no spam');
-      }
-      // ✅ REGLA 2: Puntuación alta = APROBADO
-      else if (puntuacionFinal >= umbralAprobacion) {
-        estado = 'aprobado';
-        console.log('🎉 EXPERIENCIA APROBADA - Puntuación general alta');
-      }
-      // ✅ REGLA 3: Spam claro = RECHAZADO
-     if (resultadoTexto.intencion === 'spam' || !resultadoTexto.esAprobado) {
-  estado = 'rechazado';
-  motivo = resultadoTexto.razon || 'Contenido ofensivo detectado';
-  console.log(`❌ EXPERIENCIA RECHAZADA: Texto ofensivo - ${motivo}`);
-}
-      // ✅ REGLA 4: Imagen rechazada = RECHAZADO
-      else if (!resultadoImagen.esAprobado) {
-        estado = 'rechazado';
-        motivo = resultadoImagen.razon || 'La imagen no cumple con los criterios de calidad';
-        console.log(`❌ EXPERIENCIA RECHAZADA: Imagen inapropiada`);
-      }
-      // ✅ REGLA 5: Puntuación muy baja = RECHAZADO
-      else if (puntuacionFinal <= umbralRechazo) {
-        estado = 'rechazado';
-        motivo = 'No cumple con los criterios mínimos de calidad';
-        console.log(`❌ EXPERIENCIA RECHAZADA: Puntuación muy baja`);
-      }
-      // ✅ REGLA 6: Todo lo demás = APROBADO (ser más permisivos)
-      else {
-        estado = 'aprobado';
-        console.log('🎉 EXPERIENCIA APROBADA - Regla permisiva aplicada');
-      }
-
-      // 6. Actualizar experiencia en BD
-      console.log('💾 Guardando resultado en BD...');
-      await pool.query(
-        `UPDATE experiencias SET
-          estado = $1,
-          moderado = $2,
-          puntuacion_texto = $3,
-          puntuacion_imagen = $4,
-          palabras_prohibidas_encontradas = $5,
-          categorias_imagen = $6,
-          confianza_usuario = $7,
-          aprobado_automatico = $8,
-          motivo_rechazo = $9,
-          procesado_en = NOW(),
-          actualizado_en = NOW()
-        WHERE id = $10`,
-        [
-          estado,
-          true,
-          resultadoTexto.puntuacion,
-          resultadoImagen.puntuacion,
-          resultadoTexto.palabrasProhibidas,
-          JSON.stringify(resultadoImagen.categorias),
-          confianzaUsuario,
-          estado !== 'rechazado',
-          motivo,
-          experienciaId
-        ]
-      );
-
-      console.log(`✅ Experiencia ${experienciaId} moderada: ${estado} (Puntuación: ${puntuacionFinal})`);
-
-      return {
-        estado,
-        puntuacionGeneral: puntuacionFinal,
-        motivo
-      };
-
-    } catch (error) {
-      console.error(`❌ Error moderando experiencia ${experienciaId}:`, error);
-      
-      // ✅ EN CASO DE ERROR, SER MÁS PERMISIVOS
-      await pool.query(
-        `UPDATE experiencias SET 
-          estado = 'aprobado', 
-          moderado = true,
-          aprobado_automatico = false,
-          motivo_rechazo = 'Aprobado por fallo en moderación automática',
-          procesado_en = NOW(), 
-          actualizado_en = NOW() 
-         WHERE id = $1`,
-        [experienciaId]
-      );
-
-      return {
-        estado: 'aprobado',
-        puntuacionGeneral: 0.7,
-        motivo: 'Aprobado por fallo en moderación automática'
       };
     }
-  }
 
-  
+    // Ejecutar análisis en paralelo
+    const resultados = await Promise.allSettled([
+      data.texto ? this.analizadorTexto.analizarTexto(data.texto) : Promise.resolve(undefined),
+      data.imagenBuffer ? this.analizarImagenCompleta(data.imagenBuffer) : Promise.resolve(undefined),
+      data.pdfBuffer ? this.analizadorPDF.analizarPDF(data.pdfBuffer) : Promise.resolve(undefined)
+    ]);
 
-  private static async calcularConfianzaUsuario(hashNavegador: string): Promise<number> {
-    try {
-      const result = await pool.query(
-        `SELECT 
-          COUNT(*) as total,
-          COUNT(*) FILTER (WHERE estado = 'aprobado') as aprobadas,
-          COUNT(*) FILTER (WHERE estado = 'rechazado') as rechazadas
-         FROM experiencias 
-         WHERE hash_navegador = $1 AND moderado = true`,
-        [hashNavegador]
-      );
+    const [textoResult, imagenResult, pdfResult] = resultados;
 
-      const { total, aprobadas, rechazadas } = result.rows[0];
-      
-      // ✅ CONVERSIÓN SEGURA A NÚMEROS
-      const totalNum = parseInt(total) || 0;
-      const aprobadasNum = parseInt(aprobadas) || 0;
-      const rechazadasNum = parseInt(rechazadas) || 0;
+    const analisisTexto = textoResult.status === 'fulfilled' ? textoResult.value : undefined;
+    const analisisImagen = imagenResult.status === 'fulfilled' ? imagenResult.value : undefined;
+    const analisisPDF = pdfResult.status === 'fulfilled' ? pdfResult.value : undefined;
 
-      console.log(`👤 Historial usuario: total=${totalNum}, aprobadas=${aprobadasNum}, rechazadas=${rechazadasNum}`);
+    // Evaluar resultado general
+    const esAprobado = this.evaluarAprobacionGeneral(analisisTexto, analisisImagen, analisisPDF);
+    const motivoRechazo = this.generarMotivoRechazo(analisisTexto, analisisImagen, analisisPDF);
+    const puntuacionGeneral = this.calcularPuntuacionGeneral(analisisTexto, analisisImagen, analisisPDF);
 
-      // ✅ USUARIO NUEVO: CONFIANZA MÁXIMA
-      if (totalNum === 0) {
-        console.log('✅ Usuario nuevo - Confianza inicial: 1.0');
-        return 1.0;
-      }
-
-      // ✅ CÁLCULO MÁS JUSTO PARA USUARIOS EXISTENTES
-      const ratioAprobacion = aprobadasNum / totalNum;
-      
-      // Confianza basada principalmente en aprobaciones
-      let confianza = ratioAprobacion;
-      
-      // Penalización MUY SUAVE por rechazos
-      if (rechazadasNum > 0) {
-        const ratioRechazo = rechazadasNum / totalNum;
-        confianza = confianza * (1 - (ratioRechazo * 0.2)); // Solo 20% de penalización
-      }
-      
-      // ✅ BONUS POR BUEN COMPORTAMIENTO (más generoso)
-      if (aprobadasNum >= 2) confianza = Math.min(1.0, confianza + 0.3);
-      if (aprobadasNum >= 5) confianza = Math.min(1.0, confianza + 0.2);
-      
-      // ✅ MÍNIMO MÁS ALTO - Nunca menos de 0.5
-      confianza = Math.max(0.5, Math.min(1.0, confianza));
-      
-      // ✅ VALIDACIÓN FINAL CONTRA NaN
-      if (isNaN(confianza) || !isFinite(confianza)) {
-        console.warn('⚠️ Confianza inválida, usando valor por defecto: 0.8');
-        return 0.8;
-      }
-      
-      const confianzaFinal = Math.round(confianza * 100) / 100;
-      console.log(`✅ Confianza final calculada: ${confianzaFinal}`);
-      
-      return confianzaFinal;
-    } catch (error) {
-      console.error('❌ Error calculando confianza:', error);
-      return 0.8; // Valor seguro y generoso por defecto
+    // Log de moderación para contenido rechazado
+    if (!esAprobado) {
+      await this.registrarLogModeracion({
+        tipoContenido: this.determinarTipoContenido(data),
+        contenidoTexto: data.texto,
+        resultadoModeracion: { analisisTexto, analisisImagen, analisisPDF },
+        accion: 'rechazado',
+        motivo: motivoRechazo,
+        ipUsuario: data.ipUsuario,
+        hashNavegador: data.hashNavegador
+      });
     }
+
+    console.log(`🎯 Resultado moderación: ${esAprobado ? '✅ APROBADO' : '❌ RECHAZADO'}`);
+
+    // SOLUCIÓN: Crear objeto con tipos explícitos
+    const resultado: ResultadoModeracion = {
+      esAprobado,
+      puntuacionGeneral,
+      motivoRechazo: esAprobado ? undefined : motivoRechazo,
+      detalles: {
+        texto: analisisTexto,
+        imagen: analisisImagen,
+        pdf: analisisPDF
+      }
+    };
+
+    return resultado;
   }
 
-  private static generarMotivoRechazo(texto: any, imagen: any): string {
+  /**
+   * Validar archivos antes del análisis
+   */
+  private async validarArchivos(data: any): Promise<{ esValido: boolean; motivo?: string }> {
+    // Validar imagen
+    if (data.imagenBuffer) {
+      const validadorImagen = new AnalizadorImagen();
+      const validacion = await validadorImagen.validarImagen(data.imagenBuffer);
+      if (!validacion.esValido) {
+        return { esValido: false, motivo: `Imagen: ${validacion.motivo}` };
+      }
+    }
+
+    // Validar PDF
+    if (data.pdfBuffer) {
+      if (data.pdfBuffer.length > 20 * 1024 * 1024) { // 20MB
+        return { esValido: false, motivo: 'PDF demasiado grande (máximo 20MB)' };
+      }
+
+      // Verificar que es un PDF
+      const header = data.pdfBuffer.slice(0, 4).toString();
+      if (!header.includes('%PDF')) {
+        return { esValido: false, motivo: 'Archivo no es un PDF válido' };
+      }
+    }
+
+    return { esValido: true };
+  }
+
+  /**
+   * Análisis completo de imagen con validación
+   */
+  private async analizarImagenCompleta(buffer: Buffer): Promise<AnalisisImagen | undefined> {
+    const validador = new AnalizadorImagen();
+    const validacion = await validador.validarImagen(buffer);
+    
+    if (!validacion.esValido) {
+      // Crear un objeto AnalisisImagen válido para el error
+      return {
+        esAprobado: false,
+        puntuacion: 0.1,
+        contenidoPeligroso: false,
+        categorias: [],
+        detalles: {
+          probabilidadPeligrosa: 0,
+          categoriaPeligrosa: null,
+          categoriaPrincipal: 'Error',
+          error: validacion.motivo
+        }
+      };
+    }
+
+    return await validador.analizarBuffer(buffer);
+  }
+
+  private evaluarAprobacionGeneral(
+    texto: AnalisisTexto | undefined, 
+    imagen: AnalisisImagen | undefined, 
+    pdf: AnalisisPDF | undefined
+  ): boolean {
+    // REGLAS MÁS ESTRICTAS SIN PERSPECTIVE API
+    if (texto && !texto.esAprobado) return false;
+    if (imagen && !imagen.esAprobado) return false;
+    if (pdf && !pdf.esAprobado) return false;
+    
+    // Sin Perspective API, ser más estricto con el texto
+    if (texto && texto.puntuacion < 0.5) return false;
+    
+    return true;
+  }
+
+  private generarMotivoRechazo(
+    texto: AnalisisTexto | undefined, 
+    imagen: AnalisisImagen | undefined, 
+    pdf: AnalisisPDF | undefined
+  ): string {
     const motivos: string[] = [];
 
-    if (!texto.esAprobado && texto.razon) {
-      motivos.push(texto.razon);
+    if (texto && !texto.esAprobado) {
+      motivos.push(`Texto: ${texto.razon}`);
+    }
+    if (imagen && !imagen.esAprobado) {
+      motivos.push(`Imagen: ${imagen.detalles?.categoriaPeligrosa || 'contenido inapropiado'}`);
+    }
+    if (pdf && !pdf.esAprobado) {
+      motivos.push(`PDF: ${pdf.detalles?.errores?.[0] || 'contenido inapropiado'}`);
     }
 
-    if (!imagen.esAprobado && 'razon' in imagen && imagen.razon) {
-      motivos.push(imagen.razon);
-    }
-
-    // Si no hay motivos específicos, dar uno genérico
-    if (motivos.length === 0) {
-      return 'No cumple con los criterios de calidad automáticos';
-    }
-
-    return motivos.join('; ');
+    return motivos.join('; ') || 'Contenido no aprobado por los filtros automáticos';
   }
 
-  static async procesarPendientes(): Promise<{ procesadas: number; aprobadas: number }> {
+  private calcularPuntuacionGeneral(
+    texto: AnalisisTexto | undefined, 
+    imagen: AnalisisImagen | undefined, 
+    pdf: AnalisisPDF | undefined
+  ): number {
+    const puntuaciones: number[] = [];
+    
+    if (texto) puntuaciones.push(texto.puntuacion);
+    if (imagen) puntuaciones.push(imagen.puntuacion);
+    if (pdf) puntuaciones.push(pdf.puntuacion);
+    
+    // Sin Perspective API, dar más peso al análisis local
+    return puntuaciones.length > 0 ? 
+      puntuaciones.reduce((a, b) => a + b, 0) / puntuaciones.length : 1.0;
+  }
+
+  private determinarTipoContenido(data: any): string {
+    if (data.pdfBuffer) return 'pdf';
+    if (data.imagenBuffer) return 'imagen';
+    if (data.texto) return 'texto';
+    return 'mixto';
+  }
+
+  private async registrarLogModeracion(log: any): Promise<void> {
     try {
-      const result = await pool.query(
-        `SELECT id FROM experiencias 
-         WHERE moderado = false 
-         AND estado = 'pendiente'
-         AND creado_en < NOW() - INTERVAL '5 minutes'
-         ORDER BY creado_en ASC
-         LIMIT 10` // Reducir límite para debugging
+      await pool.query(
+        `INSERT INTO logs_moderacion 
+         (tipo_contenido, contenido_texto, resultado_moderacion, accion, motivo, ip_usuario, hash_navegador)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          log.tipoContenido,
+          log.contenidoTexto?.substring(0, 500),
+          JSON.stringify(log.resultadoModeracion),
+          log.accion,
+          log.motivo,
+          log.ipUsuario,
+          log.hashNavegador
+        ]
       );
-
-      console.log(`🔄 Encontradas ${result.rows.length} experiencias pendientes por moderar`);
-
-      let aprobadas = 0;
-      for (const row of result.rows) {
-        try {
-          const resultado = await this.moderarExperiencia(row.id);
-          if (resultado.estado === 'aprobado') {
-            aprobadas++;
-          }
-        } catch (error) {
-          console.error(`Error procesando experiencia ${row.id}:`, error);
-        }
-      }
-
-      console.log(`📊 Moderación completada: ${result.rows.length} procesadas, ${aprobadas} aprobadas`);
-      return { procesadas: result.rows.length, aprobadas };
     } catch (error) {
-      console.error('Error en procesarPendientes:', error);
-      return { procesadas: 0, aprobadas: 0 };
+      console.error('Error registrando log de moderación:', error);
     }
   }
 }

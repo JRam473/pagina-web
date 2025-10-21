@@ -1,4 +1,4 @@
-// components/ExperienceMural.tsx (VERSIÓN COMPLETAMENTE CORREGIDA - SOLO VISTAS)
+// components/ExperienceMural.tsx (ACTUALIZADO CON CARGA AUTOMÁTICA Y PAGINACIÓN)
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -13,12 +13,11 @@ import {
   X, 
   Camera,
   Users,
-  CheckCircle,
-  Clock,
   Image as ImageIcon,
   Edit,
   Trash2,
-  MoreVertical
+  MoreVertical,
+  RefreshCw // ✅ NUEVO: Icono de carga
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useExperiences, type Experience } from '@/hooks/useExperiences';
@@ -26,8 +25,7 @@ import { usePlaces } from '@/hooks/usePlaces';
 import { useToast } from '@/hooks/use-toast';
 import { TermsAndConditionsDialog } from '@/components/TermsAndConditionsDialog';
 import { ExperienceImageModal } from '@/components/galeria/ExperienceImageModal';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
@@ -35,6 +33,63 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
+// ✅ NUEVO: Componente para el botón "Ver más"
+const LoadMoreButton = ({ 
+  loading, 
+  hasMore, 
+  onClick 
+}: { 
+  loading: boolean; 
+  hasMore: boolean; 
+  onClick: () => void;
+}) => {
+  if (!hasMore) return null;
+
+  return (
+    <div className="flex justify-center mt-8">
+      <Button
+        onClick={onClick}
+        disabled={loading}
+        variant="outline"
+        className="px-8 py-3 border-blue-600 text-blue-600 hover:bg-blue-50"
+      >
+        {loading ? (
+          <>
+            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            Cargando...
+          </>
+        ) : (
+          'Ver más experiencias'
+        )}
+      </Button>
+    </div>
+  );
+};
+
+// ✅ NUEVO: Componente para el indicador de actualización automática
+const AutoRefreshIndicator = ({ 
+  enabled, 
+  onToggle 
+}: { 
+  enabled: boolean; 
+  onToggle: (enabled: boolean) => void;
+}) => {
+  return (
+    <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+      <div className={`w-2 h-2 rounded-full ${enabled ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+      <span>Actualización automática: {enabled ? 'Activada' : 'Desactivada'}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onToggle(!enabled)}
+        className="h-6 px-2 text-xs"
+      >
+        {enabled ? 'Desactivar' : 'Activar'}
+      </Button>
+    </div>
+  );
+};
 
 // Componente de esqueleto para experiencias
 const ExperienceSkeletonGrid = ({ count }: { count: number }) => (
@@ -123,14 +178,12 @@ const ExperienceInvitationBanner = () => {
   );
 };
 
-// Componente para mostrar estadísticas del usuario
+// ✅ ACTUALIZADO: Componente para mostrar estadísticas del usuario (sin estados)
 const UserStatsBanner = ({ myExperiences }: { myExperiences: Experience[] }) => {
   if (myExperiences.length === 0) return null;
 
-  const aprobadas = myExperiences.filter(exp => exp.estado === 'aprobado').length;
-  const pendientes = myExperiences.filter(exp => exp.estado === 'pendiente').length;
-  const rechazadas = myExperiences.filter(exp => exp.estado === 'rechazado').length;
   const totalVistas = myExperiences.reduce((sum, exp) => sum + exp.contador_vistas, 0);
+  const promedioVistas = myExperiences.length > 0 ? Math.round(totalVistas / myExperiences.length) : 0;
 
   return (
     <motion.div 
@@ -142,23 +195,15 @@ const UserStatsBanner = ({ myExperiences }: { myExperiences: Experience[] }) => 
       <div className="flex flex-wrap gap-4 justify-center md:justify-start">
         <div className="text-center">
           <div className="text-2xl font-bold text-blue-600">{myExperiences.length}</div>
-          <div className="text-sm text-gray-600">Total</div>
-        </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-green-600">{aprobadas}</div>
-          <div className="text-sm text-gray-600">Aprobadas</div>
-        </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-yellow-600">{pendientes}</div>
-          <div className="text-sm text-gray-600">Pendientes</div>
-        </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-red-600">{rechazadas}</div>
-          <div className="text-sm text-gray-600">Rechazadas</div>
+          <div className="text-sm text-gray-600">Experiencias</div>
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold text-purple-600">{totalVistas}</div>
-          <div className="text-sm text-gray-600">Vistas</div>
+          <div className="text-sm text-gray-600">Total Vistas</div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-green-600">{promedioVistas}</div>
+          <div className="text-sm text-gray-600">Vistas/Promedio</div>
         </div>
       </div>
     </motion.div>
@@ -193,12 +238,18 @@ export const ExperienceMural = () => {
     uploading, 
     editing,
     deleting,
+    pagination, // ✅ NUEVO: Recibir paginación
+    loadingMore, // ✅ NUEVO: Recibir estado de carga adicional
+    autoRefresh, // ✅ NUEVO: Recibir estado de auto-refresh
     uploadExperience, 
     editExperience,
     deleteExperience,
     fetchExperiences,
     fetchMyExperiences,
-    incrementViewCount
+    incrementViewCount,
+    loadMoreExperiences, // ✅ NUEVO: Función para cargar más
+    startAutoRefresh, // ✅ NUEVO: Control de auto-refresh
+    stopAutoRefresh,
   } = useExperiences();
   
   const { places } = usePlaces();
@@ -227,17 +278,40 @@ export const ExperienceMural = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
-  // Cargar experiencias al iniciar
+  // ✅ MODIFICADO: Cargar experiencias al iniciar con paginación
   useEffect(() => {
-    fetchExperiences();
+    fetchExperiences({ pagina: 1, limite: 6 }); // ✅ ESTÁNDAR: 6 experiencias iniciales
     fetchMyExperiences();
-  }, [fetchExperiences, fetchMyExperiences]);
+    startAutoRefresh(); // ✅ Iniciar actualización automática
+  }, [fetchExperiences, fetchMyExperiences, startAutoRefresh]);
+
+  // ✅ NUEVO: Efecto para cambiar entre pestañas
+  useEffect(() => {
+    if (activeTab === 'comunidad') {
+      fetchExperiences({ pagina: 1, limite: 6 });
+    }
+  }, [activeTab, fetchExperiences]);
+
+  // ✅ NUEVO: Manejar el toggle de auto-refresh
+  const handleAutoRefreshToggle = (enabled: boolean) => {
+    if (enabled) {
+      startAutoRefresh();
+    } else {
+      stopAutoRefresh();
+    }
+  };
 
   // Determinar qué experiencias mostrar según la pestaña activa
   const displayedExperiences = activeTab === 'comunidad' 
     ? experiences 
     : myExperiences;
 
+  // ✅ NUEVO: Determinar si hay más experiencias para cargar
+  const hasMoreExperiences = activeTab === 'comunidad' 
+    ? pagination?.tieneMas 
+    : false;
+
+  // ✅ MODIFICADO: Reset del formulario de subida para recargar experiencias
   const resetUploadForm = () => {
     setUploadData({
       descripcion: '',
@@ -246,6 +320,14 @@ export const ExperienceMural = () => {
       previewUrl: null
     });
     setIsUploadOpen(false);
+    
+    // ✅ RECARGAR: Actualizar la lista después de subir
+    setTimeout(() => {
+      fetchExperiences({ pagina: 1, limite: 6 });
+      if (activeTab === 'mis-experiencias') {
+        fetchMyExperiences();
+      }
+    }, 1000);
   };
 
   const resetEditForm = () => {
@@ -382,23 +464,19 @@ export const ExperienceMural = () => {
     }
   };
 
+  // ✅ MODIFICADO: Manejo de clic en experiencia con actualización automática de vistas
   const handleExperienceClick = async (experience: Experience) => {
     console.log('🖱️ Click en experiencia:', experience.id);
     
     // 1. Abrir el modal inmediatamente para mejor UX
     setSelectedExperience(experience);
     
-    // 2. Registrar la vista en segundo plano (SOLO UNA VEZ)
+    // 2. Registrar la vista en segundo plano
     try {
-      const success = await incrementViewCount(experience.id);
-      if (success) {
-        console.log('✅ Vista registrada para:', experience.id);
-        
-        // Actualizar el contador localmente para feedback inmediato
-        fetchExperiences(); // Recargar experiencias públicas
-        if (activeTab === 'mis-experiencias') {
-          fetchMyExperiences(); // Recargar mis experiencias
-        }
+      const result = await incrementViewCount(experience.id);
+      if (result.success) {
+        console.log('✅ Vista procesada para:', experience.id);
+        // ✅ EL CONTADOR SE ACTUALIZA AUTOMÁTICAMENTE EN EL HOOK
       }
     } catch (error) {
       console.error('❌ Error al registrar vista:', error);
@@ -454,6 +532,12 @@ export const ExperienceMural = () => {
               Compartir Experiencia
             </Button>
           </div>
+
+          {/* ✅ NUEVO: Indicador de actualización automática */}
+          <AutoRefreshIndicator 
+            enabled={autoRefresh}
+            onToggle={handleAutoRefreshToggle}
+          />
 
           {/* Pestañas */}
           <div className="flex border-b border-gray-200 mb-6">
@@ -511,118 +595,113 @@ export const ExperienceMural = () => {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <AnimatePresence>
-                {displayedExperiences.map((experience, index) => (
-                  <motion.div
-                    key={experience.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: index * 0.1 }}
-                    className="bg-white rounded-2xl overflow-hidden shadow-card hover:shadow-xl transition-all duration-300 group relative"
-                  >
-                    {/* Imagen */}
-                    <div className="relative overflow-hidden"
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <AnimatePresence>
+                  {displayedExperiences.map((experience, index) => (
+                    <motion.div
+                      key={experience.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: index * 0.1 }}
+                      className="bg-white rounded-2xl overflow-hidden shadow-card hover:shadow-xl transition-all duration-300 group relative"
                     >
-                      <img
-                        src={experience.url_foto}
-                        alt={experience.descripcion}
-                        className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
-                        onClick={() => handleExperienceClick(experience)}
-
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" 
-                      onClick={() => handleExperienceClick(experience)}/>
-                      
-                      {/* Estado */}
-                      <div className="absolute top-3 left-3">
-                        <Badge className={cn(
-                          "text-white border-0",
-                          experience.estado === 'aprobado' ? 'bg-green-500' :
-                          experience.estado === 'pendiente' ? 'bg-yellow-500' :
-                          'bg-red-500'
-                        )}>
-                          {experience.estado === 'aprobado' ? <CheckCircle className="w-3 h-3 mr-1" /> :
-                           experience.estado === 'pendiente' ? <Clock className="w-3 h-3 mr-1" /> :
-                           <X className="w-3 h-3 mr-1" />}
-                          {experience.estado}
-                        </Badge>
-                      </div>
-
-                      {/* Menú de acciones (solo en "Mis Experiencias") */}
-                      {activeTab === 'mis-experiencias' && (
-                        <div className="absolute top-3 right-3">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 bg-black/60 hover:bg-black/80 text-white"
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end"
-                              className="bg-white border border-gray-200 shadow-lg">
-                              <DropdownMenuItem 
-                                onClick={() => openEditModal(experience)}
-                                disabled={editing === experience.id}
-                                className="focus:text-blue-600"
-                              >
-                                <Edit className="w-4 h-4 mr-2" />
-                                {editing === experience.id ? 'Editando...' : 'Editar'}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => openDeleteModal(experience)}
-                                disabled={deleting === experience.id}
-                                className="text-red-600 focus:text-red-600"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                {deleting === experience.id ? 'Eliminando...' : 'Eliminar'}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Contenido */}
-                    <div className="p-4">
-                      <p 
-                        className="text-gray-700 line-clamp-2 mb-3 leading-relaxed cursor-pointer"
-                        onClick={() => handleExperienceClick(experience)}
-                      >
-                        {experience.descripcion}
-                      </p>
-                      
-                      <div className="flex items-center justify-between text-sm text-gray-500">
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-1">
-                            <Eye className="w-4 h-4" />
-                            <span>{experience.contador_vistas} vistas</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            <span>{formatDate(experience.creado_en)}</span>
-                          </div>
-                        </div>
+                      {/* Imagen */}
+                      <div className="relative overflow-hidden">
+                        <img
+                          src={experience.url_foto}
+                          alt={experience.descripcion}
+                          className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
+                          onClick={() => handleExperienceClick(experience)}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" 
+                        onClick={() => handleExperienceClick(experience)}/>
                         
-                        {experience.lugar_nombre && (
-                          <div className="flex items-center gap-1 text-blue-600">
-                            <MapPin className="w-4 h-4" />
-                            <span className="truncate max-w-[100px]">
-                              {experience.lugar_nombre}
-                            </span>
+                        {/* ✅ ELIMINADO: Badge de estado ya no es necesario */}
+                        
+                        {/* Menú de acciones (solo en "Mis Experiencias") */}
+                        {activeTab === 'mis-experiencias' && (
+                          <div className="absolute top-3 right-3">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 bg-black/60 hover:bg-black/80 text-white"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end"
+                                className="bg-white border border-gray-200 shadow-lg">
+                                <DropdownMenuItem 
+                                  onClick={() => openEditModal(experience)}
+                                  disabled={editing === experience.id}
+                                  className="focus:text-blue-600"
+                                >
+                                  <Edit className="w-4 h-4 mr-2" />
+                                  {editing === experience.id ? 'Editando...' : 'Editar'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  onClick={() => openDeleteModal(experience)}
+                                  disabled={deleting === experience.id}
+                                  className="text-red-600 focus:text-red-600"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  {deleting === experience.id ? 'Eliminando...' : 'Eliminar'}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         )}
                       </div>
 
-                      {/* QUITAR ACCIONES SOCIALES - SOLO VISTAS */}
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
+                      {/* Contenido */}
+                      <div className="p-4">
+                        <p 
+                          className="text-gray-700 line-clamp-2 mb-3 leading-relaxed cursor-pointer"
+                          onClick={() => handleExperienceClick(experience)}
+                        >
+                          {experience.descripcion}
+                        </p>
+                        
+                        <div className="flex items-center justify-between text-sm text-gray-500">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-1">
+                              <Eye className="w-4 h-4" />
+                              {/* ✅ EL CONTADOR SE ACTUALIZA AUTOMÁTICAMENTE */}
+                              <span>{experience.contador_vistas} vistas</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-4 h-4" />
+                              <span>{formatDate(experience.creado_en)}</span>
+                            </div>
+                          </div>
+                          
+                          {experience.lugar_nombre && (
+                            <div className="flex items-center gap-1 text-blue-600">
+                              <MapPin className="w-4 h-4" />
+                              <span className="truncate max-w-[100px]">
+                                {experience.lugar_nombre}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+
+              {/* ✅ NUEVO: Botón "Ver más" */}
+              {activeTab === 'comunidad' && (
+                <LoadMoreButton 
+                  loading={loadingMore}
+                  hasMore={hasMoreExperiences}
+                  onClick={loadMoreExperiences}
+                />
+              )}
+            </>
           )}
         </div>
       </section>
@@ -747,7 +826,7 @@ export const ExperienceMural = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de edición */}
+      {/* ✅ ACTUALIZADO: Modal de edición (sin estados) */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -766,16 +845,12 @@ export const ExperienceMural = () => {
                   className="w-32 h-32 object-cover rounded-lg"
                 />
                 <div className="flex-1">
-                  <Badge className={cn(
-                    "mb-2",
-                    experienceToEdit.estado === 'aprobado' ? 'bg-green-100 text-green-800' :
-                    experienceToEdit.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
-                  )}>
-                    {experienceToEdit.estado}
-                  </Badge>
+                  {/* ✅ ELIMINADO: Badge de estado */}
                   <p className="text-sm text-gray-600">
                     Publicado el {formatDate(experienceToEdit.creado_en)}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {experienceToEdit.contador_vistas} vistas
                   </p>
                 </div>
               </div>
@@ -791,9 +866,7 @@ export const ExperienceMural = () => {
                 onChange={(e) => setEditData({ descripcion: e.target.value })}
                 rows={4}
               />
-              <p className="text-sm text-gray-500 mt-1">
-                Al editar, tu experiencia volverá a estado "pendiente" para ser revisada.
-              </p>
+              {/* ✅ ELIMINADO: Mensaje sobre estado pendiente */}
             </div>
 
             <div className="flex gap-3 pt-4">
@@ -829,7 +902,7 @@ export const ExperienceMural = () => {
 
       {/* Modal de confirmación de eliminación */}
       <Dialog open={!!experienceToDelete} onOpenChange={() => setExperienceToDelete(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md overflow-hidden bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-xl text-white flex flex-col">
           <DialogHeader>
             <DialogTitle>¿Eliminar Experiencia?</DialogTitle>
             <DialogDescription>
@@ -852,6 +925,9 @@ export const ExperienceMural = () => {
                   <p className="text-xs text-gray-500 mt-1">
                     Publicado el {formatDate(experienceToDelete.creado_en)}
                   </p>
+                  <p className="text-xs text-gray-500">
+                    {experienceToDelete.contador_vistas} vistas
+                  </p>
                 </div>
               </div>
 
@@ -859,7 +935,7 @@ export const ExperienceMural = () => {
                 <Button
                   variant="outline"
                   onClick={() => setExperienceToDelete(null)}
-                  className="flex-1"
+                  className="flex-1 bg-blue/900 hover:bg-blue-800 text-white border-white/30"
                 >
                   Cancelar
                 </Button>
@@ -867,7 +943,7 @@ export const ExperienceMural = () => {
                   onClick={handleDelete}
                   disabled={deleting === experienceToDelete.id}
                   variant="destructive"
-                  className="flex-1"
+                  className="flex-1 bg-red-600 hover:bg-red-700"
                 >
                   {deleting === experienceToDelete.id ? (
                     <>
@@ -901,11 +977,13 @@ export const ExperienceMural = () => {
         onClose={() => {
           setShowTermsDialog(false);
           setPendingExperience(null);
-        } }
+        }}
         onAccept={handleTermsAccept}
         type="experience"
         title="Términos para Compartir Experiencias"
-        description="Al compartir tu experiencia, aceptas nuestros términos de uso y política de privacidad." placeName={''}      />
+        description="Al compartir tu experiencia, aceptas nuestros términos de uso y política de privacidad."
+        placeName={''}
+      />
     </>
   );
 };

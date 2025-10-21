@@ -1,4 +1,4 @@
-// controladores/lugarController.ts - VERSIÓN CORREGIDA Y UNIFICADA
+// controladores/lugarController.ts - VERSIÓN CORREGIDA
 import { Request, Response } from 'express';
 import { pool } from '../utils/baseDeDatos';
 import fs from 'fs';
@@ -6,72 +6,98 @@ import sharp from 'sharp';
 import path from 'path';
 
 export const lugarController = {
-  // Obtener todos los lugares (público) - SIN CAMBIOS
-  async obtenerLugares(req: Request, res: Response) {
-    try {
-      const { categoria, pagina = 1, limite = 20 } = req.query;
-      const offset = (Number(pagina) - 1) * Number(limite);
+  // Obtener todos los lugares (público) - CORREGIDO
+// ✅ controladores/lugarController.ts - FUNCIÓN obtenerLugares CORREGIDA
+async obtenerLugares(req: Request, res: Response) {
+  try {
+    console.log('📋 Obteniendo lista de lugares...');
+    
+    const { categoria, pagina = 1, limite = 20 } = req.query;
+    const offset = (Number(pagina) - 1) * Number(limite);
 
-      let query = `
-        SELECT l.*, 
-               COUNT(DISTINCT cl.id) as total_calificaciones,
-               COUNT(DISTINCT e.id) as total_experiencias
-        FROM lugares l
-        LEFT JOIN calificaciones_lugares cl ON l.id = cl.lugar_id
-        LEFT JOIN experiencias e ON l.id = e.lugar_id AND e.estado = 'aprobado'
-      `;
-      
-      let countQuery = 'SELECT COUNT(*) FROM lugares';
-      const queryParams: any[] = [];
-      const countParams: any[] = [];
+    // ✅ QUERY SIMPLIFICADA Y CORREGIDA
+    let query = `
+      SELECT 
+        l.*,
+        COALESCE(COUNT(DISTINCT cl.id), 0) as total_calificaciones,
+        COALESCE(COUNT(DISTINCT e.id), 0) as total_experiencias
+      FROM lugares l
+      LEFT JOIN calificaciones_lugares cl ON l.id = cl.lugar_id
+      LEFT JOIN experiencias e ON l.id = e.lugar_id
+    `;
+    
+    let countQuery = 'SELECT COUNT(*) FROM lugares l';
+    const queryParams: any[] = [];
+    const countParams: any[] = [];
 
-      if (categoria) {
-        query += ' WHERE l.categoria = $1';
-        countQuery += ' WHERE categoria = $1';
-        queryParams.push(categoria);
-        countParams.push(categoria);
-      }
-
-      query += ` 
-        GROUP BY l.id
-        ORDER BY l.puntuacion_promedio DESC, l.total_calificaciones DESC
-        LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
-      `;
-      
-      queryParams.push(limite, offset);
-
-      const result = await pool.query(query, queryParams);
-      const countResult = await pool.query(countQuery, countParams);
-
-      res.json({
-        lugares: result.rows,
-        total: parseInt(countResult.rows[0].count),
-        pagina: Number(pagina),
-        totalPaginas: Math.ceil(parseInt(countResult.rows[0].count) / Number(limite))
-      });
-    } catch (error) {
-      console.error('Error obteniendo lugares:', error);
-      res.status(500).json({ error: 'Error al obtener lugares' });
+    if (categoria && categoria !== '') {
+      query += ' WHERE l.categoria = $1';
+      countQuery += ' WHERE l.categoria = $1';
+      queryParams.push(categoria);
+      countParams.push(categoria);
     }
-  },
 
-  // Obtener lugar por ID (público) - SIN CAMBIOS
+    query += ` 
+      GROUP BY l.id
+      ORDER BY 
+        COALESCE(l.puntuacion_promedio, 0) DESC, 
+        COALESCE(l.total_calificaciones, 0) DESC
+      LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
+    `;
+    
+    queryParams.push(Number(limite), offset);
+
+    console.log('🔍 Ejecutando query de lugares...');
+    
+    const [result, countResult] = await Promise.all([
+      pool.query(query, queryParams),
+      pool.query(countQuery, countParams)
+    ]);
+
+    const total = parseInt(countResult.rows[0]?.count || '0');
+
+    console.log(`✅ Encontrados ${result.rows.length} lugares de ${total} totales`);
+
+    res.json({
+      success: true,
+      lugares: result.rows,
+      total: total,
+      pagina: Number(pagina),
+      totalPaginas: Math.ceil(total / Number(limite))
+    });
+  } catch (error) {
+    console.error('❌ Error obteniendo lugares:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al obtener lugares',
+      detalle: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
+    });
+  }
+},
+
+  // Obtener lugar por ID (público) - CORREGIDO
   async obtenerLugarPorId(req: Request, res: Response) {
     try {
       const { id } = req.params;
+      
+      console.log('🔍 Obteniendo lugar por ID:', id);
 
       const lugarResult = await pool.query(
         `SELECT l.*, 
                 COUNT(DISTINCT e.id) as total_experiencias
          FROM lugares l
-         LEFT JOIN experiencias e ON l.id = e.lugar_id AND e.estado = 'aprobado'
+         LEFT JOIN experiencias e ON l.id = e.lugar_id
          WHERE l.id = $1
          GROUP BY l.id`,
         [id]
       );
 
       if (lugarResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Lugar no encontrado' });
+        console.log('❌ Lugar no encontrado:', id);
+        return res.status(404).json({ 
+          success: false,
+          error: 'Lugar no encontrado' 
+        });
       }
 
       const fotosResult = await pool.query(
@@ -82,97 +108,134 @@ export const lugarController = {
       const experienciasResult = await pool.query(
         `SELECT e.* 
          FROM experiencias e 
-         WHERE e.lugar_id = $1 AND e.estado = 'aprobado'
+         WHERE e.lugar_id = $1
          ORDER BY e.creado_en DESC
          LIMIT 10`,
         [id]
       );
 
+      console.log(`✅ Lugar encontrado: ${lugarResult.rows[0].nombre}`);
+
       res.json({
+        success: true,
         lugar: lugarResult.rows[0],
         fotos: fotosResult.rows,
         experiencias: experienciasResult.rows
       });
     } catch (error) {
-      console.error('Error obteniendo lugar:', error);
-      res.status(500).json({ error: 'Error al obtener lugar' });
+      console.error('❌ Error obteniendo lugar:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al obtener lugar',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
+      });
     }
   },
 
-  // Crear lugar (admin only) - SIN CAMBIOS
+  // Crear lugar (admin only) - CORREGIDO
   async crearLugar(req: Request, res: Response) {
     try {
       const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
+
+      console.log('➕ Creando nuevo lugar:', { nombre, categoria });
+
+      // Validaciones básicas
+      if (!nombre || !descripcion || !ubicacion || !categoria) {
+        return res.status(400).json({
+          success: false,
+          error: 'Nombre, descripción, ubicación y categoría son requeridos'
+        });
+      }
 
       const result = await pool.query(
         `INSERT INTO lugares 
          (nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url]
+        [nombre, descripcion, ubicacion, categoria, foto_principal_url || null, pdf_url || null]
       );
 
+      console.log('✅ Lugar creado:', result.rows[0].id);
+
       res.status(201).json({
+        success: true,
         mensaje: 'Lugar creado exitosamente',
         lugar: result.rows[0]
       });
     } catch (error) {
-      console.error('Error creando lugar:', error);
-      res.status(500).json({ error: 'Error al crear lugar' });
+      console.error('❌ Error creando lugar:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al crear lugar',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
+      });
     }
   },
 
-  // Actualizar lugar (admin only) - SIN CAMBIOS
-// En lugarController.ts - mejorar actualizarLugar
-async actualizarLugar(req: Request, res: Response) {
-  try {
-    const { id } = req.params;
-    const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
+  // Actualizar lugar (admin only) - CORREGIDO
+  async actualizarLugar(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
 
-    // ✅ Obtener el lugar actual primero
-    const lugarActual = await pool.query(
-      'SELECT * FROM lugares WHERE id = $1',
-      [id]
-    );
+      console.log('✏️ Actualizando lugar:', id);
 
-    if (lugarActual.rows.length === 0) {
-      return res.status(404).json({ error: 'Lugar no encontrado' });
+      // Obtener el lugar actual primero
+      const lugarActual = await pool.query(
+        'SELECT * FROM lugares WHERE id = $1',
+        [id]
+      );
+
+      if (lugarActual.rows.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          error: 'Lugar no encontrado' 
+        });
+      }
+
+      const lugar = lugarActual.rows[0];
+
+      // Usar valores existentes si no se proporcionan nuevos
+      const nombreFinal = nombre || lugar.nombre;
+      const descripcionFinal = descripcion || lugar.descripcion;
+      const ubicacionFinal = ubicacion || lugar.ubicacion;
+      const categoriaFinal = categoria || lugar.categoria;
+      const fotoPrincipalFinal = foto_principal_url !== undefined ? foto_principal_url : lugar.foto_principal_url;
+      const pdfFinal = pdf_url !== undefined ? pdf_url : lugar.pdf_url;
+
+      const result = await pool.query(
+        `UPDATE lugares 
+         SET nombre = $1, descripcion = $2, ubicacion = $3, categoria = $4, 
+             foto_principal_url = $5, pdf_url = $6, actualizado_en = NOW()
+         WHERE id = $7
+         RETURNING *`,
+        [nombreFinal, descripcionFinal, ubicacionFinal, categoriaFinal, 
+         fotoPrincipalFinal, pdfFinal, id]
+      );
+
+      console.log('✅ Lugar actualizado:', id);
+
+      res.json({
+        success: true,
+        mensaje: 'Lugar actualizado exitosamente',
+        lugar: result.rows[0]
+      });
+    } catch (error) {
+      console.error('❌ Error actualizando lugar:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al actualizar lugar',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
+      });
     }
+  },
 
-    const lugar = lugarActual.rows[0];
-
-    // ✅ Usar valores existentes si no se proporcionan nuevos
-    const nombreFinal = nombre || lugar.nombre;
-    const descripcionFinal = descripcion || lugar.descripcion;
-    const ubicacionFinal = ubicacion || lugar.ubicacion;
-    const categoriaFinal = categoria || lugar.categoria;
-    const fotoPrincipalFinal = foto_principal_url !== undefined ? foto_principal_url : lugar.foto_principal_url;
-    const pdfFinal = pdf_url !== undefined ? pdf_url : lugar.pdf_url;
-
-    const result = await pool.query(
-      `UPDATE lugares 
-       SET nombre = $1, descripcion = $2, ubicacion = $3, categoria = $4, 
-           foto_principal_url = $5, pdf_url = $6, actualizado_en = NOW()
-       WHERE id = $7
-       RETURNING *`,
-      [nombreFinal, descripcionFinal, ubicacionFinal, categoriaFinal, 
-       fotoPrincipalFinal, pdfFinal, id]
-    );
-
-    res.json({
-      mensaje: 'Lugar actualizado exitosamente',
-      lugar: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error actualizando lugar:', error);
-    res.status(500).json({ error: 'Error al actualizar lugar' });
-  }
-},
-
-  // Eliminar lugar (admin only) - SIN CAMBIOS
+  // Eliminar lugar (admin only) - CORREGIDO
   async eliminarLugar(req: Request, res: Response) {
     try {
       const { id } = req.params;
+
+      console.log('🗑️ Eliminando lugar:', id);
 
       const result = await pool.query(
         'DELETE FROM lugares WHERE id = $1 RETURNING *',
@@ -180,58 +243,86 @@ async actualizarLugar(req: Request, res: Response) {
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Lugar no encontrado' });
+        return res.status(404).json({ 
+          success: false,
+          error: 'Lugar no encontrado' 
+        });
       }
 
-      res.json({ mensaje: 'Lugar eliminado exitosamente' });
+      console.log('✅ Lugar eliminado:', id);
+
+      res.json({ 
+        success: true,
+        mensaje: 'Lugar eliminado exitosamente' 
+      });
     } catch (error) {
-      console.error('Error eliminando lugar:', error);
-      res.status(500).json({ error: 'Error al eliminar lugar' });
+      console.error('❌ Error eliminando lugar:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al eliminar lugar',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
+      });
     }
   },
 
-  // Obtener categorías únicas (público) - SIN CAMBIOS
+  // Obtener categorías únicas (público) - CORREGIDO
   async obtenerCategorias(req: Request, res: Response) {
     try {
+      console.log('📂 Obteniendo categorías...');
+
       const result = await pool.query(
         'SELECT DISTINCT categoria FROM lugares WHERE categoria IS NOT NULL ORDER BY categoria'
       );
 
+      console.log(`✅ Encontradas ${result.rows.length} categorías`);
+
       res.json({
+        success: true,
         categorias: result.rows.map(row => row.categoria)
       });
     } catch (error) {
-      console.error('Error obteniendo categorías:', error);
-      res.status(500).json({ error: 'Error al obtener categorías' });
+      console.error('❌ Error obteniendo categorías:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al obtener categorías',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
+      });
     }
   },
 
-  // Subir imagen principal - VERSIÓN CORREGIDA
+  // Subir imagen principal - CORREGIDO
   async subirImagenLugar(req: Request, res: Response) {
     try {
       const { id } = req.params;
       
+      console.log('🖼️ Subiendo imagen principal para lugar:', id);
+
       if (!req.file) {
-        return res.status(400).json({ error: 'No se proporcionó ninguna imagen' });
+        return res.status(400).json({ 
+          success: false,
+          error: 'No se proporcionó ninguna imagen' 
+        });
       }
 
       // Verificar que el lugar existe
       const lugarResult = await pool.query(
-        'SELECT id FROM lugares WHERE id = $1',
+        'SELECT id, nombre FROM lugares WHERE id = $1',
         [id]
       );
 
       if (lugarResult.rows.length === 0) {
         if (req.file.path) fs.unlinkSync(req.file.path);
-        return res.status(404).json({ error: 'Lugar no encontrado' });
+        return res.status(404).json({ 
+          success: false,
+          error: 'Lugar no encontrado' 
+        });
       }
 
-      // ✅ CORREGIDO: Usar misma ruta que cargaArchivosController
       const rutaImagen = `/uploads/images/lugares/${req.file.filename}`;
 
       // Verificar si ya existe una imagen principal
       const imagenPrincipalExistente = await pool.query(
-        'SELECT id FROM fotos_lugares WHERE lugar_id = $1 AND es_principal = true',
+        'SELECT id, ruta_almacenamiento FROM fotos_lugares WHERE lugar_id = $1 AND es_principal = true',
         [id]
       );
 
@@ -280,7 +371,16 @@ async actualizarLugar(req: Request, res: Response) {
         );
       }
 
+      // Actualizar también la foto_principal_url en la tabla lugares
+      await pool.query(
+        'UPDATE lugares SET foto_principal_url = $1, actualizado_en = NOW() WHERE id = $2',
+        [rutaImagen, id]
+      );
+
+      console.log('✅ Imagen principal subida para lugar:', id);
+
       res.json({
+        success: true,
         mensaje: 'Imagen subida exitosamente',
         url_imagen: rutaImagen,
         es_principal: true,
@@ -293,7 +393,7 @@ async actualizarLugar(req: Request, res: Response) {
       });
 
     } catch (error) {
-      console.error('Error subiendo imagen:', error);
+      console.error('❌ Error subiendo imagen:', error);
       
       if (req.file?.path) {
         try {
@@ -303,9 +403,14 @@ async actualizarLugar(req: Request, res: Response) {
         }
       }
       
-      res.status(500).json({ error: 'Error al subir imagen' });
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al subir imagen',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
+      });
     }
   },
+
 
   // Subir múltiples imágenes para galería del lugar - VERSIÓN CORREGIDA
 async subirMultipleImagenesLugar(req: Request, res: Response) {

@@ -1,5 +1,5 @@
-// hooks/useExperiences.ts (CORRECCIÓN COMPLETA)
-import { useState, useCallback, useEffect } from 'react';
+// hooks/useExperiences.ts (CORREGIDO - SIN ERRORES TYPESCRIPT)
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/lib/axios';
 
@@ -7,7 +7,7 @@ export interface Experience {
   id: string;
   url_foto: string;
   descripcion: string;
-  estado: 'pendiente' | 'aprobado' | 'rechazado' | 'procesando';
+  // ✅ ELIMINADO: estado ya no existe, todas son aprobadas
   creado_en: string;
   lugar_id?: string;
   lugar_nombre?: string;
@@ -17,22 +17,27 @@ export interface Experience {
   alto_imagen?: number;
   tamaño_archivo?: number;
   tipo_archivo?: string;
-  // Campos de moderación
-  moderado?: boolean;
-  puntuacion_texto?: number;
-  puntuacion_imagen?: number;
-  aprobado_automatico?: boolean;
-  motivo_rechazo?: string;
+  // ✅ ELIMINADO: campos de moderación ya no son necesarios
   hash_navegador?: string;
 }
 
+// ✅ ACTUALIZADO: Nuevo formato de estadísticas
 export interface ExperienceStats {
-  total: number;
-  total_vistas: number;
-  por_estado: Array<{
-    estado: string;
-    cantidad: number;
+  estadisticas: {
+    total_experiencias: number;
     total_vistas: number;
+    usuarios_unicos: number;
+    total_experiencias_subidas: number;
+    promedio_vistas_por_experiencia: number;
+  };
+  tendencias: Array<{
+    fecha: string;
+    cantidad: number;
+  }>;
+  top_vistas: Array<{
+    id: string;
+    descripcion: string;
+    vistas: number;
   }>;
 }
 
@@ -48,24 +53,53 @@ interface MyExperiencesResponse {
   total: number;
 }
 
+// ✅ ACTUALIZADO: Nuevo formato de respuesta para subida
 interface UploadResponse {
+  success: boolean;
   mensaje: string;
   experiencia: {
     id: string;
-    estado: string;
+    url_foto: string;
+    descripcion: string;
+    creado_en: string;
     limite_restante: number;
   };
 }
 
-interface ApiError {
+// ✅ NUEVO: Interface para errores de moderación
+interface ModeracionError {
+  error: 'CONTENIDO_RECHAZADO';
+  message: string;
+  motivo: string;
+  tipo: string;
+  detalles: {
+    puntuacion: number;
+    problemas: string[];
+    sugerencias: string[];
+    timestamp: string;
+  };
+}
+
+// ✅ MEJORADO: Interface más específica para errores de API
+interface ApiErrorResponse {
   response?: {
     data?: {
       error?: string;
       detalles?: string;
+      message?: string;
     };
     status?: number;
   };
   message?: string;
+}
+
+// ✅ NUEVO: Interface para errores de Axios
+interface AxiosError {
+  response?: {
+    data: ModeracionError | { error?: string; message?: string };
+    status: number;
+  };
+  message: string;
 }
 
 interface VistaDetallada {
@@ -78,17 +112,30 @@ interface VistaDetallada {
 export const useExperiences = () => {
   const [experiences, setExperiences] = useState<Experience[]>([]);
   const [myExperiences, setMyExperiences] = useState<Experience[]>([]);
-  const [pendingExperiences, setPendingExperiences] = useState<Experience[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [moderating, setModerating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // ✅ NUEVO: Estados para paginación y carga automática
+  const [pagination, setPagination] = useState({
+    pagina: 1,
+    totalPaginas: 1,
+    total: 0,
+    tieneMas: false
+  });
+  
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  
   const { toast } = useToast();
+  
+  // ✅ NUEVO: Referencia para evitar múltiples llamadas
+  const isFetching = useRef(false);
 
   const handleError = (err: unknown): string => {
-    const apiError = err as ApiError;
+    const apiError = err as ApiErrorResponse;
     
     if (apiError?.response?.status === 429) {
       return apiError.response.data?.detalles || 'Límite diario alcanzado';
@@ -112,26 +159,37 @@ export const useExperiences = () => {
   };
 
   /**
-   * Obtener todas las experiencias aprobadas (público)
+   * Obtener experiencias con paginación - ACTUALIZADO
    */
   const fetchExperiences = useCallback(async (filters?: {
     pagina?: number;
     limite?: number;
     lugar_id?: string;
+    cargarMas?: boolean; // ✅ NUEVO: Para cargar más en lugar de reemplazar
   }) => {
+    // ✅ NUEVO: Evitar múltiples llamadas simultáneas
+    if (isFetching.current) return;
+    isFetching.current = true;
+
     try {
-      setLoading(true);
+      if (filters?.cargarMas) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      
       setError(null);
 
       const params = new URLSearchParams();
-      if (filters?.pagina) params.append('pagina', filters.pagina.toString());
-      if (filters?.limite) params.append('limite', filters.limite.toString());
+      const pagina = filters?.pagina || 1;
+      const limite = filters?.limite || 6; // ✅ ESTÁNDAR: 6 experiencias por carga
+      
+      params.append('pagina', pagina.toString());
+      params.append('limite', limite.toString());
+      
       if (filters?.lugar_id) params.append('lugar_id', filters.lugar_id);
 
-      const queryString = params.toString();
-      const url = queryString ? `/api/experiencias?${queryString}` : '/api/experiencias';
-
-      const response = await api.get<ExperiencesResponse>(url);
+      const response = await api.get<ExperiencesResponse>(`/api/experiencias?${params}`);
       const experiencesData = response.data.experiencias || [];
       
       // Procesar URLs de imágenes
@@ -140,13 +198,27 @@ export const useExperiences = () => {
         url_foto: buildImageUrl(exp.url_foto)
       }));
       
-      setExperiences(parsedExperiences);
+      // ✅ NUEVO: Actualizar estado según si es carga inicial o "cargar más"
+      if (filters?.cargarMas) {
+        setExperiences(prev => [...prev, ...parsedExperiences]);
+      } else {
+        setExperiences(parsedExperiences);
+      }
+      
+      // ✅ NUEVO: Actualizar información de paginación
+      setPagination({
+        pagina: response.data.pagina,
+        totalPaginas: response.data.totalPaginas,
+        total: response.data.total,
+        tieneMas: response.data.pagina < response.data.totalPaginas
+      });
       
       return {
         experiencias: parsedExperiences,
         total: response.data.total,
         pagina: response.data.pagina,
-        totalPaginas: response.data.totalPaginas
+        totalPaginas: response.data.totalPaginas,
+        tieneMas: response.data.pagina < response.data.totalPaginas
       };
     } catch (err: unknown) {
       const errorMessage = handleError(err);
@@ -159,8 +231,54 @@ export const useExperiences = () => {
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+      isFetching.current = false;
     }
   }, [toast]);
+
+  /**
+   * ✅ NUEVO: Cargar más experiencias
+   */
+  const loadMoreExperiences = useCallback(async () => {
+    if (loadingMore || !pagination.tieneMas) return;
+    
+    const nextPage = pagination.pagina + 1;
+    await fetchExperiences({ 
+      pagina: nextPage, 
+      limite: 6, 
+      cargarMas: true 
+    });
+  }, [loadingMore, pagination, fetchExperiences]);
+
+  /**
+   * ✅ NUEVO: Sistema de actualización automática
+   */
+  const startAutoRefresh = useCallback(() => {
+    setAutoRefresh(true);
+  }, []);
+
+  const stopAutoRefresh = useCallback(() => {
+    setAutoRefresh(false);
+  }, []);
+
+  // ✅ NUEVO: Efecto para actualización automática
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const interval = setInterval(async () => {
+      try {
+        // Solo actualizar si no hay carga en curso
+        if (!isFetching.current) {
+          await fetchExperiences({ pagina: 1, limite: 6 });
+          console.log('🔄 Actualización automática de experiencias');
+        }
+      } catch (error) {
+        console.error('Error en actualización automática:', error);
+      }
+    }, 10000); // ✅ Actualizar cada 10 segundos
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, fetchExperiences]);
 
   /**
    * Obtener experiencias del usuario actual
@@ -220,7 +338,7 @@ export const useExperiences = () => {
   }, [toast]);
 
   /**
-   * Subir nueva experiencia
+   * Subir nueva experiencia - CON MANEJO DE MODERACIÓN EN TIEMPO REAL
    */
   const uploadExperience = useCallback(async (
     imageFile: File,
@@ -254,33 +372,69 @@ export const useExperiences = () => {
         formData.append('lugar_id', lugarId);
       }
 
-      await api.post<UploadResponse>('/api/experiencias/subir', formData, {
+      // ✅ ACTUALIZADO: Nueva ruta y manejo de respuesta
+      const response = await api.post<UploadResponse>('/api/experiencias', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
+      if (!response.data.success) {
+        throw new Error(response.data.mensaje || 'Error al subir experiencia');
+      }
+
       // Recargar mis experiencias después de subir
       await fetchMyExperiences();
 
       toast({
-        title: '✅ Experiencia subida',
-        description: 'Tu experiencia ha sido enviada para moderación.',
+        title: '✅ Experiencia publicada',
+        description: response.data.mensaje,
         variant: 'default',
       });
 
       return true;
     } catch (err: unknown) {
+      // Manejo de términos requeridos
       if (err instanceof Error && err.message === 'TERMS_REQUIRED') {
         throw err;
       }
+
+      // ✅ CORREGIDO: Manejo específico de errores de moderación sin 'any'
+      const apiError = err as AxiosError;
+      if (apiError.response?.data && typeof apiError.response.data === 'object' && 'error' in apiError.response.data) {
+        const errorData = apiError.response.data;
+        
+        if (errorData.error === 'CONTENIDO_RECHAZADO') {
+          const moderacionError = errorData as ModeracionError;
+          
+          toast({
+            title: '❌ Contenido no aprobado',
+            description: moderacionError.message,
+            variant: 'destructive',
+            duration: 8000,
+          });
+
+          // Opcional: Mostrar detalles en consola para debugging
+          console.log('Detalles de moderación:', moderacionError.detalles);
+        } else {
+          // Error genérico
+          const errorMessage = errorData.message || handleError(err);
+          toast({
+            title: '❌ Error al subir experiencia',
+            description: errorMessage,
+            variant: 'destructive',
+          });
+        }
+      } else {
+        // Error genérico sin estructura específica
+        const errorMessage = handleError(err);
+        toast({
+          title: '❌ Error al subir experiencia',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
       
-      const errorMessage = handleError(err);
-      toast({
-        title: '❌ Error al subir experiencia',
-        description: errorMessage,
-        variant: 'destructive',
-      });
       return false;
     } finally {
       setUploading(false);
@@ -288,7 +442,7 @@ export const useExperiences = () => {
   }, [toast, fetchMyExperiences]);
 
   /**
-   * Editar experiencia existente
+   * Editar experiencia existente - CON MANEJO DE MODERACIÓN EN TIEMPO REAL
    */
   const editExperience = useCallback(async (
     experienceId: string,
@@ -307,7 +461,8 @@ export const useExperiences = () => {
         return false;
       }
 
-      await api.put(`/api/experiencias/${experienceId}/editar`, {
+      // ✅ ACTUALIZADO: Nueva ruta
+      await api.put(`/api/experiencias/${experienceId}`, {
         descripcion: descripcion.trim()
       });
 
@@ -316,18 +471,42 @@ export const useExperiences = () => {
 
       toast({
         title: '✅ Experiencia actualizada',
-        description: 'Tu experiencia ha sido actualizada y será revisada nuevamente.',
+        description: 'Tu experiencia ha sido actualizada exitosamente.',
         variant: 'default',
       });
 
       return true;
     } catch (err: unknown) {
-      const errorMessage = handleError(err);
-      toast({
-        title: '❌ Error al editar experiencia',
-        description: errorMessage,
-        variant: 'destructive',
-      });
+      // ✅ CORREGIDO: Manejo de errores de moderación en edición sin 'any'
+      const apiError = err as AxiosError;
+      if (apiError.response?.data && typeof apiError.response.data === 'object' && 'error' in apiError.response.data) {
+        const errorData = apiError.response.data;
+        
+        if (errorData.error === 'CONTENIDO_RECHAZADO') {
+          const moderacionError = errorData as ModeracionError;
+          
+          toast({
+            title: '❌ Contenido no aprobado',
+            description: moderacionError.message,
+            variant: 'destructive',
+            duration: 8000,
+          });
+        } else {
+          const errorMessage = errorData.message || handleError(err);
+          toast({
+            title: '❌ Error al editar experiencia',
+            description: errorMessage,
+            variant: 'destructive',
+          });
+        }
+      } else {
+        const errorMessage = handleError(err);
+        toast({
+          title: '❌ Error al editar experiencia',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
       return false;
     } finally {
       setEditing(null);
@@ -341,7 +520,8 @@ export const useExperiences = () => {
     try {
       setDeleting(experienceId);
 
-      await api.delete(`/api/experiencias/${experienceId}/eliminar`);
+      // ✅ ACTUALIZADO: Nueva ruta
+      await api.delete(`/api/experiencias/${experienceId}`);
 
       // Actualizar mis experiencias
       await fetchMyExperiences();
@@ -366,99 +546,100 @@ export const useExperiences = () => {
     }
   }, [toast, fetchMyExperiences]);
 
-  // ==================== FUNCIONES DE ADMIN/MODERACIÓN ====================
-
   /**
-   * Obtener experiencias pendientes de moderación (admin only)
+   * ✅ MEJORADO: Incrementar vistas con actualización automática
    */
-  const fetchPendingExperiences = useCallback(async (filters?: {
-    pagina?: number;
-    limite?: number;
-  }) => {
+  const incrementViewCount = useCallback(async (experienceId: string): Promise<{
+    success: boolean;
+    isNewView?: boolean;
+    message?: string;
+  }> => {
     try {
-      setLoading(true);
+      console.log('👀 Incrementando vista para experiencia:', experienceId);
       
-      const params = new URLSearchParams();
-      if (filters?.pagina) params.append('pagina', filters.pagina.toString());
-      if (filters?.limite) params.append('limite', filters.limite.toString());
-
-      const queryString = params.toString();
-      const url = queryString ? `/api/experiencias/admin/pendientes?${queryString}` : '/api/experiencias/admin/pendientes';
-
-      const response = await api.get<ExperiencesResponse>(url);
-      const experiencesData = response.data.experiencias || [];
+      const response = await api.post<{
+        success: boolean;
+        mensaje: string;
+        tipo: 'nueva_vista' | 'vista_duplicada';
+      }>(`/api/experiencias/${experienceId}/vista`);
       
-      const parsedExperiences = experiencesData.map(exp => ({
-        ...exp,
-        url_foto: buildImageUrl(exp.url_foto)
-      }));
+      console.log('✅ Respuesta vista:', response.data.tipo);
       
-      setPendingExperiences(parsedExperiences);
+      // ✅ NUEVO: Actualizar el contador en tiempo real si fue una vista nueva
+      if (response.data.tipo === 'nueva_vista') {
+        setExperiences(prev => prev.map(exp => 
+          exp.id === experienceId 
+            ? { ...exp, contador_vistas: exp.contador_vistas + 1 }
+            : exp
+        ));
+        
+        setMyExperiences(prev => prev.map(exp => 
+          exp.id === experienceId 
+            ? { ...exp, contador_vistas: exp.contador_vistas + 1 }
+            : exp
+        ));
+      }
       
       return {
-        experiencias: parsedExperiences,
-        total: response.data.total,
-        pagina: response.data.pagina
+        success: true,
+        isNewView: response.data.tipo === 'nueva_vista',
+        message: response.data.mensaje
       };
     } catch (err: unknown) {
-      const errorMessage = handleError(err);
-      toast({
-        title: 'Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      throw new Error(errorMessage);
-    } finally {
-      setLoading(false);
+      console.error('❌ Error incrementando vista:', err);
+      return {
+        success: false,
+        message: 'Error al registrar vista'
+      };
     }
-  }, [toast]);
+  }, []);
 
   /**
-   * Moderar experiencia (aprobar/rechazar) - admin only
+   * ✅ NUEVO: Actualizar una experiencia específica (para WebSockets)
    */
-  const moderateExperience = useCallback(async (
-    experienceId: string,
-    accion: 'aprobar' | 'rechazar',
-    razon?: string
-  ): Promise<boolean> => {
-    try {
-      setModerating(experienceId);
-
-      const response = await api.patch(`/api/experiencias/${experienceId}/moderar`, {
-        accion,
-        razon
-      });
-
-      // Actualizar lista de pendientes
-      await fetchPendingExperiences();
-
-      toast({
-        title: `✅ Experiencia ${accion === 'aprobar' ? 'aprobada' : 'rechazada'}`,
-        description: response.headers.mensaje,
-        variant: 'default',
-      });
-
-      return true;
-    } catch (err: unknown) {
-      const errorMessage = handleError(err);
-      toast({
-        title: '❌ Error en moderación',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      return false;
-    } finally {
-      setModerating(null);
-    }
-  }, [toast, fetchPendingExperiences]);
+  const updateExperience = useCallback((updatedExperience: Experience) => {
+    setExperiences(prev => prev.map(exp => 
+      exp.id === updatedExperience.id 
+        ? { ...updatedExperience, url_foto: buildImageUrl(updatedExperience.url_foto) }
+        : exp
+    ));
+    
+    setMyExperiences(prev => prev.map(exp => 
+      exp.id === updatedExperience.id 
+        ? { ...updatedExperience, url_foto: buildImageUrl(updatedExperience.url_foto) }
+        : exp
+    ));
+  }, []);
 
   /**
-   * Obtener estadísticas de experiencias (admin)
+   * ✅ NUEVO: Agregar nueva experiencia (para WebSockets)
+   */
+  const addNewExperience = useCallback((newExperience: Experience) => {
+    const experienceWithImage = {
+      ...newExperience,
+      url_foto: buildImageUrl(newExperience.url_foto)
+    };
+    
+    setExperiences(prev => [experienceWithImage, ...prev]);
+  }, []);
+
+  /**
+   * Obtener estadísticas de experiencias (admin) - ACTUALIZADO
    */
   const getExperienceStats = useCallback(async (): Promise<ExperienceStats | null> => {
     try {
-      const response = await api.get<ExperienceStats>('/api/experiencias/admin/estadisticas');
-      return response.data;
+      const response = await api.get<{
+        success: boolean;
+        estadisticas: ExperienceStats['estadisticas'];
+        tendencias: ExperienceStats['tendencias'];
+        top_vistas: ExperienceStats['top_vistas'];
+      }>('/api/experiencias/estadisticas');
+      
+      return {
+        estadisticas: response.data.estadisticas,
+        tendencias: response.data.tendencias,
+        top_vistas: response.data.top_vistas
+      };
     } catch (err: unknown) {
       console.error('Error obteniendo estadísticas:', err);
       toast({
@@ -469,24 +650,6 @@ export const useExperiences = () => {
       return null;
     }
   }, [toast]);
-
-  /**
-   * Incrementar contador de vistas - VERSIÓN CORREGIDA
-   */
-  const incrementViewCount = useCallback(async (experienceId: string): Promise<boolean> => {
-    try {
-      console.log('👀 Incrementando vista para experiencia:', experienceId);
-      
-      await api.post(`/api/experiencias/${experienceId}/vista`);
-      
-      console.log('✅ Vista registrada exitosamente');
-      return true;
-    } catch (err: unknown) {
-      console.error('❌ Error incrementando vista:', err);
-      // No mostrar toast para errores de vistas (son silenciosos)
-      return false;
-    }
-  }, []);
 
   /**
    * Obtener estadísticas detalladas de vistas (admin)
@@ -532,12 +695,10 @@ export const useExperiences = () => {
     // Estado
     experiences,
     myExperiences,
-    pendingExperiences,
     loading,
     uploading,
     editing,
     deleting,
-    moderating,
     error,
     
     // Acciones públicas
@@ -550,10 +711,21 @@ export const useExperiences = () => {
     incrementViewCount,
     
     // Acciones de administración
-    fetchPendingExperiences,
-    moderateExperience,
     getExperienceStats,
     getVistasDetalladas,
+
+    // Actualizaciones en tiempo real
+    updateExperience,
+    addNewExperience,
+    // Paginación y carga automática
+    loadMoreExperiences,
+    pagination,
+    loadingMore,
+    startAutoRefresh,
+    stopAutoRefresh,
+    autoRefresh,
+    
+    
     
     // Utilidades
     reevaluateExperiences,
@@ -564,11 +736,10 @@ export const useExperiences = () => {
     isUploading: uploading,
     isEditing: (id: string) => editing === id,
     isDeleting: (id: string) => deleting === id,
-    isModerating: (id: string) => moderating === id,
   };
 };
 
-// Hook complementario para pre-moderación en frontend
+// ✅ CORREGIDO: Hook complementario para pre-validación en frontend
 export const useExperienceValidation = () => {
   useToast();
 
@@ -607,7 +778,7 @@ export const useExperienceValidation = () => {
     return { isValid: true };
   };
 
-  const preModerateContent = async (descripcion: string, imageFile?: File): Promise<{
+  const preValidateContent = async (descripcion: string, imageFile?: File): Promise<{
     isValid: boolean;
     warnings: string[];
   }> => {
@@ -627,7 +798,7 @@ export const useExperienceValidation = () => {
       }
     }
 
-    // Detección básica de spam en frontend
+    // Detección básica de spam en frontend (solo como sugerencia)
     const spamWords = ['vendo', 'compro', 'oferta', 'descuento', 'ganar dinero', 'trabajo desde casa'];
     const hasSpam = spamWords.some(word => 
       descripcion.toLowerCase().includes(word.toLowerCase())
@@ -643,6 +814,6 @@ export const useExperienceValidation = () => {
   return {
     validateDescription,
     validateImage,
-    preModerateContent
+    preValidateContent
   };
 };
