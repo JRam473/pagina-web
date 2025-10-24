@@ -1,4 +1,4 @@
-// controladores/lugarController.ts - VERSIÓN CON MODERACIÓN EN TIEMPO REAL
+// controladores/lugarController.ts - VERSIÓN SOLO ANÁLISIS DE TEXTO
 import { Request, Response } from 'express';
 import { pool } from '../utils/baseDeDatos';
 import fs from 'fs';
@@ -7,7 +7,7 @@ import path from 'path';
 import { ModeracionService } from '../services/moderacionService';
 
 export const lugarController = {
-  // Obtener todos los lugares (público) - CORREGIDO
+  // Obtener todos los lugares (público) - SIN CAMBIOS
   async obtenerLugares(req: Request, res: Response) {
     try {
       console.log('📋 Obteniendo lista de lugares...');
@@ -15,7 +15,6 @@ export const lugarController = {
       const { categoria, pagina = 1, limite = 20 } = req.query;
       const offset = (Number(pagina) - 1) * Number(limite);
 
-      // ✅ QUERY SIMPLIFICADA Y CORREGIDA
       let query = `
         SELECT 
           l.*,
@@ -75,7 +74,7 @@ export const lugarController = {
     }
   },
 
-  // Obtener lugar por ID (público) - CORREGIDO
+  // Obtener lugar por ID (público) - SIN CAMBIOS
   async obtenerLugarPorId(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -132,12 +131,12 @@ export const lugarController = {
     }
   },
 
-  // ✅ ACTUALIZADO: Crear lugar con moderación en tiempo real
+  // ✅ ACTUALIZADO: Crear lugar con moderación SOLO DE TEXTO
   async crearLugar(req: Request, res: Response) {
     try {
       const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
 
-      console.log('➕ Creando nuevo lugar con moderación:', { nombre, categoria });
+      console.log('➕ Creando nuevo lugar con moderación de texto:', { nombre, categoria });
 
       // Validaciones básicas
       if (!nombre || !descripcion || !ubicacion || !categoria) {
@@ -147,12 +146,12 @@ export const lugarController = {
         });
       }
 
-      // ✅ NUEVO: Moderación en tiempo real del texto
+      // ✅ MODIFICADO: Moderación SOLO de texto
       const moderacionService = new ModeracionService();
       const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
         texto: descripcion,
         ipUsuario: req.ip || 'unknown',
-        hashNavegador: 'admin-creacion-lugar' // Para logs de administrador
+        hashNavegador: 'admin-creacion-lugar'
       });
 
       // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico
@@ -211,13 +210,13 @@ export const lugarController = {
     }
   },
 
-  // ✅ ACTUALIZADO: Actualizar lugar con moderación en tiempo real
+  // ✅ ACTUALIZADO: Actualizar lugar con moderación SOLO DE TEXTO
   async actualizarLugar(req: Request, res: Response) {
     try {
       const { id } = req.params;
       const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
 
-      console.log('✏️ Actualizando lugar con moderación:', id);
+      console.log('✏️ Actualizando lugar con moderación de texto:', id);
 
       // Obtener el lugar actual primero
       const lugarActual = await pool.query(
@@ -234,7 +233,7 @@ export const lugarController = {
 
       const lugar = lugarActual.rows[0];
 
-      // ✅ NUEVO: Moderación en tiempo real si se modifica la descripción
+      // ✅ MODIFICADO: Moderación SOLO de texto si se modifica la descripción
       if (descripcion && descripcion !== lugar.descripcion) {
         const moderacionService = new ModeracionService();
         const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
@@ -310,7 +309,7 @@ export const lugarController = {
     }
   },
 
-  // Eliminar lugar (admin only) - CORREGIDO
+  // Eliminar lugar (admin only) - SIN CAMBIOS
   async eliminarLugar(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -345,7 +344,7 @@ export const lugarController = {
     }
   },
 
-  // Obtener categorías únicas (público) - CORREGIDO
+  // Obtener categorías únicas (público) - SIN CAMBIOS
   async obtenerCategorias(req: Request, res: Response) {
     try {
       console.log('📂 Obteniendo categorías...');
@@ -370,12 +369,12 @@ export const lugarController = {
     }
   },
 
-  // ✅ ACTUALIZADO: Subir imagen principal con moderación
+  // ✅ ACTUALIZADO: Subir imagen principal SIN moderación
   async subirImagenLugar(req: Request, res: Response) {
     try {
       const { id } = req.params;
       
-      console.log('🖼️ Subiendo imagen principal con moderación para lugar:', id);
+      console.log('🖼️ Subiendo imagen principal para lugar:', id);
 
       if (!req.file) {
         return res.status(400).json({ 
@@ -384,38 +383,8 @@ export const lugarController = {
         });
       }
 
-      // ✅ NUEVO: Moderación en tiempo real de la imagen
-      const moderacionService = new ModeracionService();
-      const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
-        imagenBuffer: req.file.buffer,
-        imagenMimeType: req.file.mimetype,
-        ipUsuario: req.ip || 'unknown',
-        hashNavegador: 'admin-imagen-lugar'
-      });
-
-      // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico
-      if (!resultadoModeracion.esAprobado) {
-        // Eliminar archivo rechazado
-        if (req.file.path) fs.unlinkSync(req.file.path);
-        
-        console.log('❌ Imagen rechazada por moderación:', resultadoModeracion.motivoRechazo);
-        
-        const { mensajeUsuario, tipoProblema, detallesEspecificos } = this.analizarMotivoRechazo(resultadoModeracion);
-        
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: mensajeUsuario,
-          motivo: resultadoModeracion.motivoRechazo,
-          tipo: tipoProblema,
-          detalles: {
-            puntuacion: resultadoModeracion.puntuacionGeneral,
-            problemas: detallesEspecificos,
-            sugerencias: this.generarSugerencias(tipoProblema),
-            timestamp: new Date().toISOString()
-          }
-        });
-      }
+      // ✅ MODIFICADO: NO hay moderación de imágenes en backend
+      console.log('✅ Imagen aceptada sin análisis (moderación en frontend)');
 
       // Verificar que el lugar existe
       const lugarResult = await pool.query(
@@ -490,7 +459,7 @@ export const lugarController = {
         [rutaImagen, id]
       );
 
-      console.log('✅ Imagen principal aprobada y subida para lugar:', id);
+      console.log('✅ Imagen principal subida para lugar:', id);
 
       res.json({
         success: true,
@@ -516,15 +485,6 @@ export const lugarController = {
         }
       }
       
-      // Manejar errores de moderación específicos
-      if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: error.message
-        });
-      }
-      
       res.status(500).json({ 
         success: false,
         error: 'Error al subir imagen',
@@ -533,7 +493,7 @@ export const lugarController = {
     }
   },
 
-  // ✅ ACTUALIZADO: Subir múltiples imágenes para galería con moderación
+  // ✅ ACTUALIZADO: Subir múltiples imágenes SIN moderación
   async subirMultipleImagenesLugar(req: Request, res: Response) {
     const client = await pool.connect();
     
@@ -544,7 +504,7 @@ export const lugarController = {
         return res.status(400).json({ error: 'No se proporcionaron imágenes' });
       }
 
-      console.log('📤 Subiendo múltiples imágenes con moderación para galería del lugar:', id);
+      console.log('📤 Subiendo múltiples imágenes para galería del lugar:', id);
 
       await client.query('BEGIN');
 
@@ -565,42 +525,9 @@ export const lugarController = {
       
       console.log('📍 Lugar:', lugar.nombre, '| ¿Tiene imagen principal?:', tieneImagenPrincipal);
 
-      // ✅ NUEVO: Moderación en tiempo real de todas las imágenes
-      const moderacionService = new ModeracionService();
-      const imagenesAprobadas = [];
-      
-      for (const file of req.files) {
-        try {
-          const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
-            imagenBuffer: file.buffer,
-            imagenMimeType: file.mimetype,
-            ipUsuario: req.ip || 'unknown',
-            hashNavegador: 'admin-galeria-lugar'
-          });
-
-          if (!resultadoModeracion.esAprobado) {
-            console.log('❌ Imagen rechazada por moderación:', file.filename, resultadoModeracion.motivoRechazo);
-            // Eliminar archivo rechazado
-            if (file.path) fs.unlinkSync(file.path);
-            continue; // Saltar esta imagen
-          }
-          
-          imagenesAprobadas.push(file);
-          console.log('✅ Imagen aprobada:', file.filename);
-          
-        } catch (error) {
-          console.error('❌ Error analizando imagen:', file.filename, error);
-          // En caso de error, incluir la imagen (fallback seguro)
-          imagenesAprobadas.push(file);
-        }
-      }
-
-      if (imagenesAprobadas.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ 
-          error: 'Todas las imágenes fueron rechazadas por el filtro de contenido'
-        });
-      }
+      // ✅ MODIFICADO: NO hay moderación de imágenes, aceptar todas
+      const imagenesAceptadas = [...req.files];
+      console.log(`✅ ${imagenesAceptadas.length} imágenes aceptadas sin análisis`);
 
       // 2. Obtener el máximo orden actual
       const maxOrdenResult = await client.query(
@@ -611,11 +538,11 @@ export const lugarController = {
       let orden = maxOrdenResult.rows[0].max_orden + 1;
       const imagenesSubidas = [];
 
-      // 3. Insertar cada imagen APROBADA como NO principal
-      for (const file of imagenesAprobadas) {
+      // 3. Insertar cada imagen como NO principal
+      for (const file of imagenesAceptadas) {
         const rutaImagen = `/uploads/images/lugares/${file.filename}`;
         
-        console.log('💾 Guardando imagen de galería aprobada:', {
+        console.log('💾 Guardando imagen de galería:', {
           nombre: file.filename,
           orden: orden,
           es_principal: false
@@ -672,13 +599,12 @@ export const lugarController = {
       }
 
       await client.query('COMMIT');
-      console.log('✅ Galería actualizada - Imágenes aprobadas agregadas:', imagenesSubidas.length);
+      console.log('✅ Galería actualizada - Imágenes agregadas:', imagenesSubidas.length);
 
       res.json({
-        mensaje: `${imagenesSubidas.length} imágenes aprobadas agregadas a la galería`,
+        mensaje: `${imagenesSubidas.length} imágenes agregadas a la galería`,
         imagenes: imagenesSubidas,
         total: imagenesSubidas.length,
-        rechazadas: req.files.length - imagenesSubidas.length,
         nota: 'Las imágenes se agregaron a la galería sin establecer como principal'
       });
 
@@ -703,7 +629,7 @@ export const lugarController = {
     }
   },
 
-  // ✅ ACTUALIZADO: Subir PDF de lugar con moderación
+  // ✅ ACTUALIZADO: Subir PDF SIN moderación
   async subirPDFLugar(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -712,37 +638,8 @@ export const lugarController = {
         return res.status(400).json({ error: 'No se proporcionó ningún PDF' });
       }
 
-      // ✅ NUEVO: Moderación en tiempo real del PDF
-      const moderacionService = new ModeracionService();
-      const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
-        pdfBuffer: req.file.buffer,
-        ipUsuario: req.ip || 'unknown',
-        hashNavegador: 'admin-pdf-lugar'
-      });
-
-      // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico
-      if (!resultadoModeracion.esAprobado) {
-        // Eliminar archivo rechazado
-        if (req.file.path) fs.unlinkSync(req.file.path);
-        
-        console.log('❌ PDF rechazado por moderación:', resultadoModeracion.motivoRechazo);
-        
-        const { mensajeUsuario, tipoProblema, detallesEspecificos } = this.analizarMotivoRechazo(resultadoModeracion);
-        
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: mensajeUsuario,
-          motivo: resultadoModeracion.motivoRechazo,
-          tipo: tipoProblema,
-          detalles: {
-            puntuacion: resultadoModeracion.puntuacionGeneral,
-            problemas: detallesEspecificos,
-            sugerencias: this.generarSugerencias(tipoProblema),
-            timestamp: new Date().toISOString()
-          }
-        });
-      }
+      // ✅ MODIFICADO: NO hay moderación de PDF en backend
+      console.log('✅ PDF aceptado sin análisis (moderación en frontend)');
 
       // Verificar que el lugar existe
       const lugarResult = await pool.query(
@@ -758,7 +655,6 @@ export const lugarController = {
         return res.status(404).json({ error: 'Lugar no encontrado' });
       }
 
-      // ✅ CORREGIDO: Usar misma ruta que cargaArchivosController
       const rutaPDF = `/uploads/pdfs/${req.file.filename}`;
 
       // Actualizar el PDF en la tabla lugares
@@ -767,7 +663,7 @@ export const lugarController = {
         [rutaPDF, id]
       );
 
-      console.log('✅ PDF aprobado y subido para lugar:', id);
+      console.log('✅ PDF subido para lugar:', id);
 
       res.json({
         mensaje: 'PDF subido exitosamente',
@@ -788,15 +684,6 @@ export const lugarController = {
         } catch (unlinkError) {
           console.error('Error eliminando archivo:', unlinkError);
         }
-      }
-      
-      // Manejar errores de moderación específicos
-      if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: error.message
-        });
       }
       
       res.status(500).json({ error: 'Error al subir PDF' });
@@ -1069,7 +956,7 @@ export const lugarController = {
     }
   },
 
-  // Eliminar PDF de lugar
+  // Eliminar PDF de lugar - SIN CAMBIOS
   async eliminarPDFLugar(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -1109,50 +996,21 @@ export const lugarController = {
     }
   },
 
-  // ✅ ACTUALIZADO: Reemplazar imagen principal con moderación
+  // ✅ ACTUALIZADO: Reemplazar imagen principal SIN moderación
   async reemplazarImagenPrincipal(req: Request, res: Response) {
     const client = await pool.connect();
     
     try {
       const { id } = req.params;
       
-      console.log('🔄 Reemplazando imagen principal con moderación para lugar:', id);
+      console.log('🔄 Reemplazando imagen principal para lugar:', id);
 
       if (!req.file) {
         return res.status(400).json({ error: 'Archivo es requerido' });
       }
 
-      // ✅ NUEVO: Moderación en tiempo real de la nueva imagen
-      const moderacionService = new ModeracionService();
-      const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
-        imagenBuffer: req.file.buffer,
-        imagenMimeType: req.file.mimetype,
-        ipUsuario: req.ip || 'unknown',
-        hashNavegador: 'admin-reemplazo-imagen-lugar'
-      });
-
-      // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico
-      if (!resultadoModeracion.esAprobado) {
-        if (req.file.path) fs.unlinkSync(req.file.path);
-        
-        console.log('❌ Imagen rechazada por moderación:', resultadoModeracion.motivoRechazo);
-        
-        const { mensajeUsuario, tipoProblema, detallesEspecificos } = this.analizarMotivoRechazo(resultadoModeracion);
-        
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: mensajeUsuario,
-          motivo: resultadoModeracion.motivoRechazo,
-          tipo: tipoProblema,
-          detalles: {
-            puntuacion: resultadoModeracion.puntuacionGeneral,
-            problemas: detallesEspecificos,
-            sugerencias: this.generarSugerencias(tipoProblema),
-            timestamp: new Date().toISOString()
-          }
-        });
-      }
+      // ✅ MODIFICADO: NO hay moderación de imágenes
+      console.log('✅ Imagen aceptada sin análisis (moderación en frontend)');
 
       await client.query('BEGIN');
 
@@ -1272,7 +1130,7 @@ export const lugarController = {
       );
 
       await client.query('COMMIT');
-      console.log('✅ Imagen principal aprobada y reemplazada exitosamente');
+      console.log('✅ Imagen principal reemplazada exitosamente');
 
       res.json({
         mensaje: 'Imagen principal reemplazada exitosamente',
@@ -1294,15 +1152,6 @@ export const lugarController = {
         try { fs.unlinkSync(req.file.path); } catch (unlinkError) { /* ignore */ }
       }
       
-      // Manejar errores de moderación específicos
-      if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: error.message
-        });
-      }
-      
       res.status(500).json({ 
         error: 'Error al reemplazar imagen principal',
         detalle: error instanceof Error ? error.message : 'Error desconocido'
@@ -1312,10 +1161,10 @@ export const lugarController = {
     }
   },
 
-  // 🔒 MÉTODOS PRIVADOS - Convertidos a funciones internas
+  // 🔒 MÉTODOS PRIVADOS - Actualizados para solo texto
 
   /**
-   * Analizar motivo de rechazo para mensajes específicos al usuario
+   * Analizar motivo de rechazo para mensajes específicos al usuario (solo texto)
    */
   analizarMotivoRechazo(resultadoModeracion: any): { 
     mensajeUsuario: string; 
@@ -1326,7 +1175,7 @@ export const lugarController = {
     let mensajeUsuario = 'El contenido no cumple con nuestras políticas';
     let tipoProblema = 'general';
 
-    // Analizar problemas de texto
+    // ✅ MODIFICADO: Solo analizar problemas de texto
     if (resultadoModeracion.detalles?.texto && !resultadoModeracion.detalles.texto.esAprobado) {
       tipoProblema = 'texto';
       const texto = resultadoModeracion.detalles.texto;
@@ -1349,61 +1198,25 @@ export const lugarController = {
       }
     }
 
-    // Analizar problemas de imagen
-    if (resultadoModeracion.detalles?.imagen && !resultadoModeracion.detalles.imagen.esAprobado) {
-      tipoProblema = 'imagen';
-      const imagen = resultadoModeracion.detalles.imagen;
-      
-      if (imagen.detalles?.categoriaPeligrosa) {
-        mensajeUsuario = 'La imagen contiene contenido inapropiado';
-        detallesEspecificos.push(`Categoría detectada: ${imagen.detalles.categoriaPeligrosa}`);
-        detallesEspecificos.push(`Nivel de confianza: ${Math.round(imagen.detalles.probabilidadPeligrosa * 100)}%`);
-      } else {
-        mensajeUsuario = 'La imagen no es apropiada para esta plataforma';
-        detallesEspecificos.push('Contenido visual inapropiado detectado');
-      }
-    }
-
-    // Analizar problemas de PDF
-    if (resultadoModeracion.detalles?.pdf && !resultadoModeracion.detalles.pdf.esAprobado) {
-      tipoProblema = 'pdf';
-      mensajeUsuario = 'El archivo PDF contiene contenido inapropiado';
-      detallesEspecificos.push('Se detectó contenido problemático en el PDF');
-      
-      if (resultadoModeracion.detalles.pdf.detalles?.errores) {
-        detallesEspecificos.push(...resultadoModeracion.detalles.pdf.detalles.errores.slice(0, 2));
-      }
-    }
-
     return { mensajeUsuario, tipoProblema, detallesEspecificos };
   },
 
   /**
-   * Generar sugerencias según el tipo de problema
+   * Generar sugerencias según el tipo de problema (solo texto)
    */
   generarSugerencias(tipoProblema: string): string[] {
     const sugerencias: string[] = [];
     
-    switch (tipoProblema) {
-      case 'texto':
-        sugerencias.push('Evita lenguaje ofensivo, insultos o palabras vulgares');
-        sugerencias.push('No incluyas contenido comercial, promociones o spam');
-        sugerencias.push('Asegúrate de que el texto sea coherente y tenga sentido');
-        sugerencias.push('No incluyas enlaces, emails o números de teléfono');
-        break;
-      case 'imagen':
-        sugerencias.push('Usa imágenes apropiadas y respetuosas');
-        sugerencias.push('Evita contenido sexual, violento o ofensivo');
-        sugerencias.push('Asegúrate de que la imagen sea relevante para el lugar turístico');
-        break;
-      case 'pdf':
-        sugerencias.push('Verifica que el PDF no contenga contenido inapropiado');
-        sugerencias.push('Asegúrate de que el contenido sea relevante y apropiado');
-        sugerencias.push('Considera usar imágenes directamente en lugar de PDF');
-        break;
-      default:
-        sugerencias.push('Revisa el contenido antes de publicarlo');
-        sugerencias.push('Asegúrate de que cumpla con las políticas de la comunidad');
+    // ✅ MODIFICADO: Solo sugerencias para texto
+    if (tipoProblema === 'texto') {
+      sugerencias.push('Evita lenguaje ofensivo, insultos o palabras vulgares');
+      sugerencias.push('No incluyas contenido comercial, promociones o spam');
+      sugerencias.push('Asegúrate de que el texto sea coherente y tenga sentido');
+      sugerencias.push('No incluyas enlaces, emails o números de teléfono');
+      sugerencias.push('Usa un lenguaje respetuoso y apropiado para la comunidad');
+    } else {
+      sugerencias.push('Revisa el contenido antes de publicarlo');
+      sugerencias.push('Asegúrate de que cumpla con las políticas de la comunidad');
     }
     
     return sugerencias;

@@ -1,4 +1,4 @@
-// backend/src/middleware/moderacionEnTiempoReal.ts (VERSIÓN CORREGIDA)
+// backend/src/middleware/moderacionEnTiempoReal.ts - VERSIÓN SOLO TEXTO CORREGIDA
 import { Request, Response, NextFunction } from 'express';
 import { ModeracionService } from '../services/moderacionService';
 
@@ -12,7 +12,6 @@ declare global {
   }
 }
 
-// ✅ middleware/moderacionEnTiempoReal.ts - VERSIÓN MEJORADA
 export const moderacionEnTiempoReal = async (
   req: Request,
   res: Response,
@@ -24,22 +23,7 @@ export const moderacionEnTiempoReal = async (
       return next();
     }
 
-    console.log('🛡️ Aplicando moderación en tiempo real...');
-    console.log('📦 Body disponible:', !!req.body);
-    console.log('📁 Files disponibles:', !!req.files || !!req.file);
-
-    // ✅ MANEJO SEGURO DE ARCHIVOS
-    let archivos: Express.Multer.File[] = [];
-    
-    if (req.files) {
-      if (Array.isArray(req.files)) {
-        archivos = req.files;
-      } else if (typeof req.files === 'object') {
-        archivos = Object.values(req.files).flat();
-      }
-    } else if (req.file) {
-      archivos = [req.file];
-    }
+    console.log('🛡️ Aplicando moderación en tiempo real (solo texto)...');
 
     // ✅ EXTRAER TEXTO DE FORMA SEGURA
     const texto = req.body?.descripcion || req.body?.comentario || req.body?.contenido || '';
@@ -48,43 +32,19 @@ export const moderacionEnTiempoReal = async (
     const userAgent = req.headers['user-agent'] || 'unknown';
     const hashNavegador = Buffer.from(userAgent).toString('base64').substring(0, 32);
 
-    // Si no hay contenido para moderar, continuar
-    if ((!texto || texto.trim() === '') && archivos.length === 0) {
-      console.log('ℹ️ No hay contenido para moderar, continuando...');
+    // Si no hay texto para moderar, continuar
+    if (!texto || texto.trim() === '') {
+      console.log('ℹ️ No hay texto para moderar, continuando...');
       return next();
     }
 
-    console.log(`📝 Texto a moderar: ${texto ? 'Sí (' + texto.length + ' chars)' : 'No'}`);
-    console.log(`📁 Archivos a moderar: ${archivos.length}`);
+    console.log(`📝 Texto a moderar: ${texto.length} caracteres`);
 
-    // Preparar datos para moderación
-    const datosModeracion: any = {
-      ipUsuario,
-      hashNavegador
-    };
-
-    if (texto && texto.trim() !== '') {
-      datosModeracion.texto = texto.trim();
-    }
-
-    // Procesar archivos
-    for (const archivo of archivos) {
-      if (archivo.mimetype.startsWith('image/')) {
-        datosModeracion.imagenBuffer = archivo.buffer;
-        datosModeracion.imagenMimeType = archivo.mimetype;
-        console.log(`🖼️ Imagen detectada: ${archivo.originalname}`);
-      } else if (archivo.mimetype === 'application/pdf') {
-        datosModeracion.pdfBuffer = archivo.buffer;
-        console.log(`📄 PDF detectado: ${archivo.originalname}`);
-      }
-    }
-
-    // ✅ EJECUTAR MODERACIÓN
-    const moderacionService = new ModeracionService();
-    const resultado = await moderacionService.moderarContenidoEnTiempoReal(datosModeracion);
+    // ✅ EJECUTAR MODERACIÓN SOLO DE TEXTO
+    const resultado = await moderacionService.moderarTexto(texto.trim(), ipUsuario, hashNavegador);
 
     if (!resultado.esAprobado) {
-      console.log(`❌ Contenido rechazado: ${resultado.motivoRechazo}`);
+      console.log(`❌ Texto rechazado: ${resultado.motivoRechazo}`);
       return res.status(400).json({
         success: false,
         error: 'CONTENIDO_RECHAZADO',
@@ -92,13 +52,13 @@ export const moderacionEnTiempoReal = async (
         motivo: resultado.motivoRechazo,
         detalles: {
           puntuacion: resultado.puntuacionGeneral,
-          tipo: 'moderacion_automatica',
+          tipo: 'moderacion_texto',
           timestamp: new Date().toISOString()
         }
       });
     }
 
-    console.log('✅ Contenido aprobado por moderación automática');
+    console.log('✅ Texto aprobado por moderación automática');
     next();
 
   } catch (error) {

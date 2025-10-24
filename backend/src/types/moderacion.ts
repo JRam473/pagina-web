@@ -1,31 +1,4 @@
-// backend/src/types/moderacion.ts
-export interface ResultadoModeracion {
-  esAprobado: boolean;
-  puntuacionGeneral: number;
-  motivoRechazo?: string | undefined;  // Permitir explícitamente undefined
-  detalles: {
-    texto?: AnalisisTexto | undefined;
-    imagen?: AnalisisImagen | undefined;
-    pdf?: AnalisisPDF | undefined;
-  };
-}
-
-export interface AnalisisImagen {
-  esAprobado: boolean;
-  puntuacion: number;
-  contenidoPeligroso: boolean;
-  categorias: Array<{
-    clase: string;
-    probabilidad: number;
-  }>;
-  detalles: {
-    probabilidadPeligrosa: number;
-    categoriaPeligrosa: string | null;
-    categoriaPrincipal: string;
-    error?: string | undefined;  // Permitir explícitamente undefined
-  };
-}
-
+// backend/src/types/moderacion.ts - VERSIÓN CORREGIDA
 export interface AnalisisTexto {
   esAprobado: boolean;
   puntuacion: number;
@@ -36,20 +9,15 @@ export interface AnalisisTexto {
     intencion: string;
     calidadTexto: any;
     longitud: number;
-    tienePatronesSpam?: boolean | undefined;
+    tienePatronesSpam?: boolean;
   };
 }
 
-export interface AnalisisPDF {
+export interface ResultadoModeracion {
   esAprobado: boolean;
-  puntuacion: number;
-  textoExtraido: string;
-  imagenesAnalizadas: number;
-  imagenesPeligrosas: number;
-  paginas: number;
+  puntuacionGeneral: number;
+  motivoRechazo?: string | undefined;
   detalles: {
-    analisisTexto?: AnalisisTexto | undefined;  // Permitir explícitamente undefined
-    errores?: string[] | undefined;             // Permitir explícitamente undefined
-    tieneImagenes: boolean;
+    texto?: AnalisisTexto | undefined; // ✅ CORREGIDO: ahora es opcional
   };
 }

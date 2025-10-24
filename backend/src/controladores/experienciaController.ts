@@ -1,4 +1,4 @@
-// controladores/experienciaController.ts
+// controladores/experienciaController.ts - VERSIÓN SOLO ANÁLISIS DE TEXTO
 import { pool } from '../utils/baseDeDatos';
 import { generarHashNavegador } from '../utils/hashNavegador';
 import { ModeracionService } from '../services/moderacionService';
@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 
 export const experienciaController = {
   /**
-   * Crear experiencia con moderación en tiempo real - SOLO ALMACENA APROBADAS
+   * Crear experiencia con moderación SOLO DE TEXTO - SOLO ALMACENA APROBADAS
    */
   async crearExperiencia(req: Request, res: Response) {
     try {
@@ -44,12 +44,10 @@ export const experienciaController = {
         ip: ipUsuario
       });
 
-      // ✅ Moderación en tiempo real antes de guardar en BD
+      // ✅ MODIFICADO: Moderación SOLO DE TEXTO antes de guardar en BD
       const moderacionService = new ModeracionService();
       const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
         texto: descripcion,
-        imagenBuffer: file.buffer,
-        imagenMimeType: file.mimetype,
         ipUsuario,
         hashNavegador
       });
@@ -147,7 +145,7 @@ export const experienciaController = {
   },
 
   /**
-   * Editar experiencia con moderación en tiempo real
+   * Editar experiencia con moderación SOLO DE TEXTO
    */
   async editarExperiencia(req: Request, res: Response) {
     try {
@@ -171,7 +169,7 @@ export const experienciaController = {
 
       const actual = experienciaActual.rows[0];
 
-      // ✅ Moderación en tiempo real de la nueva descripción
+      // ✅ MODIFICADO: Moderación SOLO DE TEXTO de la nueva descripción
       if (descripcion !== undefined && descripcion !== actual.descripcion) {
         const moderacionService = new ModeracionService();
         const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
@@ -230,7 +228,7 @@ export const experienciaController = {
   },
 
   /**
-   * Eliminar experiencia
+   * Eliminar experiencia - SIN CAMBIOS
    */
   async eliminarExperiencia(req: Request, res: Response) {
     try {
@@ -266,7 +264,7 @@ export const experienciaController = {
   },
 
   /**
-   * Obtener experiencias del usuario actual
+   * Obtener experiencias del usuario actual - SIN CAMBIOS
    */
   async obtenerMisExperiencias(req: Request, res: Response) {
     try {
@@ -306,7 +304,7 @@ export const experienciaController = {
   },
 
   /**
-   * Obtener todas las experiencias (público) - TODAS SON APROBADAS
+   * Obtener todas las experiencias (público) - TODAS SON APROBADAS - SIN CAMBIOS
    */
   async obtenerExperiencias(req: Request, res: Response) {
     try {
@@ -342,7 +340,7 @@ export const experienciaController = {
   },
 
   /**
-   * Obtener experiencia por ID (público)
+   * Obtener experiencia por ID (público) - SIN CAMBIOS
    */
   async obtenerExperienciaPorId(req: Request, res: Response) {
     try {
@@ -383,94 +381,94 @@ export const experienciaController = {
     }
   },
 
-/**
- * Registrar vista de experiencia - CON CONTROL DE UNICIDAD MEJORADO
- */
-async registrarVista(req: Request, res: Response) {
-  try {
-    const { id } = req.params;
-    const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
-    const agenteUsuario = req.get('User-Agent') || '';
-    const hashNavegador = generarHashNavegador(req);
+  /**
+   * Registrar vista de experiencia - CON CONTROL DE UNICIDAD MEJORADO - SIN CAMBIOS
+   */
+  async registrarVista(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+      const agenteUsuario = req.get('User-Agent') || '';
+      const hashNavegador = generarHashNavegador(req);
 
-    console.log('👀 Registrando vista para experiencia:', { 
-      id, 
-      ip: ipUsuario,
-      hash: hashNavegador.substring(0, 10) + '...'
-    });
-
-    // Verificar que la experiencia existe
-    const expResult = await pool.query(
-      'SELECT id FROM experiencias WHERE id = $1',
-      [id]
-    );
-
-    if (expResult.rows.length === 0) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Experiencia no encontrada' 
+      console.log('👀 Registrando vista para experiencia:', { 
+        id, 
+        ip: ipUsuario,
+        hash: hashNavegador.substring(0, 10) + '...'
       });
-    }
 
-    // ✅ NUEVO: Verificar si ya existe una vista desde esta combinación IP/Hash en las últimas 24 horas
-    const vistaExistente = await pool.query(
-      `SELECT id FROM vistas_experiencias 
-       WHERE experiencia_id = $1 
-       AND (
-         (ip_usuario = $2 AND agente_usuario = $3) 
-         OR hash_navegador = $4
-       )
-       AND visto_en >= NOW() - INTERVAL '24 hours'
-       LIMIT 1`,
-      [id, ipUsuario, agenteUsuario, hashNavegador]
-    );
-
-    if (vistaExistente.rows.length === 0) {
-      // Insertar nueva vista
-      await pool.query(
-        `INSERT INTO vistas_experiencias 
-         (experiencia_id, ip_usuario, agente_usuario, hash_navegador) 
-         VALUES ($1, $2, $3, $4)`,
-        [id, ipUsuario, agenteUsuario, hashNavegador]
-      );
-
-      // Actualizar contador en la tabla experiencias
-      await pool.query(
-        'UPDATE experiencias SET contador_vistas = contador_vistas + 1 WHERE id = $1',
+      // Verificar que la experiencia existe
+      const expResult = await pool.query(
+        'SELECT id FROM experiencias WHERE id = $1',
         [id]
       );
 
-      console.log('✅ Nueva vista registrada para experiencia:', id);
-      
-      res.json({ 
-        success: true,
-        mensaje: 'Vista registrada exitosamente',
-        experiencia_id: id,
-        tipo: 'nueva_vista'
-      });
-    } else {
-      console.log('⏭️ Vista duplicada ignorada para experiencia:', id);
-      
-      res.json({ 
-        success: true,
-        mensaje: 'Vista ya registrada anteriormente',
-        experiencia_id: id,
-        tipo: 'vista_duplicada'
+      if (expResult.rows.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          error: 'Experiencia no encontrada' 
+        });
+      }
+
+      // ✅ NUEVO: Verificar si ya existe una vista desde esta combinación IP/Hash en las últimas 24 horas
+      const vistaExistente = await pool.query(
+        `SELECT id FROM vistas_experiencias 
+         WHERE experiencia_id = $1 
+         AND (
+           (ip_usuario = $2 AND agente_usuario = $3) 
+           OR hash_navegador = $4
+         )
+         AND visto_en >= NOW() - INTERVAL '24 hours'
+         LIMIT 1`,
+        [id, ipUsuario, agenteUsuario, hashNavegador]
+      );
+
+      if (vistaExistente.rows.length === 0) {
+        // Insertar nueva vista
+        await pool.query(
+          `INSERT INTO vistas_experiencias 
+           (experiencia_id, ip_usuario, agente_usuario, hash_navegador) 
+           VALUES ($1, $2, $3, $4)`,
+          [id, ipUsuario, agenteUsuario, hashNavegador]
+        );
+
+        // Actualizar contador en la tabla experiencias
+        await pool.query(
+          'UPDATE experiencias SET contador_vistas = contador_vistas + 1 WHERE id = $1',
+          [id]
+        );
+
+        console.log('✅ Nueva vista registrada para experiencia:', id);
+        
+        res.json({ 
+          success: true,
+          mensaje: 'Vista registrada exitosamente',
+          experiencia_id: id,
+          tipo: 'nueva_vista'
+        });
+      } else {
+        console.log('⏭️ Vista duplicada ignorada para experiencia:', id);
+        
+        res.json({ 
+          success: true,
+          mensaje: 'Vista ya registrada anteriormente',
+          experiencia_id: id,
+          tipo: 'vista_duplicada'
+        });
+      }
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ Error registrando vista:', errorMessage);
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al registrar vista' 
       });
     }
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('❌ Error registrando vista:', errorMessage);
-    res.status(500).json({ 
-      success: false,
-      error: 'Error al registrar vista' 
-    });
-  }
-},
+  },
 
   /**
-   * Obtener estadísticas generales (admin only)
+   * Obtener estadísticas generales (admin only) - SIN CAMBIOS
    */
   async obtenerEstadisticas(req: Request, res: Response) {
     try {
@@ -528,41 +526,41 @@ async registrarVista(req: Request, res: Response) {
     }
   },
 
-  // 🔒 MÉTODOS PRIVADOS - Convertidos a funciones internas (no usar private)
+  /**
+   * Obtener estadísticas de vistas únicas - SIN CAMBIOS
+   */
+  async obtenerEstadisticasVistasUnicas(req: Request, res: Response) {
+    try {
+      const { experiencia_id } = req.params;
+      
+      const result = await pool.query(`
+        SELECT 
+          COUNT(DISTINCT ip_usuario) as vistas_unicas_ip,
+          COUNT(DISTINCT hash_navegador) as vistas_unicas_hash,
+          COUNT(*) as vistas_totales
+        FROM vistas_experiencias 
+        WHERE experiencia_id = $1
+        AND visto_en >= NOW() - INTERVAL '30 days'
+      `, [experiencia_id]);
+
+      res.json({
+        success: true,
+        estadisticas: result.rows[0]
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error obteniendo estadísticas de vistas:', errorMessage);
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al obtener estadísticas' 
+      });
+    }
+  },
+
+  // 🔒 MÉTODOS PRIVADOS - Actualizados para solo texto
 
   /**
- * Obtener estadísticas de vistas únicas
- */
-async obtenerEstadisticasVistasUnicas(req: Request, res: Response) {
-  try {
-    const { experiencia_id } = req.params;
-    
-    const result = await pool.query(`
-      SELECT 
-        COUNT(DISTINCT ip_usuario) as vistas_unicas_ip,
-        COUNT(DISTINCT hash_navegador) as vistas_unicas_hash,
-        COUNT(*) as vistas_totales
-      FROM vistas_experiencias 
-      WHERE experiencia_id = $1
-      AND visto_en >= NOW() - INTERVAL '30 days'
-    `, [experiencia_id]);
-
-    res.json({
-      success: true,
-      estadisticas: result.rows[0]
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('Error obteniendo estadísticas de vistas:', errorMessage);
-    res.status(500).json({ 
-      success: false,
-      error: 'Error al obtener estadísticas' 
-    });
-  }
-},
-
-  /**
-   * Analizar motivo de rechazo para mensajes específicos al usuario
+   * Analizar motivo de rechazo para mensajes específicos al usuario (SOLO TEXTO)
    */
   analizarMotivoRechazo(resultadoModeracion: any): { 
     mensajeUsuario: string; 
@@ -573,7 +571,7 @@ async obtenerEstadisticasVistasUnicas(req: Request, res: Response) {
     let mensajeUsuario = 'El contenido no cumple con nuestras políticas';
     let tipoProblema = 'general';
 
-    // Analizar problemas de texto
+    // ✅ MODIFICADO: Solo analizar problemas de texto
     if (resultadoModeracion.detalles?.texto && !resultadoModeracion.detalles.texto.esAprobado) {
       tipoProblema = 'texto';
       const texto = resultadoModeracion.detalles.texto;
@@ -596,61 +594,25 @@ async obtenerEstadisticasVistasUnicas(req: Request, res: Response) {
       }
     }
 
-    // Analizar problemas de imagen
-    if (resultadoModeracion.detalles?.imagen && !resultadoModeracion.detalles.imagen.esAprobado) {
-      tipoProblema = 'imagen';
-      const imagen = resultadoModeracion.detalles.imagen;
-      
-      if (imagen.detalles?.categoriaPeligrosa) {
-        mensajeUsuario = 'La imagen contiene contenido inapropiado';
-        detallesEspecificos.push(`Categoría detectada: ${imagen.detalles.categoriaPeligrosa}`);
-        detallesEspecificos.push(`Nivel de confianza: ${Math.round(imagen.detalles.probabilidadPeligrosa * 100)}%`);
-      } else {
-        mensajeUsuario = 'La imagen no es apropiada para esta plataforma';
-        detallesEspecificos.push('Contenido visual inapropiado detectado');
-      }
-    }
-
-    // Analizar problemas de PDF
-    if (resultadoModeracion.detalles?.pdf && !resultadoModeracion.detalles.pdf.esAprobado) {
-      tipoProblema = 'pdf';
-      mensajeUsuario = 'El archivo PDF contiene contenido inapropiado';
-      detallesEspecificos.push('Se detectó contenido problemático en el PDF');
-      
-      if (resultadoModeracion.detalles.pdf.detalles?.errores) {
-        detallesEspecificos.push(...resultadoModeracion.detalles.pdf.detalles.errores.slice(0, 2));
-      }
-    }
-
     return { mensajeUsuario, tipoProblema, detallesEspecificos };
   },
 
   /**
-   * Generar sugerencias según el tipo de problema
+   * Generar sugerencias según el tipo de problema (SOLO TEXTO)
    */
   generarSugerencias(tipoProblema: string): string[] {
     const sugerencias: string[] = [];
     
-    switch (tipoProblema) {
-      case 'texto':
-        sugerencias.push('Evita lenguaje ofensivo, insultos o palabras vulgares');
-        sugerencias.push('No incluyas contenido comercial, promociones o spam');
-        sugerencias.push('Asegúrate de que el texto sea coherente y tenga sentido');
-        sugerencias.push('No incluyas enlaces, emails o números de teléfono');
-        break;
-      case 'imagen':
-        sugerencias.push('Usa imágenes apropiadas y respetuosas');
-        sugerencias.push('Evita contenido sexual, violento o ofensivo');
-        sugerencias.push('Asegúrate de que la imagen sea relevante para la experiencia');
-        break;
-      case 'pdf':
-        sugerencias.push('Verifica que el PDF no contenga contenido inapropiado');
-        sugerencias.push('Asegúrate de que el contenido sea relevante y apropiado');
-        sugerencias.push('Considera usar imágenes directamente en lugar de PDF');
-        break;
-      default:
-        sugerencias.push('Revisa el contenido antes de publicarlo');
-        sugerencias.push('Asegúrate de que cumpla con las políticas de la comunidad');
+    // ✅ MODIFICADO: Solo sugerencias para texto
+    if (tipoProblema === 'texto') {
+      sugerencias.push('Evita lenguaje ofensivo, insultos o palabras vulgares');
+      sugerencias.push('No incluyas contenido comercial, promociones o spam');
+      sugerencias.push('Asegúrate de que el texto sea coherente y tenga sentido');
+      sugerencias.push('No incluyas enlaces, emails o números de teléfono');
+      sugerencias.push('Usa un lenguaje respetuoso y apropiado para la comunidad');
+    } else {
+      sugerencias.push('Revisa el contenido antes de publicarlo');
+      sugerencias.push('Asegúrate de que cumpla con las políticas de la comunidad');
     }
     
     return sugerencias;

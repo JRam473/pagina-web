@@ -1,4 +1,4 @@
-// ✅ ARCHIVO PRINCIPAL CORREGIDO (app.ts o server.ts)
+// ✅ ARCHIVO PRINCIPAL CORREGIDO - SOLO ANÁLISIS DE TEXTO
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -8,9 +8,8 @@ import path from 'path';
 import passport from './utils/oauth';
 import { middlewareIpNavegador } from './middleware/ipNavegador';
 
-// ✅ NUEVO SISTEMA UNIFICADO DE MODERACIÓN
+// ✅ SISTEMA SIMPLIFICADO DE MODERACIÓN (SOLO TEXTO)
 import { ModeracionService } from './services/moderacionService';
-import { AnalizadorImagen } from './utils/analizadorImagen';
 import { AnalizadorTexto } from './utils/analizadorTexto';
 import { pool } from './utils/baseDeDatos';
 
@@ -43,7 +42,6 @@ app.use('/api/health', (req, res) => res.json({ status: 'OK' }));
 app.use('/api/auth', autenticacionRoutes);
 
 // ✅ RUTAS CON MODERACIÓN INTEGRADA EN SUS PROPIAS DEFINICIONES
-// ❌ ELIMINADO: NO aplicar moderacionEnTiempoReal globalmente aquí
 app.use('/api/lugares', lugarRoutes);
 app.use('/api/experiencias', experienciaRoutes);
 app.use('/api/calificaciones', calificacionRoutes);
@@ -52,10 +50,10 @@ app.use('/api/calificaciones', calificacionRoutes);
 app.use('/api/admin', administradorRoutes);
 app.use('/api/archivos', archivosRoutes);
 
-// ✅ RUTA DE MONITOREO DE MODERACIÓN MEJORADA
+// ✅ RUTA DE MONITOREO DE MODERACIÓN SIMPLIFICADA
 app.get('/api/moderacion/estado', async (req, res) => {
   try {
-    // Estadísticas de logs de moderación
+    // Estadísticas de logs de moderación (solo texto)
     const logsStats = await pool.query(`
       SELECT 
         accion,
@@ -64,17 +62,6 @@ app.get('/api/moderacion/estado', async (req, res) => {
       FROM logs_moderacion 
       WHERE creado_en >= NOW() - INTERVAL '7 days'
       GROUP BY accion
-    `);
-
-    // Tipos de contenido moderados
-    const tiposContenido = await pool.query(`
-      SELECT 
-        tipo_contenido,
-        COUNT(*) as total,
-        COUNT(*) FILTER (WHERE accion = 'rechazado') as rechazados
-      FROM logs_moderacion 
-      WHERE creado_en >= NOW() - INTERVAL '7 days'
-      GROUP BY tipo_contenido
     `);
 
     // Usuarios problemáticos
@@ -97,14 +84,13 @@ app.get('/api/moderacion/estado', async (req, res) => {
       periodo: '7 días',
       estadisticas: {
         logs: logsStats.rows,
-        tipos_contenido: tiposContenido.rows,
         usuarios_problematicos: usuariosProblematicos.rows.length
       },
       configuracion: {
         texto: 'filtro-palabras-mejorado',
-        imagen: 'nsfwjs-model',
-        pdf: 'analisis-completo',
-        tiempo_real: 'activado'
+        imagen: 'desactivado',
+        pdf: 'desactivado',
+        tiempo_real: 'solo-texto'
       }
     });
   } catch (error) {
@@ -120,9 +106,9 @@ app.get('/api/moderacion/estado', async (req, res) => {
 if (process.env.NODE_ENV === 'development') {
   app.post('/api/moderacion/debug', async (req, res) => {
     try {
-      const { texto, tipo } = req.body;
+      const { texto } = req.body;
       
-      if (tipo === 'texto' && texto) {
+      if (texto) {
         const analizador = new AnalizadorTexto();
         const resultado = analizador.analizarTexto(texto);
         
@@ -136,7 +122,7 @@ if (process.env.NODE_ENV === 'development') {
       
       res.status(400).json({ 
         success: false,
-        error: 'Tipo de análisis no soportado' 
+        error: 'Texto requerido para análisis' 
       });
     } catch (error) {
       res.status(500).json({ 
@@ -155,8 +141,8 @@ app.get('/api/health', (req, res) => {
     message: 'Servidor Tahitic funcionando',
     env: process.env.NODE_ENV,
     googleOAuth: !!process.env.GOOGLE_CLIENT_ID,
-    moderacionAutomatica: 'ACTIVA',
-    sistema: 'unificado-tiempo-real',
+    moderacionAutomatica: 'SOLO-TEXTO',
+    sistema: 'moderacion-texto-simplificada',
     timestamp: new Date().toISOString()
   });
 });
@@ -201,39 +187,13 @@ const cargarConfiguracionModeracion = async () => {
       console.log('⚠️ No se encontraron palabras prohibidas en la BD');
     }
 
-    // Cargar umbrales de aprobación
-    const umbralesResult = await pool.query(
-      `SELECT valor FROM config_moderacion WHERE clave = 'umbral_aprobacion'`
-    );
-    
-    if (umbralesResult.rows.length > 0) {
-      const umbrales = umbralesResult.rows[0].valor;
-      console.log(`✅ Umbrales cargados: ${JSON.stringify(umbrales)}`);
-    }
-
     console.log('🎯 Configuración de moderación cargada exitosamente');
   } catch (error) {
     console.error('❌ Error cargando configuración de moderación:', error);
   }
 };
 
-// ✅ INICIALIZACIÓN DEL SISTEMA DE IMÁGENES
-const inicializarSistemaImagenes = async () => {
-  try {
-    console.log('🖼️ Inicializando sistema de análisis de imágenes...');
-    const analizadorImagen = new AnalizadorImagen();
-    await analizadorImagen.cargarModelo();
-    console.log('✅ Modelo de imágenes cargado correctamente');
-    return true;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.warn('⚠️ Sistema de imágenes no disponible:', errorMessage);
-    console.log('🔧 Continuando sin análisis de imágenes (solo texto y PDF)');
-    return false;
-  }
-};
-
-// Inicialización MEJORADA con sistema de moderación unificado
+// Inicialización SIMPLIFICADA con sistema de moderación solo texto
 const PORT = process.env.PORT || 4000;
 
 const iniciarServidor = async () => {
@@ -246,13 +206,10 @@ const iniciarServidor = async () => {
     // ✅ CARGAR CONFIGURACIÓN DE MODERACIÓN
     await cargarConfiguracionModeracion();
 
-    // ✅ INICIALIZAR SISTEMA DE IMÁGENES
-    const imagenesActivas = await inicializarSistemaImagenes();
-
-    // ✅ INICIALIZAR SERVICIO DE MODERACIÓN
-    console.log('🔄 Inicializando servicio de moderación unificado...');
+    // ✅ INICIALIZAR SERVICIO DE MODERACIÓN (SOLO TEXTO)
+    console.log('🔄 Inicializando servicio de moderación (solo texto)...');
     const moderacionService = new ModeracionService();
-    console.log('✅ Servicio de moderación listo');
+    console.log('✅ Servicio de moderación listo (solo texto)');
 
     // ✅ INICIAR PROCESO PERIÓDICO DE MONITOREO (opcional)
     const intervaloMonitoreo = setInterval(async () => {
@@ -296,14 +253,14 @@ const iniciarServidor = async () => {
 
     // ✅ INICIAR SERVIDOR
     app.listen(PORT, () => {
-      console.log('\n=== ✅ SISTEMA DE MODERACIÓN UNIFICADO INICIALIZADO ===');
+      console.log('\n=== ✅ SISTEMA DE MODERACIÓN SIMPLIFICADO INICIALIZADO ===');
       console.log('🌐 Puerto:', PORT);
       console.log('🗄️  BD:', process.env.DB_NAME);
       console.log('🔐 JWT:', process.env.JWT_SECRET ? '✅ Configurado' : '❌ Faltante');
       console.log('🤖 Moderación en tiempo real:', '✅ ACTIVA EN RUTAS ESPECÍFICAS');
       console.log('📝 Análisis de texto:', '✅ FILTRO MEJORADO');
-      console.log('🖼️ Análisis de imágenes:', imagenesActivas ? '✅ NSFWJS' : '⚠️ MODO FALLBACK');
-      console.log('📄 Análisis de PDF:', '✅ EXTRACCIÓN COMPLETA');
+      console.log('🖼️ Análisis de imágenes:', '❌ DESACTIVADO (frontend)');
+      console.log('📄 Análisis de PDF:', '❌ DESACTIVADO (frontend)');
       console.log('🚫 Palabras prohibidas:', '✅ CARGADAS DESDE BD');
       console.log('📊 Logs de auditoría:', '✅ ACTIVOS');
       console.log('🚀 Servidor ejecutándose en puerto', PORT);
