@@ -15,7 +15,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@tensorflow/tfjs": "^4.22.0",
     "axios": "^1.12.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
@@ -24,15 +23,16 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
-    "express-validator": "^7.2.1",
+    "express-validator": "7.2.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
-    "nsfwjs": "^4.2.1",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.16.3",
-    "sharp": "^0.34.4"
+    "sharp": "^0.34.4",
+    "tar": "^7.5.1",
+    "validator": "13.12.0"
   },
   "devDependencies": {
     "@types/axios": "^0.9.36",
@@ -46,7 +46,7 @@
     "@types/helmet": "^0.0.48",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
-    "@types/node": "^24.3.1",
+    "@types/node": "^24.9.0",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.16",
     "@types/pg": "^8.15.5",

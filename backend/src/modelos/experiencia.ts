@@ -2,21 +2,17 @@
 export interface Experiencia {
   id: string;
   url_foto: string;
-  descripcion?: string;
+  descripcion: string;
   creado_en: Date;
   ruta_almacenamiento: string;
-  estado: 'pendiente' | 'aprobado' | 'rechazado';
   
-  // ✅ NUEVOS CAMPOS DE MODERACIÓN
+  // ✅ ESTADO SIMPLIFICADO - Solo aprobado o rechazado (en tiempo real)
+  estado: 'aprobado' | 'rechazado';
+  
+  // ✅ CAMPOS DE MODERACIÓN ACTUALIZADOS
   moderado: boolean;
-  puntuacion_texto: number;
-  puntuacion_imagen: number;
-  palabras_prohibidas_encontradas: string[];
-  categorias_imagen: any;
-  confianza_usuario: number;
   aprobado_automatico: boolean;
-  motivo_rechazo?: string;
-  procesado_en?: Date;
+  puntuacion_moderacion: number; // Puntuación general 0-1
   
   // Campos existentes
   contador_vistas: number;
@@ -31,7 +27,7 @@ export interface Experiencia {
 }
 
 export interface ExperienciaRequest {
-  descripcion?: string;
+  descripcion: string;
   lugarId?: string;
 }
 
@@ -48,4 +44,28 @@ export interface EstadisticasExperiencias {
   }>;
   total: number;
   total_vistas: number;
+}
+
+// ✅ NUEVA INTERFAZ PARA RESPUESTAS DE MODERACIÓN
+export interface ResultadoModeracionExperiencia {
+  esAprobado: boolean;
+  motivoRechazo?: string;
+  puntuacionGeneral: number;
+  detalles: {
+    texto?: {
+      esAprobado: boolean;
+      puntuacion: number;
+      palabrasOfensivas: string[];
+      razon: string;
+    };
+    imagen?: {
+      esAprobado: boolean;
+      puntuacion: number;
+      contenidoPeligroso: boolean;
+      categorias: Array<{
+        clase: string;
+        probabilidad: number;
+      }>;
+    };
+  };
 }

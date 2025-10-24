@@ -55,7 +55,8 @@ import {
   Star,
   BarChart3,
   Upload,
-  X
+  X,
+  Shield
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -67,6 +68,7 @@ import { toast } from '@/hooks/use-toast';
 import { ExpandableText } from '@/components/ui/ExpandableText';
 import { FormErrorBoundary } from './FormErrorBoundary';
 import { AdminErrorBoundary } from './AdminErrorBoundary';
+import { useModeracionImagen } from '@/hooks/useModeracionImagen';
 
 // Función para construir la URL completa de la imagen
 const buildImageUrl = (imagePath: string | null | undefined): string => {
@@ -257,8 +259,8 @@ export const AdminPlaces = () => {
     createPlace,
     updatePlace,
     deletePlace,
-    deletePlaceImage, // ✅ AÑADIDO
-    deletePlacePDF, // ✅ AÑADIDO
+    deletePlaceImage,
+    deletePlacePDF,
     uploadPlaceImage,
     uploadPlacePDF,
     refetch,
@@ -271,6 +273,15 @@ export const AdminPlaces = () => {
     getCategoryColor
   } = useCategories();
 
+  // Hook de moderación de imágenes
+  const { 
+    modelo, 
+    cargando: cargandoModelo, 
+    errorModelo,
+    modeloCargado,
+    inicializarModelo,
+    analizarImagen 
+  } = useModeracionImagen();
   const [galleryManagerOpen, setGalleryManagerOpen] = useState(false);
   const [selectedPlaceForGallery, setSelectedPlaceForGallery] = useState<Place | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -297,9 +308,21 @@ export const AdminPlaces = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+// En AdminPlaces.tsx - agrega este useEffect
+useEffect(() => {
+  console.log('🔍 Estado del modelo:', {
+    modelo: !!modelo,
+    cargando: cargandoModelo,
+    errorModelo,
+    modeloCargado
+  });
+}, [modelo, cargandoModelo, errorModelo, modeloCargado]);
+
+useEffect(() => {
+  refetch();
+  console.log('🚀 Inicializando modelo...');
+  inicializarModelo();
+}, [refetch, inicializarModelo]);
 
   const filteredPlaces = places.filter(place => {
     const matchesSearch = (place.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -365,7 +388,6 @@ export const AdminPlaces = () => {
   // Función helper para detectar si hay cambios en los datos del formulario
   const hasFormChanges = useCallback((): boolean => {
     if (!editingPlace) {
-      // Para nuevo lugar, hay cambios si hay algún dato o archivo
       return !!(formData.name?.trim() || 
                 formData.description?.trim() || 
                 formData.category || 
@@ -374,7 +396,6 @@ export const AdminPlaces = () => {
                 files.pdf);
     }
     
-    // Para editar lugar, hay cambios si hay diferencias con el lugar original
     return (
       (formData.name && formData.name !== editingPlace.name) ||
       (formData.description && formData.description !== editingPlace.description) ||
@@ -385,260 +406,177 @@ export const AdminPlaces = () => {
     );
   }, [editingPlace, formData, files]);
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  if (isSubmitting || isProcessing) {
-    console.log('🛑 Submit ya en proceso, ignorando...');
-    return;
-  }
-
-  console.log('🎯 [SUBMIT] Iniciando proceso...');
-  
-  setIsSubmitting(true);
-  setIsProcessing(true);
-  
-  try {
-    // ✅ CASO 1: SOLO SUBIR ARCHIVOS (sin modificar datos del lugar)
-    const soloSubirArchivos = editingPlace && 
-      (!formData.name || formData.name === editingPlace.name) &&
-      (!formData.description || formData.description === editingPlace.description) &&
-      (!formData.category || formData.category === editingPlace.category) &&
-      (!formData.location || formData.location === editingPlace.location);
-
-    if (soloSubirArchivos) {
-      console.log('📤 [SUBMIT] Solo subiendo archivos sin modificar datos del lugar');
-      
-      const uploadResults = {
-        image: { success: false, error: '' },
-        pdf: { success: false, error: '' }
-      };
-
-      // Subir imagen si existe
-      if (files.image) {
-        try {
-          console.log('🖼️ [UPLOAD] Subiendo imagen...');
-          await uploadPlaceImage(editingPlace.id, files.image);
-          uploadResults.image.success = true;
-          console.log('✅ [UPLOAD] Imagen subida correctamente');
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-          uploadResults.image.error = errorMessage;
-          console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
-        }
-      }
-
-      // Subir PDF si existe
-      if (files.pdf) {
-        try {
-          console.log('📄 [UPLOAD] Subiendo PDF...');
-          await uploadPlacePDF(editingPlace.id, files.pdf);
-          uploadResults.pdf.success = true;
-          console.log('✅ [UPLOAD] PDF subido correctamente');
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-          uploadResults.pdf.error = errorMessage;
-          console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
-        }
-      }
-
-      // Manejar resultados
-      const errors = [];
-      if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
-      if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
-
-      if (errors.length > 0) {
-        toast({ 
-          title: '⚠️ Advertencia', 
-          description: `Archivos procesados con errores: ${errors.join(', ')}`,
-          variant: 'destructive' 
-        });
-      } else if (files.image || files.pdf) {
-        toast({ 
-          title: '✅ Éxito', 
-          description: 'Archivos subidos correctamente' 
-        });
-      } else {
-        toast({ 
-          title: 'ℹ️ Información', 
-          description: 'No se realizaron cambios' 
-        });
-      }
-
-    } 
-    // ✅ CASO 2: CREAR NUEVO LUGAR (con validación completa)
-    else if (!editingPlace) {
-      console.log('🆕 [SUBMIT] Creando nuevo lugar...');
-      
-      if (!validateForm()) {
-        console.log('❌ [VALIDATION] Validación fallida para nuevo lugar');
-        return;
-      }
-
-      // Para crear nuevo lugar, primero creamos el lugar sin archivos
-      const placeData: PlaceFormData = {
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        category: formData.category,
-        location: formData.location.trim(),
-      };
-
-      console.log('📤 [CREATE] Creando lugar con datos básicos...');
-      const savedPlace = await createPlace(placeData);
-      
-      if (!savedPlace?.id) {
-        throw new Error('No se pudo obtener el ID del lugar creado');
-      }
-
-      console.log('🔄 [UPLOAD] Preparando subida de archivos para nuevo lugar:', savedPlace.id);
-
-      // Subir archivos para el nuevo lugar
-      const uploadResults = {
-        image: { success: false, error: '' },
-        pdf: { success: false, error: '' }
-      };
-
-      if (files.image) {
-        try {
-          console.log('🖼️ [UPLOAD] Subiendo imagen para nuevo lugar...');
-          await uploadPlaceImage(savedPlace.id, files.image);
-          uploadResults.image.success = true;
-          console.log('✅ [UPLOAD] Imagen subida correctamente');
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-          uploadResults.image.error = errorMessage;
-          console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
-        }
-      }
-
-      if (files.pdf) {
-        try {
-          console.log('📄 [UPLOAD] Subiendo PDF para nuevo lugar...');
-          await uploadPlacePDF(savedPlace.id, files.pdf);
-          uploadResults.pdf.success = true;
-          console.log('✅ [UPLOAD] PDF subido correctamente');
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-          uploadResults.pdf.error = errorMessage;
-          console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
-        }
-      }
-
-      // Manejar resultados
-      const errors = [];
-      if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
-      if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
-
-      if (errors.length > 0) {
-        toast({ 
-          title: '⚠️ Advertencia', 
-          description: `Lugar creado pero con errores en archivos: ${errors.join(', ')}`,
-          variant: 'destructive' 
-        });
-      } else {
-        const message = files.image || files.pdf 
-          ? 'Lugar creado correctamente con archivos adjuntos'
-          : 'Lugar creado correctamente';
-        
-        toast({ 
-          title: '✅ Éxito', 
-          description: message 
-        });
-      }
+const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
+  if (type === 'image' && file) {
+    // Verificar tipo de archivo
+    if (!file.type.startsWith('image/')) {
+      setFormErrors(prev => ({ 
+        ...prev, 
+        image: 'El archivo debe ser una imagen' 
+      }));
+      return;
     }
-    // ✅ CASO 3: EDITAR LUGAR (modificando datos)
-    else {
-      console.log('✏️ [SUBMIT] Editando lugar existente...');
+
+    // Verificar tamaño (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setFormErrors(prev => ({ 
+        ...prev, 
+        image: 'La imagen no debe superar los 5MB' 
+      }));
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
       
-      if (!validateForm()) {
-        console.log('❌ [VALIDATION] Validación fallida para edición');
+      // Si el modelo no está inicializado, mostrar advertencia pero permitir continuar
+      if (!modelo && !cargandoModelo) {
+        console.warn('⚠️ Modelo de moderación no disponible');
+        toast({
+          title: '⚠️ Advertencia',
+          description: 'El filtro de moderación no está disponible. La imagen será subida sin análisis.',
+          variant: 'default'
+        });
+        
+        // Permitir subir la imagen sin análisis
+        setFiles(prev => ({ ...prev, [type]: file }));
+        setFormErrors(prev => ({ ...prev, [type]: '' }));
+        setIsProcessing(false);
         return;
       }
 
-      // Para editar, solo enviamos los campos que realmente cambiaron
-      const placeData: Partial<PlaceFormData> = {};
-      
-      if (formData.name && formData.name !== editingPlace.name) {
-        placeData.name = formData.name.trim();
-      }
-      if (formData.description && formData.description !== editingPlace.description) {
-        placeData.description = formData.description.trim();
-      }
-      if (formData.category && formData.category !== editingPlace.category) {
-        placeData.category = formData.category;
-      }
-      if (formData.location && formData.location !== editingPlace.location) {
-        placeData.location = formData.location.trim();
-      }
-
-      // Solo actualizamos si hay cambios en los datos
-      if (Object.keys(placeData).length > 0) {
-        console.log('📤 [UPDATE] Actualizando lugar con datos:', placeData);
-        await updatePlace(editingPlace.id, placeData);
-        console.log('✅ [UPDATE] Lugar actualizado');
-      } else {
-        console.log('ℹ️ [UPDATE] No hay cambios en los datos del lugar');
-      }
-
-      // Subir archivos para el lugar editado
-      const uploadResults = {
-        image: { success: false, error: '' },
-        pdf: { success: false, error: '' }
-      };
-
-      if (files.image) {
-        try {
-          console.log('🖼️ [UPLOAD] Subiendo imagen para lugar editado...');
-          await uploadPlaceImage(editingPlace.id, files.image);
-          uploadResults.image.success = true;
-          console.log('✅ [UPLOAD] Imagen subida correctamente');
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-          uploadResults.image.error = errorMessage;
-          console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
-        }
-      }
-
-      if (files.pdf) {
-        try {
-          console.log('📄 [UPLOAD] Subiendo PDF para lugar editado...');
-          await uploadPlacePDF(editingPlace.id, files.pdf);
-          uploadResults.pdf.success = true;
-          console.log('✅ [UPLOAD] PDF subido correctamente');
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-          uploadResults.pdf.error = errorMessage;
-          console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
-        }
-      }
-
-      // Manejar resultados
-      const errors = [];
-      if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
-      if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
-
-      if (errors.length > 0) {
-        toast({ 
-          title: '⚠️ Advertencia', 
-          description: `Lugar actualizado pero con errores en archivos: ${errors.join(', ')}`,
-          variant: 'destructive' 
+      // Si el modelo está cargando, esperar un momento
+      if (cargandoModelo) {
+        console.log('🔄 Esperando a que cargue el modelo...');
+        toast({
+          title: '⏳ Cargando',
+          description: 'El modelo de moderación se está cargando, por favor espere...',
+          variant: 'default'
         });
-      } else {
-        const hasDataChanges = Object.keys(placeData).length > 0;
-        const hasFileChanges = files.image || files.pdf;
         
-        if (hasDataChanges && hasFileChanges) {
+        // Esperar máximo 5 segundos
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+
+      // Analizar imagen con el modelo NSFW
+      const resultado = await analizarImagen(file);
+      
+      if (!resultado.esAprobado) {
+        setFormErrors(prev => ({ 
+          ...prev, 
+          image: `Imagen rechazada: ${resultado.razon} (Puntuación: ${resultado.puntuacion})` 
+        }));
+        setIsProcessing(false);
+        return;
+      }
+
+      // Si la imagen es apropiada, establecer el archivo
+      setFiles(prev => ({ ...prev, [type]: file }));
+      setFormErrors(prev => ({ ...prev, [type]: '' }));
+      
+      // Mostrar mensaje de éxito solo si el modelo estaba disponible
+      if (modelo) {
+        toast({
+          title: '✅ Imagen aprobada',
+          description: `La imagen ha pasado el filtro de moderación (Puntuación: ${resultado.puntuacion})`,
+          variant: 'default'
+        });
+      }
+
+    } catch (error) {
+      console.error('Error analizando imagen:', error);
+      
+      // En caso de error, permitir subir la imagen con advertencia
+      setFiles(prev => ({ ...prev, [type]: file }));
+      setFormErrors(prev => ({ ...prev, [type]: '' }));
+      
+      toast({
+        title: '⚠️ Advertencia',
+        description: 'No se pudo analizar la imagen. Se subirá sin verificación.',
+        variant: 'default'
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  } else {
+    // Para PDFs o cuando se elimina un archivo
+    setFiles(prev => ({ ...prev, [type]: file }));
+    if (file) {
+      setFormErrors(prev => ({ ...prev, [type]: '' }));
+    }
+  }
+};
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (isSubmitting || isProcessing) {
+      console.log('🛑 Submit ya en proceso, ignorando...');
+      return;
+    }
+
+    console.log('🎯 [SUBMIT] Iniciando proceso...');
+    
+    setIsSubmitting(true);
+    setIsProcessing(true);
+    
+    try {
+      // ✅ CASO 1: SOLO SUBIR ARCHIVOS (sin modificar datos del lugar)
+      const soloSubirArchivos = editingPlace && 
+        (!formData.name || formData.name === editingPlace.name) &&
+        (!formData.description || formData.description === editingPlace.description) &&
+        (!formData.category || formData.category === editingPlace.category) &&
+        (!formData.location || formData.location === editingPlace.location);
+
+      if (soloSubirArchivos) {
+        console.log('📤 [SUBMIT] Solo subiendo archivos sin modificar datos del lugar');
+        
+        const uploadResults = {
+          image: { success: false, error: '' },
+          pdf: { success: false, error: '' }
+        };
+
+        // Subir imagen si existe
+        if (files.image) {
+          try {
+            console.log('🖼️ [UPLOAD] Subiendo imagen...');
+            await uploadPlaceImage(editingPlace.id, files.image);
+            uploadResults.image.success = true;
+            console.log('✅ [UPLOAD] Imagen subida correctamente');
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            uploadResults.image.error = errorMessage;
+            console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
+          }
+        }
+
+        // Subir PDF si existe
+        if (files.pdf) {
+          try {
+            console.log('📄 [UPLOAD] Subiendo PDF...');
+            await uploadPlacePDF(editingPlace.id, files.pdf);
+            uploadResults.pdf.success = true;
+            console.log('✅ [UPLOAD] PDF subido correctamente');
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            uploadResults.pdf.error = errorMessage;
+            console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
+          }
+        }
+
+        // Manejar resultados
+        const errors = [];
+        if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
+        if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
+
+        if (errors.length > 0) {
           toast({ 
-            title: '✅ Éxito', 
-            description: 'Lugar actualizado correctamente con archivos adjuntos' 
+            title: '⚠️ Advertencia', 
+            description: `Archivos procesados con errores: ${errors.join(', ')}`,
+            variant: 'destructive' 
           });
-        } else if (hasDataChanges) {
-          toast({ 
-            title: '✅ Éxito', 
-            description: 'Lugar actualizado correctamente' 
-          });
-        } else if (hasFileChanges) {
+        } else if (files.image || files.pdf) {
           toast({ 
             title: '✅ Éxito', 
             description: 'Archivos subidos correctamente' 
@@ -649,34 +587,218 @@ const handleSubmit = async (e: React.FormEvent) => {
             description: 'No se realizaron cambios' 
           });
         }
+
+      } 
+      // ✅ CASO 2: CREAR NUEVO LUGAR (con validación completa)
+      else if (!editingPlace) {
+        console.log('🆕 [SUBMIT] Creando nuevo lugar...');
+        
+        if (!validateForm()) {
+          console.log('❌ [VALIDATION] Validación fallida para nuevo lugar');
+          return;
+        }
+
+        // Para crear nuevo lugar, primero creamos el lugar sin archivos
+        const placeData: PlaceFormData = {
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          category: formData.category,
+          location: formData.location.trim(),
+        };
+
+        console.log('📤 [CREATE] Creando lugar con datos básicos...');
+        const savedPlace = await createPlace(placeData);
+        
+        if (!savedPlace?.id) {
+          throw new Error('No se pudo obtener el ID del lugar creado');
+        }
+
+        console.log('🔄 [UPLOAD] Preparando subida de archivos para nuevo lugar:', savedPlace.id);
+
+        // Subir archivos para el nuevo lugar
+        const uploadResults = {
+          image: { success: false, error: '' },
+          pdf: { success: false, error: '' }
+        };
+
+        if (files.image) {
+          try {
+            console.log('🖼️ [UPLOAD] Subiendo imagen para nuevo lugar...');
+            await uploadPlaceImage(savedPlace.id, files.image);
+            uploadResults.image.success = true;
+            console.log('✅ [UPLOAD] Imagen subida correctamente');
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            uploadResults.image.error = errorMessage;
+            console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
+          }
+        }
+
+        if (files.pdf) {
+          try {
+            console.log('📄 [UPLOAD] Subiendo PDF para nuevo lugar...');
+            await uploadPlacePDF(savedPlace.id, files.pdf);
+            uploadResults.pdf.success = true;
+            console.log('✅ [UPLOAD] PDF subido correctamente');
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            uploadResults.pdf.error = errorMessage;
+            console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
+          }
+        }
+
+        // Manejar resultados
+        const errors = [];
+        if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
+        if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
+
+        if (errors.length > 0) {
+          toast({ 
+            title: '⚠️ Advertencia', 
+            description: `Lugar creado pero con errores en archivos: ${errors.join(', ')}`,
+            variant: 'destructive' 
+          });
+        } else {
+          const message = files.image || files.pdf 
+            ? 'Lugar creado correctamente con archivos adjuntos'
+            : 'Lugar creado correctamente';
+          
+          toast({ 
+            title: '✅ Éxito', 
+            description: message 
+          });
+        }
       }
+      // ✅ CASO 3: EDITAR LUGAR (modificando datos)
+      else {
+        console.log('✏️ [SUBMIT] Editando lugar existente...');
+        
+        if (!validateForm()) {
+          console.log('❌ [VALIDATION] Validación fallida para edición');
+          return;
+        }
+
+        // Para editar, solo enviamos los campos que realmente cambiaron
+        const placeData: Partial<PlaceFormData> = {};
+        
+        if (formData.name && formData.name !== editingPlace.name) {
+          placeData.name = formData.name.trim();
+        }
+        if (formData.description && formData.description !== editingPlace.description) {
+          placeData.description = formData.description.trim();
+        }
+        if (formData.category && formData.category !== editingPlace.category) {
+          placeData.category = formData.category;
+        }
+        if (formData.location && formData.location !== editingPlace.location) {
+          placeData.location = formData.location.trim();
+        }
+
+        // Solo actualizamos si hay cambios en los datos
+        if (Object.keys(placeData).length > 0) {
+          console.log('📤 [UPDATE] Actualizando lugar con datos:', placeData);
+          await updatePlace(editingPlace.id, placeData);
+          console.log('✅ [UPDATE] Lugar actualizado');
+        } else {
+          console.log('ℹ️ [UPDATE] No hay cambios en los datos del lugar');
+        }
+
+        // Subir archivos para el lugar editado
+        const uploadResults = {
+          image: { success: false, error: '' },
+          pdf: { success: false, error: '' }
+        };
+
+        if (files.image) {
+          try {
+            console.log('🖼️ [UPLOAD] Subiendo imagen para lugar editado...');
+            await uploadPlaceImage(editingPlace.id, files.image);
+            uploadResults.image.success = true;
+            console.log('✅ [UPLOAD] Imagen subida correctamente');
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            uploadResults.image.error = errorMessage;
+            console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
+          }
+        }
+
+        if (files.pdf) {
+          try {
+            console.log('📄 [UPLOAD] Subiendo PDF para lugar editado...');
+            await uploadPlacePDF(editingPlace.id, files.pdf);
+            uploadResults.pdf.success = true;
+            console.log('✅ [UPLOAD] PDF subido correctamente');
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+            uploadResults.pdf.error = errorMessage;
+            console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
+          }
+        }
+
+        // Manejar resultados
+        const errors = [];
+        if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
+        if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
+
+        if (errors.length > 0) {
+          toast({ 
+            title: '⚠️ Advertencia', 
+            description: `Lugar actualizado pero con errores en archivos: ${errors.join(', ')}`,
+            variant: 'destructive' 
+          });
+        } else {
+          const hasDataChanges = Object.keys(placeData).length > 0;
+          const hasFileChanges = files.image || files.pdf;
+          
+          if (hasDataChanges && hasFileChanges) {
+            toast({ 
+              title: '✅ Éxito', 
+              description: 'Lugar actualizado correctamente con archivos adjuntos' 
+            });
+          } else if (hasDataChanges) {
+            toast({ 
+              title: '✅ Éxito', 
+              description: 'Lugar actualizado correctamente' 
+            });
+          } else if (hasFileChanges) {
+            toast({ 
+              title: '✅ Éxito', 
+              description: 'Archivos subidos correctamente' 
+            });
+          } else {
+            toast({ 
+              title: 'ℹ️ Información', 
+              description: 'No se realizaron cambios' 
+            });
+          }
+        }
+      }
+
+      console.log('🏁 [COMPLETED] Proceso terminado, cerrando...');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setIsDialogOpen(false);
+      resetForm();
+      
+      await refetch();
+      console.log('🔄 [REFETCH] Lista actualizada');
+
+    } catch (err) {
+      console.error('❌ [ERROR] Error crítico:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      
+      toast({
+        title: '❌ Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+      setIsProcessing(false);
     }
-
-    console.log('🏁 [COMPLETED] Proceso terminado, cerrando...');
-    await new Promise(resolve => setTimeout(resolve, 500));
     
-    setIsDialogOpen(false);
-    resetForm();
-    
-    await refetch();
-    console.log('🔄 [REFETCH] Lista actualizada');
-
-  } catch (err) {
-    console.error('❌ [ERROR] Error crítico:', err);
-    const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-    
-    toast({
-      title: '❌ Error',
-      description: errorMessage,
-      variant: 'destructive',
-    });
-  } finally {
-    setIsSubmitting(false);
-    setIsProcessing(false);
-  }
-  
-  return false;
-};
+    return false;
+  };
 
   const handleEdit = (place: Place) => {
     setEditingPlace(place);
@@ -692,75 +814,73 @@ const handleSubmit = async (e: React.FormEvent) => {
     setIsDialogOpen(true);
   };
 
-  // En AdminPlaces.tsx - agrega estas funciones
+  const handleDeleteImage = async () => {
+    if (!editingPlace || !editingPlace.image_url) {
+      toast({
+        title: 'ℹ️ Información',
+        description: 'No hay imagen para eliminar',
+      });
+      return;
+    }
 
-const handleDeleteImage = async () => {
-  if (!editingPlace || !editingPlace.image_url) {
-    toast({
-      title: 'ℹ️ Información',
-      description: 'No hay imagen para eliminar',
-    });
-    return;
-  }
+    try {
+      console.log('🗑️ Eliminando imagen del lugar:', editingPlace.id);
+      await deletePlaceImage(editingPlace.id);
+      
+      // Actualizar el estado local
+      setFormData(prev => ({ ...prev, image_url: '' }));
+      
+      toast({
+        title: '✅ Éxito',
+        description: 'Imagen eliminada correctamente',
+      });
+      
+      await refetch();
+    } catch (err) {
+      console.error('❌ Error eliminando imagen:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Error al eliminar la imagen';
+      
+      toast({
+        title: '❌ Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
+  };
 
-  try {
-    console.log('🗑️ Eliminando imagen del lugar:', editingPlace.id);
-    await deletePlaceImage(editingPlace.id);
-    
-    // Actualizar el estado local
-    setFormData(prev => ({ ...prev, image_url: '' }));
-    
-    toast({
-      title: '✅ Éxito',
-      description: 'Imagen eliminada correctamente',
-    });
-    
-    await refetch();
-  } catch (err) {
-    console.error('❌ Error eliminando imagen:', err);
-    const errorMessage = err instanceof Error ? err.message : 'Error al eliminar la imagen';
-    
-    toast({
-      title: '❌ Error',
-      description: errorMessage,
-      variant: 'destructive',
-    });
-  }
-};
+  const handleDeletePDF = async () => {
+    if (!editingPlace || !editingPlace.pdf_url) {
+      toast({
+        title: 'ℹ️ Información',
+        description: 'No hay PDF para eliminar',
+      });
+      return;
+    }
 
-const handleDeletePDF = async () => {
-  if (!editingPlace || !editingPlace.pdf_url) {
-    toast({
-      title: 'ℹ️ Información',
-      description: 'No hay PDF para eliminar',
-    });
-    return;
-  }
-
-  try {
-    console.log('🗑️ Eliminando PDF del lugar:', editingPlace.id);
-    await deletePlacePDF(editingPlace.id);
-    
-    // Actualizar el estado local
-    setFormData(prev => ({ ...prev, pdf_url: '' }));
-    
-    toast({
-      title: '✅ Éxito',
-      description: 'PDF eliminado correctamente',
-    });
-    
-    await refetch();
-  } catch (err) {
-    console.error('❌ Error eliminando PDF:', err);
-    const errorMessage = err instanceof Error ? err.message : 'Error al eliminar el PDF';
-    
-    toast({
-      title: '❌ Error',
-      description: errorMessage,
-      variant: 'destructive',
-    });
-  }
-};
+    try {
+      console.log('🗑️ Eliminando PDF del lugar:', editingPlace.id);
+      await deletePlacePDF(editingPlace.id);
+      
+      // Actualizar el estado local
+      setFormData(prev => ({ ...prev, pdf_url: '' }));
+      
+      toast({
+        title: '✅ Éxito',
+        description: 'PDF eliminado correctamente',
+      });
+      
+      await refetch();
+    } catch (err) {
+      console.error('❌ Error eliminando PDF:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Error al eliminar el PDF';
+      
+      toast({
+        title: '❌ Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
+  };
 
   const handleDelete = async () => {
     if (!editingPlace || isDeleting) {
@@ -829,13 +949,6 @@ const handleDeletePDF = async () => {
 
   const handleRefresh = async () => {
     await refetch();
-  };
-
-  const handleFileChange = (type: 'image' | 'pdf', file: File | null) => {
-    setFiles(prev => ({ ...prev, [type]: file }));
-    if (file) {
-      setFormErrors(prev => ({ ...prev, [type]: '' }));
-    }
   };
 
   const removeFile = (type: 'image' | 'pdf') => {
@@ -1014,200 +1127,222 @@ const handleDeletePDF = async () => {
                       )}
                     </div>
 
-{/* Archivos */}
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-  {/* Input de Imagen */}
-  <div className="space-y-2">
+                    {/* Archivos */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+{/* Input de Imagen */}
+<div className="space-y-2">
+   <div className="flex items-center gap-2">
     <Label htmlFor="image_file" className="text-white">
       Imagen {!editingPlace && '*'}
     </Label>
-    <div className="space-y-2">
-      {files.image ? (
-        <div className="flex items-center justify-between p-3 border-2 border-blue-300/50 rounded-lg bg-blue-500/10 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <img 
-              src={URL.createObjectURL(files.image)} 
-              alt="Vista previa" 
-              className="w-12 h-12 object-cover rounded-lg border-2 border-blue-200/50"
-            />
-            <span className="text-sm font-medium text-blue-100 truncate max-w-[120px]">
-              {files.image.name}
-            </span>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => removeFile('image')}
-            className="text-blue-200 hover:text-white hover:bg-blue-400/30"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      ) : editingPlace?.image_url ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between p-3 border-2 border-green-300/50 rounded-lg bg-green-500/10 backdrop-blur-sm">
-            <div className="flex items-center gap-3">
-              <img 
-                src={buildImageUrl(editingPlace.image_url)} 
-                alt="Imagen actual" 
-                className="w-12 h-12 object-cover rounded-lg border-2 border-green-200/50"
-              />
-              <span className="text-sm font-medium text-green-100">Imagen actual</span>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => imageInputRef.current?.click()}
-                className="border-blue-300 text-blue-100 hover:bg-blue-400/30 hover:text-white"
-              >
-                Cambiar
-              </Button>
-            </div>
-          </div>
-          {/* ✅ BOTÓN PARA ELIMINAR IMAGEN */}
-          <Button
-          title='Eliminar Imagen'
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={handleDeleteImage}
-            className="w-full bg-red-600 hover:bg-red-700 text-white border-red-600"
-          >
-            <Trash2 className="h-3 w-3 mr-2" />
-            Eliminar Imagen
-          </Button>
-        </div>
-      ) : (
-        <div 
-          className="border-2 border-dashed border-blue-300/50 rounded-lg p-6 text-center cursor-pointer bg-blue-500/10 hover:bg-blue-500/20 transition-all duration-300 backdrop-blur-sm group"
-          onClick={() => imageInputRef.current?.click()}
-        >
-          <Upload className="h-10 w-10 mx-auto text-blue-300 mb-3 group-hover:text-blue-200 transition-colors" />
-          <p className="text-sm font-medium text-blue-100 mb-2">
-            Haz clic para seleccionar una imagen
-          </p>
-          <p className="text-xs text-blue-200/80 mb-3">
-            PNG, JPG, WEBP (max. 5MB)
-          </p>
-          <Button 
-            type="button" 
-            variant="outline" 
-            size="sm" 
-            className="border-blue-300 text-blue-100 hover:bg-blue-400/30 hover:text-white hover:border-blue-200"
-          >
-            <Upload className="h-3 w-3 mr-2" />
-            Seleccionar Imagen
-          </Button>
-        </div>
-      )}
-      
-      <Input
-        ref={imageInputRef}
-        id="image_file"
-        type="file"
-        accept="image/*"
-        onChange={(e) => handleFileChange('image', e.target.files?.[0] || null)}
-        className="hidden"
-      />
-      
-      {formErrors.image && (
-        <p className="text-sm text-red-400 font-medium">{formErrors.image}</p>
-      )}
-    </div>
+    {cargandoModelo && (
+      <Badge variant="outline" className="text-yellow-400 border-yellow-400 text-xs">
+        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+        Cargando modelo...
+      </Badge>
+    )}
+    {modelo && (
+      <Badge variant="outline" className="text-green-400 border-green-400 text-xs">
+        <Shield className="h-3 w-3 mr-1" />
+        {modeloCargado === 'inception_v3' && 'Inception V3'}
+        {modeloCargado === 'mobilenet_v2' && 'MobileNet V2'}
+        {modeloCargado === 'mobilenet_v2_mid' && 'MobileNet V2 Mid'}
+      </Badge>
+    )}
+    {errorModelo && (
+      <Badge variant="outline" className="text-red-400 border-red-400 text-xs">
+        <Shield className="h-3 w-3 mr-1" />
+        Error en modelo
+      </Badge>
+    )}
   </div>
+                        <div className="space-y-2">
+                          {files.image ? (
+                            <div className="flex items-center justify-between p-3 border-2 border-blue-300/50 rounded-lg bg-blue-500/10 backdrop-blur-sm">
+                              <div className="flex items-center gap-3">
+                                <img 
+                                  src={URL.createObjectURL(files.image)} 
+                                  alt="Vista previa" 
+                                  className="w-12 h-12 object-cover rounded-lg border-2 border-blue-200/50"
+                                />
+                                <span className="text-sm font-medium text-blue-100 truncate max-w-[120px]">
+                                  {files.image.name}
+                                </span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeFile('image')}
+                                className="text-blue-200 hover:text-white hover:bg-blue-400/30"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : editingPlace?.image_url ? (
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center justify-between p-3 border-2 border-green-300/50 rounded-lg bg-green-500/10 backdrop-blur-sm">
+                                <div className="flex items-center gap-3">
+                                  <img 
+                                    src={buildImageUrl(editingPlace.image_url)} 
+                                    alt="Imagen actual" 
+                                    className="w-12 h-12 object-cover rounded-lg border-2 border-green-200/50"
+                                  />
+                                  <span className="text-sm font-medium text-green-100">Imagen actual</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => imageInputRef.current?.click()}
+                                    className="border-blue-300 text-blue-100 hover:bg-blue-400/30 hover:text-white"
+                                  >
+                                    Cambiar
+                                  </Button>
+                                </div>
+                              </div>
+                              {/* ✅ BOTÓN PARA ELIMINAR IMAGEN */}
+                              <Button
+                              title='Eliminar Imagen'
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                onClick={handleDeleteImage}
+                                className="w-full bg-red-600 hover:bg-red-700 text-white border-red-600"
+                              >
+                                <Trash2 className="h-3 w-3 mr-2" />
+                                Eliminar Imagen
+                              </Button>
+                            </div>
+                          ) : (
+                            <div 
+                              className="border-2 border-dashed border-blue-300/50 rounded-lg p-6 text-center cursor-pointer bg-blue-500/10 hover:bg-blue-500/20 transition-all duration-300 backdrop-blur-sm group"
+                              onClick={() => imageInputRef.current?.click()}
+                            >
+                              <Upload className="h-10 w-10 mx-auto text-blue-300 mb-3 group-hover:text-blue-200 transition-colors" />
+                              <p className="text-sm font-medium text-blue-100 mb-2">
+                                Haz clic para seleccionar una imagen
+                              </p>
+                              <p className="text-xs text-blue-200/80 mb-3">
+                                PNG, JPG, WEBP (max. 5MB)
+                              </p>
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                className="border-blue-300 text-blue-100 hover:bg-blue-400/30 hover:text-white hover:border-blue-200"
+                              >
+                                <Upload className="h-3 w-3 mr-2" />
+                                Seleccionar Imagen
+                              </Button>
+                            </div>
+                          )}
+                          
+                          <Input
+                            ref={imageInputRef}
+                            id="image_file"
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleFileChange('image', e.target.files?.[0] || null)}
+                            className="hidden"
+                          />
+                          
+                          {formErrors.image && (
+                            <p className="text-sm text-red-400 font-medium">{formErrors.image}</p>
+                          )}
+                        </div>
+                      </div>
 
-  {/* Input de PDF */}
-  <div className="space-y-2">
-    <Label htmlFor="pdf_file" className="text-white">Documento PDF</Label>
-    <div className="space-y-2">
-      {files.pdf ? (
-        <div className="flex items-center justify-between p-3 border-2 border-indigo-300/50 rounded-lg bg-indigo-500/10 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <FileText className="h-12 w-12 text-indigo-300" />
-            <span className="text-sm font-medium text-indigo-100 truncate max-w-[120px]">
-              {files.pdf.name}
-            </span>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => removeFile('pdf')}
-            className="text-indigo-200 hover:text-white hover:bg-indigo-400/30"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      ) : editingPlace?.pdf_url ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between p-3 border-2 border-green-300/50 rounded-lg bg-green-500/10 backdrop-blur-sm">
-            <div className="flex items-center gap-3">
-              <FileText className="h-12 w-12 text-green-300" />
-              <span className="text-sm font-medium text-green-100">PDF actual</span>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => pdfInputRef.current?.click()}
-                className="border-indigo-300 text-indigo-100 hover:bg-indigo-400/30 hover:text-white"
-              >
-                Cambiar
-              </Button>
-            </div>
-          </div>
-          {/* ✅ BOTÓN PARA ELIMINAR PDF */}
-          <Button
-          title='Eliminar PDF'
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={handleDeletePDF}
-            className="w-full bg-red-600 hover:bg-red-700 text-white border-red-600"
-          >
-            <Trash2 className="h-3 w-3 mr-2" />
-            Eliminar PDF
-          </Button>
-        </div>
-      ) : (
-        <div 
-          className="border-2 border-dashed border-indigo-300/50 rounded-lg p-6 text-center cursor-pointer bg-indigo-500/10 hover:bg-indigo-500/20 transition-all duration-300 backdrop-blur-sm group"
-          onClick={() => pdfInputRef.current?.click()}
-        >
-          <FileText className="h-10 w-10 mx-auto text-indigo-300 mb-3 group-hover:text-indigo-200 transition-colors" />
-          <p className="text-sm font-medium text-indigo-100 mb-2">
-            Haz clic para seleccionar un PDF
-          </p>
-          <p className="text-xs text-indigo-200/80 mb-3">
-            Archivo PDF (max. 10MB)
-          </p>
-          <Button 
-            type="button" 
-            variant="outline" 
-            size="sm" 
-            className="border-indigo-300 text-indigo-100 hover:bg-indigo-400/30 hover:text-white hover:border-indigo-200"
-          >
-            <FileText className="h-3 w-3 mr-2" />
-            Seleccionar PDF
-          </Button>
-        </div>
-      )}
-      
-      <Input
-        ref={pdfInputRef}
-        id="pdf_file"
-        type="file"
-        accept="application/pdf"
-        onChange={(e) => handleFileChange('pdf', e.target.files?.[0] || null)}
-        className="hidden"
-      />
-    </div>
-  </div>
-</div>
+                      {/* Input de PDF */}
+                      <div className="space-y-2">
+                        <Label htmlFor="pdf_file" className="text-white">Documento PDF</Label>
+                        <div className="space-y-2">
+                          {files.pdf ? (
+                            <div className="flex items-center justify-between p-3 border-2 border-indigo-300/50 rounded-lg bg-indigo-500/10 backdrop-blur-sm">
+                              <div className="flex items-center gap-3">
+                                <FileText className="h-12 w-12 text-indigo-300" />
+                                <span className="text-sm font-medium text-indigo-100 truncate max-w-[120px]">
+                                  {files.pdf.name}
+                                </span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeFile('pdf')}
+                                className="text-indigo-200 hover:text-white hover:bg-indigo-400/30"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : editingPlace?.pdf_url ? (
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center justify-between p-3 border-2 border-green-300/50 rounded-lg bg-green-500/10 backdrop-blur-sm">
+                                <div className="flex items-center gap-3">
+                                  <FileText className="h-12 w-12 text-green-300" />
+                                  <span className="text-sm font-medium text-green-100">PDF actual</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => pdfInputRef.current?.click()}
+                                    className="border-indigo-300 text-indigo-100 hover:bg-indigo-400/30 hover:text-white"
+                                  >
+                                    Cambiar
+                                  </Button>
+                                </div>
+                              </div>
+                              {/* ✅ BOTÓN PARA ELIMINAR PDF */}
+                              <Button
+                              title='Eliminar PDF'
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                onClick={handleDeletePDF}
+                                className="w-full bg-red-600 hover:bg-red-700 text-white border-red-600"
+                              >
+                                <Trash2 className="h-3 w-3 mr-2" />
+                                Eliminar PDF
+                              </Button>
+                            </div>
+                          ) : (
+                            <div 
+                              className="border-2 border-dashed border-indigo-300/50 rounded-lg p-6 text-center cursor-pointer bg-indigo-500/10 hover:bg-indigo-500/20 transition-all duration-300 backdrop-blur-sm group"
+                              onClick={() => pdfInputRef.current?.click()}
+                            >
+                              <FileText className="h-10 w-10 mx-auto text-indigo-300 mb-3 group-hover:text-indigo-200 transition-colors" />
+                              <p className="text-sm font-medium text-indigo-100 mb-2">
+                                Haz clic para seleccionar un PDF
+                              </p>
+                              <p className="text-xs text-indigo-200/80 mb-3">
+                                Archivo PDF (max. 10MB)
+                              </p>
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                className="border-indigo-300 text-indigo-100 hover:bg-indigo-400/30 hover:text-white hover:border-indigo-200"
+                              >
+                                <FileText className="h-3 w-3 mr-2" />
+                                Seleccionar PDF
+                              </Button>
+                            </div>
+                          )}
+                          
+                          <Input
+                            ref={pdfInputRef}
+                            id="pdf_file"
+                            type="file"
+                            accept="application/pdf"
+                            onChange={(e) => handleFileChange('pdf', e.target.files?.[0] || null)}
+                            className="hidden"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Footer del formulario */}
@@ -1217,7 +1352,7 @@ const handleDeletePDF = async () => {
                         type="button"
                         variant="outline"
                         onClick={() => handleDialogOpenChange(false)}
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isProcessing}
                         className="bg-red-700 text-white hover:bg-red-600 border-red-600"
                       >
                         Cancelar
@@ -1225,10 +1360,15 @@ const handleDeletePDF = async () => {
                       <Button 
                       title='Guardar Lugar'
                         type="submit"
-                        disabled={isSubmitting || (editingPlace && !hasFormChanges())}
+                        disabled={isSubmitting || isProcessing || (editingPlace && !hasFormChanges())}
                         className="bg-blue-600 text-white hover:bg-blue-700 min-w-24 border-blue-600"
                       >
-                        {isSubmitting ? (
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Analizando imagen...
+                          </>
+                        ) : isSubmitting ? (
                           <>
                             <Loader2 className="h-4 w-4 animate-spin mr-2" />
                             {editingPlace ? 'Actualizando...' : 'Creando...'}
