@@ -1,4 +1,4 @@
-// components/admin/GalleryManager.tsx - VERSIÓN COMPLETAMENTE CORREGIDA
+// components/admin/GalleryManager.tsx - VERSIÓN CON MODERACIÓN DE IMÁGENES
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,13 +15,15 @@ import {
   Trash2, 
   Image as ImageIcon,
   Grid3X3,
-  AlertTriangle
+  AlertTriangle,
+  Shield
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useAdminPlaces, type GalleryImage } from '@/hooks/useAdminPlaces';
 import { ImageEditor } from '@/components/admin/ImageEditor';
 import { UploadErrorBoundary } from './UploadErrorBoundary';
+import { useModeracionImagen } from '@/hooks/useModeracionImagen';
 
 interface GalleryManagerProps {
   placeId: string;
@@ -106,11 +108,21 @@ export const GalleryManager = ({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [analyzingFiles, setAnalyzingFiles] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Hook de moderación de imágenes
+  const { 
+    modelo, 
+    cargando: cargandoModelo, 
+    errorModelo,
+    inicializarModelo,
+    analizarImagen 
+  } = useModeracionImagen();
 
   // Usar SOLO las funciones que necesitamos del hook
   const { 
@@ -122,6 +134,14 @@ export const GalleryManager = ({
     deleteMainImage,
     replaceMainImage
   } = useAdminPlaces();
+
+  // Inicializar modelo cuando se abre el diálogo
+  useEffect(() => {
+    if (isOpen) {
+      console.log('🔄 Inicializando modelo para GalleryManager...');
+      inicializarModelo();
+    }
+  }, [isOpen, inicializarModelo]);
 
   // Función para cargar la galería
   const loadGallery = useCallback(async () => {
@@ -161,6 +181,7 @@ export const GalleryManager = ({
       setSelectedImage(null);
       setImageEditorOpen(false);
       setUploadError(null);
+      setAnalyzingFiles(new Set());
     }
   }, [isOpen, placeId, loadGallery]);
 
@@ -176,7 +197,7 @@ export const GalleryManager = ({
     setImageEditorOpen(false);
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const files = Array.from(event.target.files || []);
       console.log('📁 Archivos seleccionados:', files.length);
@@ -220,19 +241,147 @@ export const GalleryManager = ({
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Función para analizar una imagen individual
+  const analizarImagenIndividual = async (file: File): Promise<boolean> => {
+    try {
+      setAnalyzingFiles(prev => new Set(prev).add(file.name));
+
+      // Si el modelo no está disponible, permitir continuar con advertencia
+      if (!modelo && !cargandoModelo) {
+        console.warn('⚠️ Modelo de moderación no disponible en GalleryManager');
+        toast({
+          title: '⚠️ Advertencia de seguridad',
+          description: 'El filtro de moderación no está disponible. La imagen será subida sin verificación.',
+          variant: 'default',
+          duration: 5000,
+        });
+        return true;
+      }
+
+      // Esperar si el modelo está cargando
+      if (cargandoModelo) {
+        console.log('🔄 GalleryManager: Esperando a que cargue el modelo...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+
+      // Analizar la imagen
+      const resultado = await analizarImagen(file);
+
+      if (!resultado.esAprobado) {
+        let descripcionDetallada = '';
+        
+        if (resultado.razon?.includes('Porn')) {
+          descripcionDetallada = 'La imagen contiene contenido pornográfico. Por favor, selecciona una imagen apropiada.';
+        } else if (resultado.razon?.includes('Hentai')) {
+          descripcionDetallada = 'La imagen contiene contenido de anime/manga inapropiado.';
+        } else if (resultado.razon?.includes('Sexy')) {
+          descripcionDetallada = 'La imagen contiene contenido sugerente. Las imágenes deben ser apropiadas para el turismo familiar.';
+        } else {
+          descripcionDetallada = resultado.razon || 'La imagen no cumple con nuestras políticas de contenido.';
+        }
+        
+        toast({
+          title: '🚫 Imagen rechazada',
+          description: (
+            <div className="space-y-2">
+              <p>{descripcionDetallada}</p>
+              <div className="text-xs text-muted-foreground">
+                <strong>Archivo:</strong> {file.name}
+                <br />
+                <strong>Puntuación de seguridad:</strong> {resultado.puntuacion}
+              </div>
+            </div>
+          ),
+          variant: 'destructive',
+          duration: 8000,
+        });
+        
+        return false;
+      }
+
+      // Imagen aprobada
+      if (resultado.puntuacion > 0.7) {
+        console.log(`✅ Imagen aprobada: ${file.name} (puntuación: ${resultado.puntuacion})`);
+      } else {
+        console.log(`⚠️ Imagen aprobada con baja puntuación: ${file.name} (${resultado.puntuacion})`);
+      }
+
+      return true;
+
+    } catch (error) {
+      console.error(`❌ Error analizando imagen ${file.name}:`, error);
+      
+      // En caso de error, permitir subir con advertencia
+      toast({
+        title: '⚠️ Advertencia',
+        description: `No se pudo analizar "${file.name}". Se subirá sin verificación completa.`,
+        variant: 'default',
+        duration: 5000,
+      });
+      
+      return true;
+    } finally {
+      setAnalyzingFiles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(file.name);
+        return newSet;
+      });
+    }
+  };
+
   const uploadImages = async () => {
     if (selectedFiles.length === 0) return;
 
     try {
       setUploading(true);
       setUploadError(null);
-      console.log('📤 [GalleryManager] Subiendo imágenes a GALERÍA (no principales):', selectedFiles.length);
+      console.log('📤 [GalleryManager] Subiendo imágenes a GALERÍA:', selectedFiles.length);
+
+      // Analizar todas las imágenes antes de subir
+      const archivosAprobados: File[] = [];
+      const archivosRechazados: string[] = [];
+
+      for (const file of selectedFiles) {
+        const esAprobado = await analizarImagenIndividual(file);
+        if (esAprobado) {
+          archivosAprobados.push(file);
+        } else {
+          archivosRechazados.push(file.name);
+        }
+      }
+
+      // Si todas las imágenes fueron rechazadas
+      if (archivosAprobados.length === 0) {
+        toast({
+          title: '🚫 Subida cancelada',
+          description: 'Todas las imágenes fueron rechazadas por el filtro de seguridad.',
+          variant: 'destructive',
+          duration: 6000,
+        });
+        setUploading(false);
+        return;
+      }
+
+      // Si algunas imágenes fueron rechazadas, mostrar advertencia
+      if (archivosRechazados.length > 0) {
+        toast({
+          title: '⚠️ Algunas imágenes rechazadas',
+          description: `${archivosAprobados.length} imágenes aprobadas, ${archivosRechazados.length} rechazadas.`,
+          variant: 'default',
+          duration: 6000,
+        });
+      }
+
+      // Subir solo las imágenes aprobadas
+      await uploadMultipleImages(placeId, archivosAprobados);
       
-      await uploadMultipleImages(placeId, selectedFiles);
-      
+      const mensajeExito = archivosRechazados.length === 0 
+        ? `${archivosAprobados.length} imágenes agregadas a la galería`
+        : `${archivosAprobados.length} imágenes aprobadas agregadas a la galería`;
+
       toast({
         title: '✅ Éxito',
-        description: `${selectedFiles.length} imágenes agregadas a la galería`,
+        description: mensajeExito,
       });
       
       setSelectedFiles([]);
@@ -254,7 +403,7 @@ export const GalleryManager = ({
     }
   };
 
-  // Funciones que se pasarán al ImageEditor - CORREGIDAS (sin parámetros no utilizados)
+  // Funciones que se pasarán al ImageEditor
   const handleSetAsMainImage = async (imageId: string) => {
     try {
       console.log('⭐ Estableciendo como principal:', imageId);
@@ -290,7 +439,6 @@ export const GalleryManager = ({
     }
   };
 
-  // ✅ CORREGIDO: Parámetro 'placeIdParam' renombrado y utilizado
   const handleReplaceMainImage = async (placeIdParam: string, file: File) => {
     try {
       console.log('🔄 Reemplazando imagen principal:', file.name);
@@ -302,7 +450,6 @@ export const GalleryManager = ({
     }
   };
 
-  // ✅ CORREGIDO: Parámetro 'descripcion' utilizado
   const handleUpdateDescription = async (imageId: string, descripcion: string) => {
     try {
       console.log('📝 Actualizando descripción:', { imageId, descripcion });
@@ -327,19 +474,46 @@ export const GalleryManager = ({
     }
   };
 
+  // Función para verificar si un archivo está siendo analizado
+  const isFileAnalyzing = (fileName: string) => analyzingFiles.has(fileName);
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-xl text-white">
           <DialogHeader className="pb-4 border-b border-slate-700">
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              <Grid3X3 className="h-5 w-5" />
-              Galería de Imágenes - {placeName}
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <Grid3X3 className="h-5 w-5" />
+                Galería de Imágenes - {placeName}
+              </DialogTitle>
+              
+              {/* Indicador de estado del filtro */}
+              <div className="flex items-center gap-2">
+                {cargandoModelo && (
+                  <Badge variant="outline" className="text-yellow-400 border-yellow-400 text-xs">
+                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    Cargando filtro...
+                  </Badge>
+                )}
+                {modelo && (
+                  <Badge variant="outline" className="text-green-400 border-green-400 text-xs">
+                    <Shield className="h-3 w-3 mr-1" />
+                    Filtro activo
+                  </Badge>
+                )}
+                {errorModelo && (
+                  <Badge variant="outline" className="text-red-400 border-red-400 text-xs">
+                    <AlertTriangle className="h-3 w-3 mr-1" />
+                    Filtro no disponible
+                  </Badge>
+                )}
+              </div>
+            </div>
           </DialogHeader>
 
           <div className="flex flex-col h-[calc(90vh-100px)]">
-            {/* Sección de Subida - ENVUELTA EN ERROR BOUNDARY */}
+            {/* Sección de Subida */}
             <UploadErrorBoundary operation="gestión de archivos de galería">
               <Card className="mb-6 bg-slate-800/50 border-slate-600">
                 <CardContent className="p-4">
@@ -349,17 +523,33 @@ export const GalleryManager = ({
                       <p className="text-sm text-slate-400 mt-1">
                         Puedes seleccionar múltiples imágenes (JPEG, PNG, WebP, máximo 5MB cada una)
                       </p>
+                      <div className="mt-2 text-xs text-blue-300">
+                        <Shield className="h-3 w-3 inline mr-1" />
+                        Todas las imágenes pasan por un filtro de seguridad automático
+                      </div>
                     </div>
 
                     {/* Archivos seleccionados */}
                     {selectedFiles.length > 0 && (
                       <div className="space-y-2">
-                        <Label className="text-sm">Imágenes a subir ({selectedFiles.length})</Label>
+                        <Label className="text-sm">
+                          Imágenes a subir ({selectedFiles.length})
+                          {analyzingFiles.size > 0 && (
+                            <span className="text-yellow-400 ml-2">
+                              • Analizando {analyzingFiles.size}...
+                            </span>
+                          )}
+                        </Label>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-32 overflow-y-auto">
                           {selectedFiles.map((file, index) => (
                             <div
                               key={index}
-                              className="relative group bg-slate-700 rounded-md p-2"
+                              className={cn(
+                                "relative group rounded-md p-2 transition-all",
+                                isFileAnalyzing(file.name) 
+                                  ? "bg-yellow-900/50 border border-yellow-600" 
+                                  : "bg-slate-700"
+                              )}
                             >
                               <img
                                 src={URL.createObjectURL(file)}
@@ -372,13 +562,24 @@ export const GalleryManager = ({
                                   size="sm"
                                   onClick={() => removeSelectedFile(index)}
                                   className="h-8 w-8 p-0 text-white hover:bg-red-500"
+                                  disabled={isFileAnalyzing(file.name)}
                                 >
                                   <X className="h-4 w-4" />
                                 </Button>
                               </div>
+                              {isFileAnalyzing(file.name) && (
+                                <div className="absolute inset-0 bg-black/70 rounded flex items-center justify-center">
+                                  <Loader2 className="h-6 w-6 animate-spin text-yellow-400" />
+                                </div>
+                              )}
                               <p className="text-xs text-slate-300 truncate mt-1">
                                 {file.name}
                               </p>
+                              {isFileAnalyzing(file.name) && (
+                                <p className="text-xs text-yellow-400 text-center">
+                                  Analizando...
+                                </p>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -386,7 +587,7 @@ export const GalleryManager = ({
                         {/* BOTÓN DE SUBIDA SEGURO */}
                         <SafeUploadButton
                           onClick={uploadImages}
-                          disabled={uploading}
+                          disabled={uploading || analyzingFiles.size > 0}
                           uploading={uploading}
                           fileCount={selectedFiles.length}
                         />
@@ -433,6 +634,10 @@ export const GalleryManager = ({
                         <p className="text-xs text-slate-500">
                           Formatos: JPEG, PNG, WebP • Máximo 5MB por imagen
                         </p>
+                        <div className="mt-2 text-xs text-blue-400">
+                          <Shield className="h-3 w-3 inline mr-1" />
+                          Todas las imágenes serán analizadas por seguridad
+                        </div>
                       </div>
                     </UploadErrorBoundary>
 
@@ -449,7 +654,7 @@ export const GalleryManager = ({
               </Card>
             </UploadErrorBoundary>
 
-            {/* Galería de Imágenes - SIMPLIFICADA SIN ANIMACIONES PROBLEMÁTICAS */}
+            {/* Galería de Imágenes */}
             <div className="flex-1 overflow-hidden">
               <div className="flex items-center justify-between mb-4">
                 <Label className="text-sm font-medium">

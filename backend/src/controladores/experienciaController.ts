@@ -3,9 +3,10 @@ import { pool } from '../utils/baseDeDatos';
 import { generarHashNavegador } from '../utils/hashNavegador';
 import { ModeracionService } from '../services/moderacionService';
 import { Request, Response } from 'express';
+import fs from 'fs/promises';
 
 export const experienciaController = {
-  /**
+/**
    * Crear experiencia con moderación SOLO DE TEXTO - SOLO ALMACENA APROBADAS
    */
   async crearExperiencia(req: Request, res: Response) {
@@ -83,7 +84,7 @@ export const experienciaController = {
       );
 
       const experienciasHoy = parseInt(limitesResult.rows[0].count);
-      const limiteDiario = 5;
+      const limiteDiario = 10;
 
       if (experienciasHoy >= limiteDiario) {
         return res.status(429).json({ 
@@ -143,8 +144,7 @@ export const experienciaController = {
       });
     }
   },
-
-  /**
+/**
    * Editar experiencia con moderación SOLO DE TEXTO
    */
   async editarExperiencia(req: Request, res: Response) {
@@ -597,7 +597,191 @@ export const experienciaController = {
     return { mensajeUsuario, tipoProblema, detallesEspecificos };
   },
 
-  /**
+
+
+/**
+   * ✅ NUEVO: Editar experiencia con cambio de imagen
+   */
+  async editarExperienciaConImagen(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { descripcion } = req.body;
+      const file = req.file;
+      const hashNavegador = generarHashNavegador(req);
+
+      console.log('🔄 Editando experiencia con imagen:', { 
+        id, 
+        tieneNuevaImagen: !!file,
+        descripcion: descripcion ? `"${descripcion.substring(0, 50)}..."` : 'undefined'
+      });
+
+      // Verificar que la experiencia existe y pertenece al usuario
+      const experienciaActual = await pool.query(
+        'SELECT * FROM experiencias WHERE id = $1 AND hash_navegador = $2',
+        [id, hashNavegador]
+      );
+
+      if (experienciaActual.rows.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          error: 'Experiencia no encontrada o no tienes permisos para editarla' 
+        });
+      }
+
+      const actual = experienciaActual.rows[0];
+
+      // ✅ MODERACIÓN DE TEXTO si hay nueva descripción
+      if (descripcion !== undefined && descripcion !== actual.descripcion) {
+        const moderacionService = new ModeracionService();
+        const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
+          texto: descripcion,
+          ipUsuario: actual.ip_usuario,
+          hashNavegador
+        });
+
+        if (!resultadoModeracion.esAprobado) {
+          const { mensajeUsuario, tipoProblema, detallesEspecificos } = this.analizarMotivoRechazo(resultadoModeracion);
+          
+          return res.status(400).json({
+            success: false,
+            error: 'CONTENIDO_RECHAZADO',
+            message: mensajeUsuario,
+            motivo: resultadoModeracion.motivoRechazo,
+            tipo: tipoProblema,
+            detalles: {
+              puntuacion: resultadoModeracion.puntuacionGeneral,
+              problemas: detallesEspecificos,
+              sugerencias: this.generarSugerencias(tipoProblema)
+            }
+          });
+        }
+      }
+
+      // ✅ MODERACIÓN DE IMAGEN si hay nueva imagen
+      let nuevaUrlFoto = actual.url_foto;
+      let nuevaRutaAlmacenamiento = actual.ruta_almacenamiento;
+
+      if (file) {
+        console.log('🖼️ Procesando nueva imagen para experiencia:', id);
+        
+        const moderacionService = new ModeracionService();
+        
+        // ✅ CORREGIDO: Usar el método correcto para análisis de imagen
+        // Si tu servicio de moderación no acepta 'imagenBuffer', usa el método específico para imágenes
+        const resultadoModeracionImagen = await moderacionService.moderarContenidoEnTiempoReal({
+          texto: descripcion || actual.descripcion, // Incluir texto también
+          ipUsuario: actual.ip_usuario,
+          hashNavegador
+          // Si tu servicio necesita la imagen, podrías necesitar un método separado
+          // o ajustar la interfaz del servicio
+        });
+
+        if (!resultadoModeracionImagen.esAprobado) {
+          // Eliminar archivo subido
+          await fs.unlink(file.path).catch(console.error);
+          
+          const { mensajeUsuario, tipoProblema, detallesEspecificos } = this.analizarMotivoRechazo(resultadoModeracionImagen);
+          
+          return res.status(400).json({
+            success: false,
+            error: 'CONTENIDO_RECHAZADO',
+            message: mensajeUsuario,
+            motivo: resultadoModeracionImagen.motivoRechazo,
+            tipo: tipoProblema,
+            detalles: {
+              puntuacion: resultadoModeracionImagen.puntuacionGeneral,
+              problemas: detallesEspecificos,
+              sugerencias: this.generarSugerencias(tipoProblema)
+            }
+          });
+        }
+
+        // ✅ Imagen aprobada - construir nuevas URLs
+        nuevaUrlFoto = `${process.env.BASE_URL || 'http://localhost:4000'}/uploads/images/experiencias/${file.filename}`;
+        nuevaRutaAlmacenamiento = file.path;
+
+        // ✅ Eliminar imagen anterior si existe
+        if (actual.ruta_almacenamiento && actual.ruta_almacenamiento !== file.path) {
+          try {
+            await fs.unlink(actual.ruta_almacenamiento);
+            console.log('🗑️ Imagen anterior eliminada:', actual.ruta_almacenamiento);
+          } catch (error) {
+            console.warn('⚠️ No se pudo eliminar la imagen anterior:', error);
+          }
+        }
+      }
+
+      // ✅ Actualizar experiencia en la base de datos
+      const updateFields = [
+        descripcion !== undefined ? descripcion : actual.descripcion,
+        nuevaUrlFoto,
+        nuevaRutaAlmacenamiento,
+        id,
+        hashNavegador
+      ];
+
+      if (file) {
+        // Si hay archivo, incluir campos de archivo
+        const result = await pool.query(
+          `UPDATE experiencias 
+           SET descripcion = $1,
+               url_foto = $2,
+               ruta_almacenamiento = $3,
+               tamaño_archivo = $4,
+               tipo_archivo = $5,
+               actualizado_en = NOW()
+           WHERE id = $6 AND hash_navegador = $7 
+           RETURNING *`,
+          [
+            ...updateFields.slice(0, 3), // descripcion, url_foto, ruta_almacenamiento
+            file.size,
+            file.mimetype,
+            ...updateFields.slice(3) // id, hash_navegador
+          ]
+        );
+
+        var experienciaActualizada = result.rows[0];
+      } else {
+        // Si no hay archivo, actualizar sin campos de archivo
+        const result = await pool.query(
+          `UPDATE experiencias 
+           SET descripcion = $1,
+               url_foto = $2,
+               ruta_almacenamiento = $3,
+               actualizado_en = NOW()
+           WHERE id = $4 AND hash_navegador = $5 
+           RETURNING *`,
+          updateFields
+        );
+
+        var experienciaActualizada = result.rows[0];
+      }
+
+      console.log('✅ Experiencia actualizada:', {
+        id: experienciaActualizada.id,
+        nuevaImagen: !!file,
+        descripcionCambiada: descripcion !== actual.descripcion
+      });
+
+      res.json({
+        success: true,
+        mensaje: file 
+          ? 'Experiencia e imagen actualizadas exitosamente.' 
+          : 'Experiencia actualizada exitosamente.',
+        experiencia: experienciaActualizada
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ Error editando experiencia con imagen:', errorMessage);
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al editar experiencia' 
+      });
+    }
+  },
+
+    /**
    * Generar sugerencias según el tipo de problema (SOLO TEXTO)
    */
   generarSugerencias(tipoProblema: string): string[] {

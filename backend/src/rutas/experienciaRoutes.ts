@@ -1,7 +1,7 @@
 // ✅ rutas/experienciaRoutes.ts (VERSIÓN CORREGIDA)
 import { Router } from 'express';
 import { experienciaController } from '../controladores/experienciaController';
-import { uploadExperienciaMiddleware } from '../utils/multerExperiencias';
+import { uploadExperienciaMiddleware } from '../utils/multerExperiencias'; // ✅ CORREGIDO: usar el middleware correcto
 import { moderacionEnTiempoReal } from '../middleware/moderacionEnTiempoReal';
 
 const router = Router();
@@ -13,19 +13,27 @@ router.post('/:id/vista', experienciaController.registrarVista);
 router.get('/usuario/mis-experiencias', experienciaController.obtenerMisExperiencias);
 
 // ✅ RUTAS QUE CREAN CONTENIDO (CON MODERACIÓN)
-router.post('/',  // ✅ CAMBIAR de '/subir' a '/'
-  uploadExperienciaMiddleware, // Multer primero
+router.post('/',
+  uploadExperienciaMiddleware, // ✅ Multer primero
   moderacionEnTiempoReal,      // Luego moderación
   experienciaController.crearExperiencia // Finalmente el controlador
 );
 
 // Para edición (con moderación)
-router.put('/:id',  // ✅ CAMBIAR de '/:id/editar' a '/:id'
+router.put('/:id',
   moderacionEnTiempoReal,
   experienciaController.editarExperiencia
 );
 
-router.delete('/:id', experienciaController.eliminarExperiencia); // ✅ CAMBIAR ruta
+// ✅ NUEVA RUTA: Editar experiencia con imagen
+router.put(
+  '/:id/con-imagen',
+  uploadExperienciaMiddleware, // ✅ CORREGIDO: usar el middleware correcto en lugar de 'upload'
+  moderacionEnTiempoReal,      // ✅ AGREGAR moderación para la nueva imagen
+  experienciaController.editarExperienciaConImagen
+);
+
+router.delete('/:id', experienciaController.eliminarExperiencia);
 
 // Rutas protegidas (admin only)
 router.get('/admin/estadisticas', experienciaController.obtenerEstadisticas);

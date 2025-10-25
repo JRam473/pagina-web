@@ -1,4 +1,4 @@
-// components/ExperienceMural.tsx (ACTUALIZADO CON CARGA AUTOMÁTICA Y PAGINACIÓN)
+// components/ExperienceMural.tsx (ACTUALIZADO CON CAMBIO DE FOTO Y MODERACIÓN)
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -17,7 +17,9 @@ import {
   Edit,
   Trash2,
   MoreVertical,
-  RefreshCw // ✅ NUEVO: Icono de carga
+  RefreshCw,
+  Shield,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useExperiences, type Experience } from '@/hooks/useExperiences';
@@ -25,7 +27,7 @@ import { usePlaces } from '@/hooks/usePlaces';
 import { useToast } from '@/hooks/use-toast';
 import { TermsAndConditionsDialog } from '@/components/TermsAndConditionsDialog';
 import { ExperienceImageModal } from '@/components/galeria/ExperienceImageModal';
-
+import { useModeracionImagen } from '@/hooks/useModeracionImagen';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
@@ -33,6 +35,71 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
+// ✅ CORREGIDO: Componente Badge con tipos correctos
+const Badge = ({ 
+  variant = 'default', 
+  className = '', 
+  children 
+}: { 
+  variant?: 'default' | 'outline' | 'secondary' | 'destructive';
+  className?: string;
+  children: React.ReactNode;
+}) => {
+  const baseStyles = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
+  const variants = {
+    default: "bg-blue-100 text-blue-800",
+    outline: "border bg-transparent",
+    secondary: "bg-gray-100 text-gray-800",
+    destructive: "bg-red-100 text-red-800"
+  };
+
+  return (
+    <span className={`${baseStyles} ${variants[variant]} ${className}`}>
+      {children}
+    </span>
+  );
+};
+
+// ✅ CORREGIDO: Componente para el estado del modelo de moderación
+const ModeloModeracionStatus = ({ 
+  modelo, 
+  cargando, 
+  errorModelo 
+}: { 
+  modelo: boolean; 
+  cargando: boolean; 
+  errorModelo: string | null;
+}) => {
+  if (cargando) {
+    return (
+      <Badge variant="outline" className="text-yellow-400 border-yellow-400 text-xs">
+        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+        Cargando modelo...
+      </Badge>
+    );
+  }
+
+  if (modelo) {
+    return (
+      <Badge variant="outline" className="text-green-400 border-green-400 text-xs">
+        <Shield className="h-3 w-3 mr-1" />
+        Moderación activa
+      </Badge>
+    );
+  }
+
+  if (errorModelo) {
+    return (
+      <Badge variant="outline" className="text-red-400 border-red-400 text-xs">
+        <Shield className="h-3 w-3 mr-1" />
+        Error en modelo
+      </Badge>
+    );
+  }
+
+  return null;
+};
 
 // ✅ NUEVO: Componente para el botón "Ver más"
 const LoadMoreButton = ({ 
@@ -210,133 +277,48 @@ const UserStatsBanner = ({ myExperiences }: { myExperiences: Experience[] }) => 
   );
 };
 
-// Interfaz para datos de subida
-interface UploadData {
-  descripcion: string;
-  lugarId: string;
-  imageFile: File | null;
-  previewUrl: string | null;
-}
+const ExperienceEditModal = ({ 
+  experience, 
+  isOpen, 
+  onClose, 
+  onSave,
+  onSaveWithImage,
+  loading,
+  modelo,
+  cargandoModelo,
+  errorModelo,
+  analizarImagen
+}: {
+  experience: Experience | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (descripcion: string) => void;
+  onSaveWithImage: (descripcion: string, imageFile: File | null) => void;
+  loading: boolean;
+  modelo: boolean;
+  cargandoModelo: boolean;
+  errorModelo: string | null;
+  analizarImagen: (file: File) => Promise<any>;
+}) => {
+  const [descripcion, setDescripcion] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-// Interfaz para datos de edición
-interface EditData {
-  descripcion: string;
-}
-
-// Interfaz para experiencia pendiente
-interface PendingExperience {
-  imageFile: File;
-  descripcion: string;
-  lugarId?: string;
-}
-
-export const ExperienceMural = () => {
-  const { 
-    experiences, 
-    myExperiences,
-    loading, 
-    uploading, 
-    editing,
-    deleting,
-    pagination, // ✅ NUEVO: Recibir paginación
-    loadingMore, // ✅ NUEVO: Recibir estado de carga adicional
-    autoRefresh, // ✅ NUEVO: Recibir estado de auto-refresh
-    uploadExperience, 
-    editExperience,
-    deleteExperience,
-    fetchExperiences,
-    fetchMyExperiences,
-    incrementViewCount,
-    loadMoreExperiences, // ✅ NUEVO: Función para cargar más
-    startAutoRefresh, // ✅ NUEVO: Control de auto-refresh
-    stopAutoRefresh,
-  } = useExperiences();
-  
-  const { places } = usePlaces();
   const { toast } = useToast();
 
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null);
-  const [experienceToEdit, setExperienceToEdit] = useState<Experience | null>(null);
-  const [experienceToDelete, setExperienceToDelete] = useState<Experience | null>(null);
-  const [showTermsDialog, setShowTermsDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState<'comunidad' | 'mis-experiencias'>('comunidad');
-  const [pendingExperience, setPendingExperience] = useState<PendingExperience | null>(null);
-
-  const [uploadData, setUploadData] = useState<UploadData>({
-    descripcion: '',
-    lugarId: '',
-    imageFile: null,
-    previewUrl: null
-  });
-
-  const [editData, setEditData] = useState<EditData>({
-    descripcion: '',
-  });
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const dropRef = useRef<HTMLDivElement>(null);
-
-  // ✅ MODIFICADO: Cargar experiencias al iniciar con paginación
   useEffect(() => {
-    fetchExperiences({ pagina: 1, limite: 6 }); // ✅ ESTÁNDAR: 6 experiencias iniciales
-    fetchMyExperiences();
-    startAutoRefresh(); // ✅ Iniciar actualización automática
-  }, [fetchExperiences, fetchMyExperiences, startAutoRefresh]);
-
-  // ✅ NUEVO: Efecto para cambiar entre pestañas
-  useEffect(() => {
-    if (activeTab === 'comunidad') {
-      fetchExperiences({ pagina: 1, limite: 6 });
+    if (experience) {
+      setDescripcion(experience.descripcion);
+      setPreviewUrl(null);
+      setSelectedFile(null);
+      setIsProcessingImage(false);
     }
-  }, [activeTab, fetchExperiences]);
+  }, [experience]);
 
-  // ✅ NUEVO: Manejar el toggle de auto-refresh
-  const handleAutoRefreshToggle = (enabled: boolean) => {
-    if (enabled) {
-      startAutoRefresh();
-    } else {
-      stopAutoRefresh();
-    }
-  };
-
-  // Determinar qué experiencias mostrar según la pestaña activa
-  const displayedExperiences = activeTab === 'comunidad' 
-    ? experiences 
-    : myExperiences;
-
-  // ✅ NUEVO: Determinar si hay más experiencias para cargar
-  const hasMoreExperiences = activeTab === 'comunidad' 
-    ? pagination?.tieneMas 
-    : false;
-
-  // ✅ MODIFICADO: Reset del formulario de subida para recargar experiencias
-  const resetUploadForm = () => {
-    setUploadData({
-      descripcion: '',
-      lugarId: '',
-      imageFile: null,
-      previewUrl: null
-    });
-    setIsUploadOpen(false);
-    
-    // ✅ RECARGAR: Actualizar la lista después de subir
-    setTimeout(() => {
-      fetchExperiences({ pagina: 1, limite: 6 });
-      if (activeTab === 'mis-experiencias') {
-        fetchMyExperiences();
-      }
-    }, 1000);
-  };
-
-  const resetEditForm = () => {
-    setEditData({ descripcion: '' });
-    setExperienceToEdit(null);
-    setIsEditOpen(false);
-  };
-
-  const handleFileSelect = (file: File) => {
+  // ✅ CORREGIDO: Manejo de selección de archivo con moderación
+  const handleFileSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast({
         title: 'Tipo de archivo inválido',
@@ -355,11 +337,393 @@ export const ExperienceMural = () => {
       return;
     }
 
-    setUploadData(prev => ({
-      ...prev,
-      imageFile: file,
-      previewUrl: URL.createObjectURL(file)
-    }));
+    try {
+      setIsProcessingImage(true);
+      
+      // ✅ ANÁLISIS DE MODERACIÓN para nueva imagen
+      const resultado = await analizarImagen(file);
+      
+      if (!resultado.esAprobado) {
+        toast({
+          title: '❌ Imagen rechazada',
+          description: resultado.razon || 'La imagen no cumple con los criterios de contenido apropiado.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Imagen aprobada
+      toast({
+        title: '✅ Imagen aprobada',
+        description: `La imagen ha pasado el filtro de moderación`,
+        variant: 'default',
+      });
+
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+
+    } catch (error) {
+      console.error('Error analizando imagen:', error);
+      // En caso de error, permitir con advertencia
+      toast({
+        title: '⚠️ Advertencia',
+        description: 'No se pudo analizar la imagen. Se usará sin verificación.',
+        variant: 'default',
+      });
+      
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    } finally {
+      setIsProcessingImage(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const removeFile = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // ✅ ACTUALIZADO: Manejo de guardado
+  const handleSave = () => {
+    if (selectedFile) {
+      // Si hay nueva imagen, usar función con imagen
+      onSaveWithImage(descripcion, selectedFile);
+    } else {
+      // Si no hay nueva imagen, usar función normal
+      onSave(descripcion);
+    }
+  };
+
+  if (!experience) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-xl text-white">
+        <DialogHeader>
+          <DialogTitle>Editar Experiencia</DialogTitle>
+          <DialogDescription className="text-gray-300">
+            Modifica la descripción o cambia la imagen de tu experiencia
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {/* Imagen actual y opción para cambiar */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <label className="block text-sm font-medium text-white">
+                Imagen de la experiencia
+              </label>
+              <ModeloModeracionStatus 
+                modelo={!!modelo}
+                cargando={cargandoModelo}
+                errorModelo={errorModelo}
+              />
+            </div>
+            
+            <div className="flex gap-4 items-start">
+              {/* Imagen actual */}
+              <div className="flex-1">
+                <p className="text-sm text-gray-300 mb-2">Imagen actual:</p>
+                <img
+                  src={experience.url_foto}
+                  alt="Experiencia actual"
+                  className="w-32 h-32 object-cover rounded-lg border border-gray-600"
+                />
+              </div>
+              
+              {/* Opción para cambiar imagen */}
+              <div className="flex-1">
+                <p className="text-sm text-gray-300 mb-2">Nueva imagen (opcional):</p>
+                
+                {isProcessingImage ? (
+                  <div className="w-32 h-32 border-2 border-dashed border-yellow-400 rounded-lg flex flex-col items-center justify-center bg-yellow-400/10">
+                    <Loader2 className="w-6 h-6 text-yellow-400 animate-spin mb-2" />
+                    <p className="text-xs text-yellow-400 text-center">Analizando imagen...</p>
+                  </div>
+                ) : previewUrl ? (
+                  <div className="relative">
+                    <img
+                      src={previewUrl}
+                      alt="Nueva imagen"
+                      className="w-32 h-32 object-cover rounded-lg border border-blue-400"
+                    />
+                    <button
+                      onClick={removeFile}
+                      className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-32 h-32 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center cursor-pointer hover:border-gray-500 transition-colors"
+                  >
+                    <UploadCloud className="w-6 h-6 text-gray-400" />
+                  </div>
+                )}
+                
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  disabled={isProcessingImage}
+                />
+                
+                {selectedFile && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    {selectedFile.name}
+                  </p>
+                )}
+              </div>
+            </div>
+            
+            <p className="text-xs text-gray-500">
+              💡 Al cambiar la imagen, la nueva será analizada por moderación automática
+            </p>
+          </div>
+
+          {/* Descripción */}
+          <div>
+            <label className="block text-sm font-medium text-white mb-2">
+              Descripción *
+            </label>
+            <Textarea
+              placeholder="Describe tu experiencia..."
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              rows={4}
+              className="bg-white/10 border-white/20 text-white placeholder-gray-400"
+            />
+          </div>
+
+          {/* Información de la experiencia */}
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-gray-400">Publicado el</p>
+                <p className="text-white">
+                  {new Date(experience.creado_en).toLocaleDateString('es-ES')}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-400">Vistas</p>
+                <p className="text-white">{experience.contador_vistas}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Botones */}
+          <div className="flex gap-3 pt-4">
+            <Button
+              variant="outline"
+              onClick={onClose}
+              disabled={loading || isProcessingImage}
+              className="flex-1 hover:bg-gray-800 text-white border-gray-600"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!descripcion.trim() || loading || isProcessingImage}
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  {selectedFile ? 'Actualizando...' : 'Guardando...'}
+                </>
+              ) : (
+                selectedFile ? 'Actualizar con nueva imagen' : 'Guardar Cambios'
+              )}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+// Interfaz para datos de subida
+interface UploadData {
+  descripcion: string;
+  lugarId: string;
+  imageFile: File | null;
+  previewUrl: string | null;
+}
+
+// Interfaz para experiencia pendiente
+interface PendingExperience {
+  imageFile: File;
+  descripcion: string;
+  lugarId?: string;
+}
+
+export const ExperienceMural = () => {
+  const { 
+    experiences, 
+    myExperiences,
+    loading, 
+    uploading, 
+    editing,
+    deleting,
+    pagination,
+    loadingMore,
+    autoRefresh,
+    uploadExperience, 
+    editExperience,
+    editExperienceWithImage,
+    deleteExperience,
+    fetchExperiences,
+    fetchMyExperiences,
+    incrementViewCount,
+    loadMoreExperiences,
+    startAutoRefresh,
+    stopAutoRefresh,
+  } = useExperiences();
+  
+  const { places } = usePlaces();
+  const { toast } = useToast();
+
+  // ✅ CORREGIDO: Hook de moderación con inicialización automática
+  const { 
+    modelo, 
+    cargando: cargandoModelo, 
+    errorModelo,
+    analizarImagen,
+    inicializarModelo 
+  } = useModeracionImagen();
+
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null);
+  const [experienceToEdit, setExperienceToEdit] = useState<Experience | null>(null);
+  const [experienceToDelete, setExperienceToDelete] = useState<Experience | null>(null);
+  const [showTermsDialog, setShowTermsDialog] = useState(false);
+  const [activeTab, setActiveTab] = useState<'comunidad' | 'mis-experiencias'>('comunidad');
+  const [pendingExperience, setPendingExperience] = useState<PendingExperience | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+
+  const [uploadData, setUploadData] = useState<UploadData>({
+    descripcion: '',
+    lugarId: '',
+    imageFile: null,
+    previewUrl: null
+  });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  // ✅ CORREGIDO: Inicializar modelo de moderación al cargar el componente
+  useEffect(() => {
+    fetchExperiences({ pagina: 1, limite: 6 });
+    fetchMyExperiences();
+    startAutoRefresh();
+    
+    // Inicializar modelo de moderación
+    inicializarModelo();
+  }, [fetchExperiences, fetchMyExperiences, startAutoRefresh, inicializarModelo]);
+
+  // Efecto para cambiar entre pestañas
+  useEffect(() => {
+    if (activeTab === 'comunidad') {
+      fetchExperiences({ pagina: 1, limite: 6 });
+    }
+  }, [activeTab, fetchExperiences]);
+
+  // Manejar el toggle de auto-refresh
+  const handleAutoRefreshToggle = (enabled: boolean) => {
+    if (enabled) {
+      startAutoRefresh();
+    } else {
+      stopAutoRefresh();
+    }
+  };
+
+  // Determinar qué experiencias mostrar según la pestaña activa
+  const displayedExperiences = activeTab === 'comunidad' 
+    ? experiences 
+    : myExperiences;
+
+  // ✅ CORREGIDO: Determinar si hay más experiencias para cargar
+  const hasMoreExperiences = activeTab === 'comunidad' 
+    ? pagination?.tieneMas 
+    : false;
+
+  // ✅ CORREGIDO: Manejo de selección de archivo con mejor manejo de errores
+  const handleFileSelect = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: 'Tipo de archivo inválido',
+        description: 'Por favor selecciona solo archivos de imagen.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: 'Archivo muy grande',
+        description: 'La imagen no debe superar los 5MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsProcessingImage(true);
+      
+      // ✅ MEJORADO: Manejo más robusto del análisis
+      const resultado = await analizarImagen(file);
+      
+      if (!resultado.esAprobado) {
+        toast({
+          title: '❌ Imagen rechazada',
+          description: resultado.razon || 'La imagen no cumple con los criterios de contenido apropiado.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Imagen aprobada
+      toast({
+        title: '✅ Imagen aprobada',
+        description: `La imagen ha pasado el filtro de moderación`,
+        variant: 'default',
+      });
+
+      setUploadData(prev => ({
+        ...prev,
+        imageFile: file,
+        previewUrl: URL.createObjectURL(file)
+      }));
+
+    } catch (error) {
+      console.error('Error analizando imagen:', error);
+      // En caso de error, permitir subir con advertencia
+      toast({
+        title: '⚠️ Advertencia',
+        description: 'No se pudo analizar la imagen. Se subirá sin verificación.',
+        variant: 'default',
+      });
+      
+      setUploadData(prev => ({
+        ...prev,
+        imageFile: file,
+        previewUrl: URL.createObjectURL(file)
+      }));
+    } finally {
+      setIsProcessingImage(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -375,6 +739,27 @@ export const ExperienceMural = () => {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+  };
+
+  // ✅ CORREGIDO: Reset del formulario
+  const resetUploadForm = () => {
+    setUploadData({
+      descripcion: '',
+      lugarId: '',
+      imageFile: null,
+      previewUrl: null
+    });
+    setIsUploadOpen(false);
+    setIsProcessingImage(false);
+    
+    // Recargar experiencias
+    setTimeout(() => {
+      if (activeTab === 'comunidad') {
+        fetchExperiences({ pagina: 1, limite: 6 });
+      } else {
+        fetchMyExperiences();
+      }
+    }, 500);
   };
 
   const handleUpload = async () => {
@@ -409,8 +794,9 @@ export const ExperienceMural = () => {
     }
   };
 
-  const handleEdit = async () => {
-    if (!editData.descripcion.trim()) {
+  // ✅ ACTUALIZADO: Función para editar solo descripción
+  const handleEdit = async (descripcion: string) => {
+    if (!descripcion.trim()) {
       toast({
         title: 'Descripción requerida',
         description: 'Por favor escribe una descripción.',
@@ -420,9 +806,51 @@ export const ExperienceMural = () => {
     }
 
     if (experienceToEdit) {
-      const success = await editExperience(experienceToEdit.id, editData.descripcion);
+      const success = await editExperience(experienceToEdit.id, descripcion);
       if (success) {
-        resetEditForm();
+        setExperienceToEdit(null);
+        setIsEditOpen(false);
+        toast({
+          title: '✅ Experiencia actualizada',
+          description: 'Tu experiencia ha sido actualizada correctamente.',
+          variant: 'default',
+        });
+      }
+    }
+  };
+
+  // ✅ NUEVO: Función para editar con imagen
+  const handleEditWithImage = async (descripcion: string, imageFile: File | null) => {
+    if (!descripcion.trim()) {
+      toast({
+        title: 'Descripción requerida',
+        description: 'Por favor escribe una descripción.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (experienceToEdit) {
+      let success = false;
+      
+      if (imageFile) {
+        // Usar la nueva función con imagen
+        success = await editExperienceWithImage(experienceToEdit.id, descripcion, imageFile);
+      } else {
+        // Usar la función normal
+        success = await editExperience(experienceToEdit.id, descripcion);
+      }
+      
+      if (success) {
+        setExperienceToEdit(null);
+        setIsEditOpen(false);
+        toast({
+          title: '✅ Experiencia actualizada',
+          description: imageFile 
+            ? 'Tu experiencia e imagen han sido actualizadas correctamente.' 
+            : 'Tu experiencia ha sido actualizada correctamente.',
+          variant: 'default',
+        });
       }
     }
   };
@@ -436,9 +864,9 @@ export const ExperienceMural = () => {
     }
   };
 
+  // ✅ CORREGIDO: Función para abrir modal de edición
   const openEditModal = (experience: Experience) => {
     setExperienceToEdit(experience);
-    setEditData({ descripcion: experience.descripcion });
     setIsEditOpen(true);
   };
 
@@ -513,7 +941,7 @@ export const ExperienceMural = () => {
     <>
       <section className="py-20 bg-gradient-to-br from-blue-50 via-green-50 to-emerald-50">
         <div className="container mx-auto px-4">
-          {/* Header */}
+          {/* Header con estado del modelo */}
           <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <div className="text-center md:text-left">
               <h2 className="text-4xl font-bold text-gray-900 mb-2">
@@ -524,13 +952,21 @@ export const ExperienceMural = () => {
               </p>
             </div>
             
-            <Button
-              onClick={() => setIsUploadOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-2 px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-            >
-              <Plus className="w-5 h-5" />
-              Compartir Experiencia
-            </Button>
+            <div className="flex items-center gap-3">
+              <ModeloModeracionStatus 
+                modelo={!!modelo}
+                cargando={cargandoModelo}
+                errorModelo={errorModelo}
+              />
+              
+              <Button
+                onClick={() => setIsUploadOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-2 px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+              >
+                <Plus className="w-5 h-5" />
+                Compartir Experiencia
+              </Button>
+            </div>
           </div>
 
           {/* ✅ NUEVO: Indicador de actualización automática */}
@@ -616,8 +1052,6 @@ export const ExperienceMural = () => {
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" 
                         onClick={() => handleExperienceClick(experience)}/>
-                        
-                        {/* ✅ ELIMINADO: Badge de estado ya no es necesario */}
                         
                         {/* Menú de acciones (solo en "Mis Experiencias") */}
                         {activeTab === 'mis-experiencias' && (
@@ -706,7 +1140,7 @@ export const ExperienceMural = () => {
         </div>
       </section>
 
-      {/* Modal de subida */}
+      {/* Modal de subida ACTUALIZADO */}
       <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
         <DialogContent className="max-w-4xl max-h-[95vh] overflow-hidden bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-xl text-white flex flex-col">
           <DialogHeader>
@@ -717,48 +1151,77 @@ export const ExperienceMural = () => {
           </DialogHeader>
           
           <div className="space-y-4">
-            {/* Área de subida de imagen */}
-            <div
-              ref={dropRef}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-blue-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
-            >
-              {uploadData.previewUrl ? (
-                <div className="relative">
-                  <img
-                    src={uploadData.previewUrl}
-                    alt="Vista previa"
-                    className="w-full h-40 object-cover rounded-md mx-auto"
-                  />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setUploadData(prev => ({ ...prev, previewUrl: null, imageFile: null }));
-                    }}
-                    className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <UploadCloud className="w-12 h-12 text-blue-400 mx-auto mb-3" />
-                  <p className="text-blue-400 font-medium">Selecciona una imagen</p>
-                  <p className="text-sm text-white/70 mt-1">
-                    Arrastra y suelta o haz clic para seleccionar
-                  </p>
-                </>
-              )}
+            {/* Área de subida de imagen ACTUALIZADA */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="block text-sm font-medium text-white">
+                  Imagen de la experiencia *
+                </label>
+                <ModeloModeracionStatus 
+                  modelo={!!modelo}
+                  cargando={cargandoModelo}
+                  errorModelo={errorModelo}
+                />
+              </div>
               
-              <Input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="hidden"
-              />
+              <div
+                ref={dropRef}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onClick={() => !isProcessingImage && fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                  isProcessingImage 
+                    ? 'border-yellow-400 bg-yellow-400/10 cursor-not-allowed' 
+                    : 'border-blue-300 hover:border-blue-400'
+                }`}
+              >
+                {isProcessingImage ? (
+                  <div className="flex flex-col items-center justify-center py-4">
+                    <Loader2 className="w-8 h-8 text-yellow-400 animate-spin mb-2" />
+                    <p className="text-yellow-400 font-medium">Analizando imagen...</p>
+                    <p className="text-sm text-yellow-300 mt-1">
+                      Verificando contenido apropiado
+                    </p>
+                  </div>
+                ) : uploadData.previewUrl ? (
+                  <div className="relative">
+                    <img
+                      src={uploadData.previewUrl}
+                      alt="Vista previa"
+                      className="w-full h-40 object-cover rounded-md mx-auto"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setUploadData(prev => ({ ...prev, previewUrl: null, imageFile: null }));
+                      }}
+                      className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <UploadCloud className="w-12 h-12 text-blue-400 mx-auto mb-3" />
+                    <p className="text-blue-400 font-medium">Selecciona una imagen</p>
+                    <p className="text-sm text-white/70 mt-1">
+                      Arrastra y suelta o haz clic para seleccionar
+                    </p>
+                    <p className="text-xs text-blue-300 mt-2">
+                      🔍 La imagen será analizada automáticamente
+                    </p>
+                  </>
+                )}
+                
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                  disabled={isProcessingImage}
+                />
+              </div>
             </div>
 
             {/* Descripción */}
@@ -771,7 +1234,7 @@ export const ExperienceMural = () => {
                 value={uploadData.descripcion}
                 onChange={(e) => setUploadData(prev => ({ ...prev, descripcion: e.target.value }))}
                 rows={4}
-                className="resize-none bg-white/10 border-white/20 text-white"
+                className="resize-none bg-white/10 border-white/20 text-white placeholder-gray-400"
               />
             </div>
 
@@ -794,27 +1257,29 @@ export const ExperienceMural = () => {
               </select>
             </div>
 
-            {/* Footer */}
+            {/* Footer ACTUALIZADO */}
             <div className="flex gap-3 pt-4">
               <Button
                 variant="outline"
                 onClick={resetUploadForm}
+                disabled={isProcessingImage}
                 className="flex-1 hover:bg-red-900 text-white border-white/30"
               >
                 Cancelar
               </Button>
               <Button
                 onClick={handleUpload}
-                disabled={!uploadData.imageFile || !uploadData.descripcion.trim() || uploading}
+                disabled={!uploadData.imageFile || !uploadData.descripcion.trim() || uploading || isProcessingImage}
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
               >
-                {uploading ? (
+                {isProcessingImage ? (
                   <>
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"
-                    />
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    Analizando...
+                  </>
+                ) : uploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
                     Subiendo...
                   </>
                 ) : (
@@ -826,79 +1291,22 @@ export const ExperienceMural = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ✅ ACTUALIZADO: Modal de edición (sin estados) */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Editar Experiencia</DialogTitle>
-            <DialogDescription>
-              Modifica la descripción de tu experiencia
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {experienceToEdit && (
-              <div className="flex gap-4">
-                <img
-                  src={experienceToEdit.url_foto}
-                  alt="Experiencia"
-                  className="w-32 h-32 object-cover rounded-lg"
-                />
-                <div className="flex-1">
-                  {/* ✅ ELIMINADO: Badge de estado */}
-                  <p className="text-sm text-gray-600">
-                    Publicado el {formatDate(experienceToEdit.creado_en)}
-                  </p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {experienceToEdit.contador_vistas} vistas
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Descripción *
-              </label>
-              <Textarea
-                placeholder="Describe tu experiencia..."
-                value={editData.descripcion}
-                onChange={(e) => setEditData({ descripcion: e.target.value })}
-                rows={4}
-              />
-              {/* ✅ ELIMINADO: Mensaje sobre estado pendiente */}
-            </div>
-
-            <div className="flex gap-3 pt-4">
-              <Button
-                variant="outline"
-                onClick={resetEditForm}
-                className="flex-1"
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleEdit}
-                disabled={!editData.descripcion.trim() || editing === experienceToEdit?.id}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-              >
-                {editing === experienceToEdit?.id ? (
-                  <>
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"
-                    />
-                    Guardando...
-                  </>
-                ) : (
-                  'Guardar Cambios'
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Modal de edición ACTUALIZADO */}
+<ExperienceEditModal
+  experience={experienceToEdit}
+  isOpen={isEditOpen}
+  onClose={() => {
+    setExperienceToEdit(null);
+    setIsEditOpen(false);
+  }}
+  onSave={handleEdit}
+  onSaveWithImage={handleEditWithImage}
+  loading={editing === experienceToEdit?.id}
+  modelo={!!modelo}
+  cargandoModelo={cargandoModelo}
+  errorModelo={errorModelo}
+  analizarImagen={analizarImagen}
+/>
 
       {/* Modal de confirmación de eliminación */}
       <Dialog open={!!experienceToDelete} onOpenChange={() => setExperienceToDelete(null)}>
@@ -935,7 +1343,7 @@ export const ExperienceMural = () => {
                 <Button
                   variant="outline"
                   onClick={() => setExperienceToDelete(null)}
-                  className="flex-1 bg-blue/900 hover:bg-blue-800 text-white border-white/30"
+                  className="flex-1 hover:bg-gray-800 text-white border-gray-600"
                 >
                   Cancelar
                 </Button>
@@ -947,11 +1355,7 @@ export const ExperienceMural = () => {
                 >
                   {deleting === experienceToDelete.id ? (
                     <>
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        className="w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"
-                      />
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
                       Eliminando...
                     </>
                   ) : (

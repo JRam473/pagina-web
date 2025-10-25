@@ -109,6 +109,12 @@ interface VistaDetallada {
   creado_en: string;
 }
 
+interface EditWithImageResponse {
+  success: boolean;
+  mensaje: string;
+  experiencia: Experience;
+}
+
 export const useExperiences = () => {
   const [experiences, setExperiences] = useState<Experience[]>([]);
   const [myExperiences, setMyExperiences] = useState<Experience[]>([]);
@@ -157,6 +163,8 @@ export const useExperiences = () => {
     
     return `${backendUrl}${normalizedPath}`;
   };
+
+
 
   /**
    * Obtener experiencias con paginación - ACTUALIZADO
@@ -310,6 +318,98 @@ export const useExperiences = () => {
       setLoading(false);
     }
   }, [toast]);
+
+
+    /**
+   * ✅ NUEVO: Editar experiencia con cambio de imagen
+   */
+  const editExperienceWithImage = useCallback(async (
+    experienceId: string,
+    descripcion: string,
+    imageFile?: File | null
+  ): Promise<boolean> => {
+    try {
+      setEditing(experienceId);
+
+      // Validación frontend
+      if (descripcion.trim().length > 500) {
+        toast({
+          title: 'Error',
+          description: 'La descripción no puede exceder los 500 caracteres',
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      const formData = new FormData();
+      formData.append('descripcion', descripcion.trim());
+      
+      if (imageFile) {
+        formData.append('imagen', imageFile);
+      }
+
+      // ✅ NUEVA RUTA: Edición con imagen
+      const response = await api.put<EditWithImageResponse>(
+        `/api/experiencias/${experienceId}/con-imagen`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      if (!response.data.success) {
+        throw new Error(response.data.mensaje || 'Error al editar experiencia');
+      }
+
+      // Actualizar mis experiencias y experiencias públicas
+      await fetchMyExperiences();
+      await fetchExperiences({ pagina: 1, limite: 6 });
+
+      toast({
+        title: '✅ Experiencia actualizada',
+        description: response.data.mensaje,
+        variant: 'default',
+      });
+
+      return true;
+    } catch (err: unknown) {
+      // ✅ CORREGIDO: Manejo de errores de moderación
+      const apiError = err as AxiosError;
+      if (apiError.response?.data && typeof apiError.response.data === 'object' && 'error' in apiError.response.data) {
+        const errorData = apiError.response.data;
+        
+        if (errorData.error === 'CONTENIDO_RECHAZADO') {
+          const moderacionError = errorData as ModeracionError;
+          
+          toast({
+            title: '❌ Contenido no aprobado',
+            description: moderacionError.message,
+            variant: 'destructive',
+            duration: 8000,
+          });
+        } else {
+          const errorMessage = errorData.message || handleError(err);
+          toast({
+            title: '❌ Error al editar experiencia',
+            description: errorMessage,
+            variant: 'destructive',
+          });
+        }
+      } else {
+        const errorMessage = handleError(err);
+        toast({
+          title: '❌ Error al editar experiencia',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
+      return false;
+    } finally {
+      setEditing(null);
+    }
+  }, [toast, fetchMyExperiences, fetchExperiences]);
 
   /**
    * Obtener experiencia específica por ID
@@ -709,6 +809,7 @@ export const useExperiences = () => {
     editExperience,
     deleteExperience,
     incrementViewCount,
+    editExperienceWithImage,
     
     // Acciones de administración
     getExperienceStats,

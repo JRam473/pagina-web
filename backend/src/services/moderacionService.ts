@@ -36,7 +36,7 @@ export class ModeracionService {
     // Log de moderación para contenido rechazado
     if (!esAprobado) {
       await this.registrarLogModeracion({
-        tipoConttenido: 'texto',
+        tipoContenido: 'texto', // ✅ CORREGIDO: tipoContenido (con una 't')
         contenidoTexto: data.texto,
         resultadoModeracion: { analisisTexto },
         accion: 'rechazado',
@@ -94,14 +94,22 @@ export class ModeracionService {
     return texto ? texto.puntuacion : 1.0;
   }
 
-  private async registrarLogModeracion(log: any): Promise<void> {
+  private async registrarLogModeracion(log: {
+    tipoContenido: string;
+    contenidoTexto?: string | undefined;
+    resultadoModeracion: any;
+    accion: string;
+    motivo: string;
+    ipUsuario: string;
+    hashNavegador: string;
+  }): Promise<void> {
     try {
       await pool.query(
         `INSERT INTO logs_moderacion 
          (tipo_contenido, contenido_texto, resultado_moderacion, accion, motivo, ip_usuario, hash_navegador)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
-          log.tipoContenido,
+          log.tipoContenido, // ✅ CORREGIDO: tipoContenido (con una 't')
           log.contenidoTexto?.substring(0, 500),
           JSON.stringify(log.resultadoModeracion),
           log.accion,
@@ -110,8 +118,9 @@ export class ModeracionService {
           log.hashNavegador
         ]
       );
+      console.log('✅ Log de moderación registrado correctamente');
     } catch (error) {
-      console.error('Error registrando log de moderación:', error);
+      console.error('❌ Error registrando log de moderación:', error);
     }
   }
 

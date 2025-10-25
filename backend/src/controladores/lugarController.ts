@@ -131,35 +131,152 @@ export const lugarController = {
     }
   },
 
-  // ✅ ACTUALIZADO: Crear lugar con moderación SOLO DE TEXTO
-  async crearLugar(req: Request, res: Response) {
-    try {
-      const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
+// ✅ ACTUALIZADO: Crear lugar con moderación SOLO DE TEXTO
+async crearLugar(req: Request, res: Response) {
+  try {
+    const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
 
-      console.log('➕ Creando nuevo lugar con moderación de texto:', { nombre, categoria });
+    console.log('➕ Creando nuevo lugar con moderación de texto:', { nombre, categoria });
 
-      // Validaciones básicas
-      if (!nombre || !descripcion || !ubicacion || !categoria) {
-        return res.status(400).json({
-          success: false,
-          error: 'Nombre, descripción, ubicación y categoría son requeridos'
-        });
-      }
+    // Validaciones básicas
+    if (!nombre || !descripcion || !ubicacion || !categoria) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nombre, descripción, ubicación y categoría son requeridos'
+      });
+    }
 
-      // ✅ MODIFICADO: Moderación SOLO de texto
+    // ✅ CORREGIDO: Moderación de NOMBRE + DESCRIPCIÓN
+    const moderacionService = new ModeracionService();
+    
+    // Crear texto combinado para moderación
+    const textoParaModerar = `${nombre} ${descripcion}`;
+    
+    console.log('🔍 Enviando texto para moderación:', textoParaModerar.substring(0, 100) + '...');
+    
+    const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
+      texto: textoParaModerar,
+      ipUsuario: req.ip || 'unknown',
+      hashNavegador: 'admin-creacion-lugar'
+    });
+
+    console.log('📊 Resultado de moderación:', resultadoModeracion);
+
+    // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico
+    if (!resultadoModeracion.esAprobado) {
+      console.log('❌ Contenido rechazado por moderación:', resultadoModeracion.motivoRechazo);
+      
+      const { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico } = this.analizarMotivoRechazo(resultadoModeracion);
+      
+      return res.status(400).json({
+        success: false,
+        error: 'CONTENIDO_RECHAZADO',
+        message: mensajeUsuario,
+        motivo: resultadoModeracion.motivoRechazo,
+        tipo: tipoProblema,
+        detalles: {
+          puntuacion: resultadoModeracion.puntuacionGeneral,
+          problemas: detallesEspecificos,
+          sugerencias: this.generarSugerencias(tipoProblema),
+          campoEspecifico: campoEspecifico,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO lugares 
+       (nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [nombre, descripcion, ubicacion, categoria, foto_principal_url || null, pdf_url || null]
+    );
+
+    console.log('✅ Lugar creado y aprobado:', result.rows[0].id);
+
+    res.status(201).json({
+      success: true,
+      mensaje: 'Lugar creado exitosamente',
+      lugar: result.rows[0]
+    });
+  } catch (error) {
+    console.error('❌ Error creando lugar:', error);
+    
+    // Manejar errores de moderación específicos
+    if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
+      return res.status(400).json({
+        success: false,
+        error: 'CONTENIDO_RECHAZADO',
+        message: error.message
+      });
+    }
+    
+    // ✅ MEJORADO: Log más detallado del error
+    console.error('🔴 Detalles del error:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined
+    });
+    
+    res.status(500).json({ 
+      success: false,
+      error: 'Error interno del servidor al crear lugar',
+      detalle: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
+    });
+  }
+},
+
+  // ✅ ACTUALIZADO: Actualizar lugar con moderación SOLO DE TEXTO
+// ✅ ACTUALIZADO: Actualizar lugar con moderación SOLO DE TEXTO
+async actualizarLugar(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
+
+    console.log('✏️ Actualizando lugar con moderación de texto:', id);
+
+    // Obtener el lugar actual primero
+    const lugarActual = await pool.query(
+      'SELECT * FROM lugares WHERE id = $1',
+      [id]
+    );
+
+    if (lugarActual.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Lugar no encontrado' 
+      });
+    }
+
+    const lugar = lugarActual.rows[0];
+
+    // ✅ CORREGIDO: Moderación de NOMBRE + DESCRIPCIÓN si se modifican
+    const nombreModificado = nombre && nombre !== lugar.nombre;
+    const descripcionModificada = descripcion && descripcion !== lugar.descripcion;
+
+    if (nombreModificado || descripcionModificada) {
       const moderacionService = new ModeracionService();
+      
+      // Usar valores nuevos o existentes
+      const nombreParaModerar = nombre || lugar.nombre;
+      const descripcionParaModerar = descripcion || lugar.descripcion;
+      
+      // Crear texto combinado para moderación
+      const textoParaModerar = `${nombreParaModerar} ${descripcionParaModerar}`;
+      
       const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
-        texto: descripcion,
+        texto: textoParaModerar, // ← Ahora incluye nombre + descripción
         ipUsuario: req.ip || 'unknown',
-        hashNavegador: 'admin-creacion-lugar'
+        hashNavegador: 'admin-actualizacion-lugar'
       });
 
       // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico
       if (!resultadoModeracion.esAprobado) {
         console.log('❌ Contenido rechazado por moderación:', resultadoModeracion.motivoRechazo);
         
-        const { mensajeUsuario, tipoProblema, detallesEspecificos } = this.analizarMotivoRechazo(resultadoModeracion);
+        const { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico } = this.analizarMotivoRechazo(resultadoModeracion);
         
+        // ✅ CORREGIDO: Ahora sí incluye campoEspecifico
         return res.status(400).json({
           success: false,
           error: 'CONTENIDO_RECHAZADO',
@@ -170,144 +287,57 @@ export const lugarController = {
             puntuacion: resultadoModeracion.puntuacionGeneral,
             problemas: detallesEspecificos,
             sugerencias: this.generarSugerencias(tipoProblema),
+            campoEspecifico: campoEspecifico, // ← ¡ESTO ES LO QUE FALTABA!
             timestamp: new Date().toISOString()
           }
         });
       }
+    }
 
-      const result = await pool.query(
-        `INSERT INTO lugares 
-         (nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [nombre, descripcion, ubicacion, categoria, foto_principal_url || null, pdf_url || null]
-      );
+    // Usar valores existentes si no se proporcionan nuevos
+    const nombreFinal = nombre || lugar.nombre;
+    const descripcionFinal = descripcion || lugar.descripcion;
+    const ubicacionFinal = ubicacion || lugar.ubicacion;
+    const categoriaFinal = categoria || lugar.categoria;
+    const fotoPrincipalFinal = foto_principal_url !== undefined ? foto_principal_url : lugar.foto_principal_url;
+    const pdfFinal = pdf_url !== undefined ? pdf_url : lugar.pdf_url;
 
-      console.log('✅ Lugar creado y aprobado:', result.rows[0].id);
+    const result = await pool.query(
+      `UPDATE lugares 
+       SET nombre = $1, descripcion = $2, ubicacion = $3, categoria = $4, 
+           foto_principal_url = $5, pdf_url = $6, actualizado_en = NOW()
+       WHERE id = $7
+       RETURNING *`,
+      [nombreFinal, descripcionFinal, ubicacionFinal, categoriaFinal, 
+       fotoPrincipalFinal, pdfFinal, id]
+    );
 
-      res.status(201).json({
-        success: true,
-        mensaje: 'Lugar creado exitosamente',
-        lugar: result.rows[0]
-      });
-    } catch (error) {
-      console.error('❌ Error creando lugar:', error);
-      
-      // Manejar errores de moderación específicos
-      if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: error.message
-        });
-      }
-      
-      res.status(500).json({ 
+    console.log('✅ Lugar actualizado:', id);
+
+    res.json({
+      success: true,
+      mensaje: 'Lugar actualizado exitosamente',
+      lugar: result.rows[0]
+    });
+  } catch (error) {
+    console.error('❌ Error actualizando lugar:', error);
+    
+    // Manejar errores de moderación específicos
+    if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
+      return res.status(400).json({
         success: false,
-        error: 'Error al crear lugar',
-        detalle: error instanceof Error ? error.message : 'Error desconocido'
+        error: 'CONTENIDO_RECHAZADO',
+        message: error.message
       });
     }
-  },
-
-  // ✅ ACTUALIZADO: Actualizar lugar con moderación SOLO DE TEXTO
-  async actualizarLugar(req: Request, res: Response) {
-    try {
-      const { id } = req.params;
-      const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
-
-      console.log('✏️ Actualizando lugar con moderación de texto:', id);
-
-      // Obtener el lugar actual primero
-      const lugarActual = await pool.query(
-        'SELECT * FROM lugares WHERE id = $1',
-        [id]
-      );
-
-      if (lugarActual.rows.length === 0) {
-        return res.status(404).json({ 
-          success: false,
-          error: 'Lugar no encontrado' 
-        });
-      }
-
-      const lugar = lugarActual.rows[0];
-
-      // ✅ MODIFICADO: Moderación SOLO de texto si se modifica la descripción
-      if (descripcion && descripcion !== lugar.descripcion) {
-        const moderacionService = new ModeracionService();
-        const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
-          texto: descripcion,
-          ipUsuario: req.ip || 'unknown',
-          hashNavegador: 'admin-actualizacion-lugar'
-        });
-
-        // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico
-        if (!resultadoModeracion.esAprobado) {
-          console.log('❌ Contenido rechazado por moderación:', resultadoModeracion.motivoRechazo);
-          
-          const { mensajeUsuario, tipoProblema, detallesEspecificos } = this.analizarMotivoRechazo(resultadoModeracion);
-          
-          return res.status(400).json({
-            success: false,
-            error: 'CONTENIDO_RECHAZADO',
-            message: mensajeUsuario,
-            motivo: resultadoModeracion.motivoRechazo,
-            tipo: tipoProblema,
-            detalles: {
-              puntuacion: resultadoModeracion.puntuacionGeneral,
-              problemas: detallesEspecificos,
-              sugerencias: this.generarSugerencias(tipoProblema),
-              timestamp: new Date().toISOString()
-            }
-          });
-        }
-      }
-
-      // Usar valores existentes si no se proporcionan nuevos
-      const nombreFinal = nombre || lugar.nombre;
-      const descripcionFinal = descripcion || lugar.descripcion;
-      const ubicacionFinal = ubicacion || lugar.ubicacion;
-      const categoriaFinal = categoria || lugar.categoria;
-      const fotoPrincipalFinal = foto_principal_url !== undefined ? foto_principal_url : lugar.foto_principal_url;
-      const pdfFinal = pdf_url !== undefined ? pdf_url : lugar.pdf_url;
-
-      const result = await pool.query(
-        `UPDATE lugares 
-         SET nombre = $1, descripcion = $2, ubicacion = $3, categoria = $4, 
-             foto_principal_url = $5, pdf_url = $6, actualizado_en = NOW()
-         WHERE id = $7
-         RETURNING *`,
-        [nombreFinal, descripcionFinal, ubicacionFinal, categoriaFinal, 
-         fotoPrincipalFinal, pdfFinal, id]
-      );
-
-      console.log('✅ Lugar actualizado:', id);
-
-      res.json({
-        success: true,
-        mensaje: 'Lugar actualizado exitosamente',
-        lugar: result.rows[0]
-      });
-    } catch (error) {
-      console.error('❌ Error actualizando lugar:', error);
-      
-      // Manejar errores de moderación específicos
-      if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: error.message
-        });
-      }
-      
-      res.status(500).json({ 
-        success: false,
-        error: 'Error al actualizar lugar',
-        detalle: error instanceof Error ? error.message : 'Error desconocido'
-      });
-    }
-  },
+    
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al actualizar lugar',
+      detalle: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+},
 
   // Eliminar lugar (admin only) - SIN CAMBIOS
   async eliminarLugar(req: Request, res: Response) {
@@ -1163,43 +1193,81 @@ export const lugarController = {
 
   // 🔒 MÉTODOS PRIVADOS - Actualizados para solo texto
 
-  /**
-   * Analizar motivo de rechazo para mensajes específicos al usuario (solo texto)
-   */
-  analizarMotivoRechazo(resultadoModeracion: any): { 
-    mensajeUsuario: string; 
-    tipoProblema: string; 
-    detallesEspecificos: string[] 
-  } {
-    const detallesEspecificos: string[] = [];
-    let mensajeUsuario = 'El contenido no cumple con nuestras políticas';
-    let tipoProblema = 'general';
+/**
+ * Analizar motivo de rechazo para mensajes específicos al usuario (solo texto)
+ */
+analizarMotivoRechazo(resultadoModeracion: any): { 
+  mensajeUsuario: string; 
+  tipoProblema: string; 
+  detallesEspecificos: string[];
+  campoEspecifico: 'nombre' | 'descripcion' | 'ambos';
+} {
+  const detallesEspecificos: string[] = [];
+  let mensajeUsuario = 'El contenido no cumple con nuestras políticas';
+  let tipoProblema = 'general';
+  let campoEspecifico: 'nombre' | 'descripcion' | 'ambos' = 'ambos';
 
-    // ✅ MODIFICADO: Solo analizar problemas de texto
-    if (resultadoModeracion.detalles?.texto && !resultadoModeracion.detalles.texto.esAprobado) {
-      tipoProblema = 'texto';
-      const texto = resultadoModeracion.detalles.texto;
+  console.log('🔍 Analizando motivo de rechazo:', resultadoModeracion);
+
+  // ✅ CORREGIDO: Verificar la estructura real del objeto de moderación
+  if (!resultadoModeracion.esAprobado) {
+    tipoProblema = 'texto';
+    
+    // Obtener el motivo de rechazo
+    const motivoRechazo = resultadoModeracion.motivoRechazo || '';
+    const puntuacionGeneral = resultadoModeracion.puntuacionGeneral || 0;
+    
+    // ✅ CORREGIDO: Analizar el motivo de rechazo directamente
+    if (motivoRechazo.includes('ofensivo') || motivoRechazo.includes('ofensiva')) {
+      mensajeUsuario = 'El nombre o descripción contienen lenguaje ofensivo o inapropiado';
+      detallesEspecificos.push('Se detectaron palabras ofensivas en el nombre o descripción');
       
-      if (texto.razon.includes('ofensivo')) {
-        mensajeUsuario = 'El texto contiene lenguaje ofensivo o inapropiado';
-        detallesEspecificos.push('Se detectaron palabras ofensivas');
-        if (texto.palabrasOfensivas.length > 0) {
-          detallesEspecificos.push(`Palabras problemáticas: ${texto.palabrasOfensivas.slice(0, 3).join(', ')}`);
-        }
-      } else if (texto.razon.includes('spam')) {
-        mensajeUsuario = 'El texto contiene contenido comercial no permitido';
-        detallesEspecificos.push('Se detectó contenido promocional o spam');
-      } else if (texto.razon.includes('sin sentido')) {
-        mensajeUsuario = 'El texto no tiene sentido o es muy corto';
-        detallesEspecificos.push('El texto debe ser coherente y tener al menos algunas palabras con sentido');
-      } else if (texto.razon.includes('URL') || texto.razon.includes('email') || texto.razon.includes('teléfono')) {
-        mensajeUsuario = 'El texto contiene enlaces o información de contacto';
-        detallesEspecificos.push('No se permiten URLs, emails o números de teléfono');
+      // Intentar determinar el campo específico basado en el texto analizado
+      const textoAnalizado = resultadoModeracion.textoAnalizado || '';
+      const [nombreParte, ...descripcionPartes] = textoAnalizado.split(' ');
+      const descripcionParte = descripcionPartes.join(' ');
+      
+      // Si el problema menciona específicamente el nombre
+      if (motivoRechazo.includes('nombre') || (nombreParte && nombreParte.length > 0 && motivoRechazo.toLowerCase().includes(nombreParte.toLowerCase()))) {
+        campoEspecifico = 'nombre';
+        mensajeUsuario = 'El nombre contiene lenguaje ofensivo o inapropiado';
+      } else if (motivoRechazo.includes('descripción') || motivoRechazo.includes('descripcion')) {
+        campoEspecifico = 'descripcion';
+        mensajeUsuario = 'La descripción contiene lenguaje ofensivo o inapropiado';
       }
+      
+    } else if (motivoRechazo.includes('spam') || motivoRechazo.includes('comercial')) {
+      mensajeUsuario = 'El nombre o descripción contienen contenido comercial no permitido';
+      detallesEspecificos.push('Se detectó contenido promocional o spam');
+      campoEspecifico = 'descripcion';
+      mensajeUsuario = 'La descripción contiene contenido comercial no permitido';
+      
+    } else if (motivoRechazo.includes('sentido') || motivoRechazo.includes('coherente')) {
+      mensajeUsuario = 'El nombre o descripción no tienen sentido o son muy cortos';
+      detallesEspecificos.push('El nombre y descripción deben ser coherentes y tener sentido');
+      campoEspecifico = 'descripcion';
+      mensajeUsuario = 'La descripción no tiene sentido o es muy corta';
+      
+    } else if (motivoRechazo.includes('URL') || motivoRechazo.includes('email') || motivoRechazo.includes('teléfono') || motivoRechazo.includes('enlace')) {
+      mensajeUsuario = 'El nombre o descripción contienen enlaces o información de contacto';
+      detallesEspecificos.push('No se permiten URLs, emails o números de teléfono');
+      campoEspecifico = 'descripcion';
+      mensajeUsuario = 'La descripción contiene enlaces o información de contacto';
+    } else {
+      // Motivo genérico
+      detallesEspecificos.push(motivoRechazo);
     }
+  }
 
-    return { mensajeUsuario, tipoProblema, detallesEspecificos };
-  },
+  // Agregar puntuación a los detalles si está disponible
+  if (resultadoModeracion.puntuacionGeneral) {
+    detallesEspecificos.push(`Puntuación de riesgo: ${(resultadoModeracion.puntuacionGeneral * 100).toFixed(1)}%`);
+  }
+
+  console.log('✅ Resultado del análisis:', { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico });
+
+  return { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico };
+},
 
   /**
    * Generar sugerencias según el tipo de problema (solo texto)
