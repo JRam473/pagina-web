@@ -1,4 +1,4 @@
-// rutas/lugarRoutes.ts - VERSIÓN ACTUALIZADA CON ENDPOINTS DE MODERACIÓN
+// rutas/lugarRoutes.ts - VERSIÓN COMPLETA CON TODAS LAS RUTAS DE MODERACIÓN
 import { Router } from 'express';
 import { lugarController } from '../controladores/lugarController';
 import { autenticarAdmin } from '../middleware/autenticacion';
@@ -13,21 +13,21 @@ router.get('/categorias', lugarController.obtenerCategorias);
 router.get('/:id', lugarController.obtenerLugarPorId);
 router.get('/:id/galeria', lugarController.obtenerGaleriaLugar);
 
-// ==================== RUTAS DE MODERACIÓN (PÚBLICAS/PROTEGIDAS SEGÚN NECESIDAD) ====================
-// ✅ NUEVO: Validar texto previo para lugares (puede ser público o protegido según tu necesidad)
-router.post('/moderacion/validar-texto', 
-  // autenticarAdmin, // Opcional: proteger si solo admins pueden validar
-  lugarController.validarTextoPrev
+// ==================== RUTAS DE MODERACIÓN (PÚBLICAS/PROTEGIDAS) ====================
+// ✅ EXISTENTES: Moderación general para lugares
+router.post('/moderacion/validar-texto', lugarController.validarTextoPrev);
+router.get('/moderacion/motivos-rechazo', lugarController.obtenerMotivosRechazo);
+router.post('/moderacion/analizar-texto', lugarController.analizarTexto);
+
+// ✅ NUEVAS: Rutas específicas para moderación de descripciones de fotos
+router.post('/moderacion/validar-descripcion-foto', 
+  // autenticarAdmin, // Opcional: proteger si es necesario
+  lugarController.validarDescripcionFotoPrev
 );
 
-// ✅ NUEVO: Obtener motivos de rechazo (puede ser público)
-router.get('/moderacion/motivos-rechazo', 
-  lugarController.obtenerMotivosRechazo
-);
-
-// ✅ NUEVO: Analizar texto específico (puede ser público)
-router.post('/moderacion/analizar-texto', 
-  lugarController.analizarTexto
+router.post('/moderacion/analizar-descripcion-foto', 
+  // autenticarAdmin, // Opcional: proteger si es necesario
+  lugarController.analizarDescripcionFoto
 );
 
 // ==================== RUTAS PROTEGIDAS (ADMIN ONLY) ====================
@@ -86,7 +86,7 @@ router.put('/:id/galeria/:imagenId/principal',
   lugarController.establecerImagenPrincipal
 );
 
-// Actualizar descripción de imagen
+// ✅ ACTUALIZADA: Actualizar descripción de imagen CON moderación
 router.put('/:id/galeria/:imagenId/descripcion', 
   autenticarAdmin, 
   lugarController.actualizarDescripcionImagen
@@ -106,8 +106,9 @@ router.delete('/:id/pdf',
 // Reemplazar imagen principal (admin)
 router.put('/:id/imagen-principal', 
   autenticarAdmin,
-  uploadImage.single('imagen'), // ✅ Cambiado de 'imagen' a 'file'
+  uploadImage.single('imagen'),
   validacion.validarArchivoImagen,
   lugarController.reemplazarImagenPrincipal
 );
+
 export default router;

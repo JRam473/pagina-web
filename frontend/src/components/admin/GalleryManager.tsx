@@ -16,7 +16,9 @@ import {
   Image as ImageIcon,
   Grid3X3,
   AlertTriangle,
-  Shield
+  Shield,
+  CheckCircle,
+  Ban
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -31,6 +33,18 @@ interface GalleryManagerProps {
   isOpen: boolean;
   onClose: () => void;
   onGalleryUpdate?: () => void;
+}
+
+// Interface para el estado de análisis de archivos
+interface FileAnalysisState {
+  fileName: string;
+  status: 'pending' | 'analyzing' | 'approved' | 'rejected';
+  result?: {
+    esAprobado: boolean;
+    puntuacion: number;
+    razon?: string;
+    categorias?: Array<{clase: string, probabilidad: number}>;
+  };
 }
 
 // Función para construir URLs de imágenes
@@ -48,12 +62,14 @@ const SafeUploadButton = ({
   onClick, 
   disabled, 
   uploading, 
-  fileCount 
-}: { 
+  fileCount,
+  approvedCount}: { 
   onClick: () => void;
   disabled: boolean;
   uploading: boolean;
   fileCount: number;
+  approvedCount: number;
+  totalCount: number;
 }) => {
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -89,11 +105,60 @@ const SafeUploadButton = ({
         ) : (
           <>
             <Upload className="h-4 w-4 mr-2" />
-            Subir {fileCount} Imágenes
+            {approvedCount > 0 ? (
+              `Subir ${approvedCount} Imágenes Aprobadas`
+            ) : (
+              `Subir ${fileCount} Imágenes`
+            )}
           </>
         )}
       </Button>
     </UploadErrorBoundary>
+  );
+};
+
+// Componente para mostrar el estado de análisis de un archivo
+const FileAnalysisStatus = ({ analysisState }: { analysisState: FileAnalysisState }) => {
+  const getStatusColor = (status: FileAnalysisState['status']) => {
+    switch (status) {
+      case 'pending': return 'text-gray-400';
+      case 'analyzing': return 'text-yellow-400';
+      case 'approved': return 'text-green-400';
+      case 'rejected': return 'text-red-400';
+      default: return 'text-gray-400';
+    }
+  };
+
+  const getStatusIcon = (status: FileAnalysisState['status']) => {
+    switch (status) {
+      case 'pending': return <Loader2 className="h-3 w-3" />;
+      case 'analyzing': return <Loader2 className="h-3 w-3 animate-spin" />;
+      case 'approved': return <CheckCircle className="h-3 w-3" />;
+      case 'rejected': return <Ban className="h-3 w-3" />;
+      default: return <Loader2 className="h-3 w-3" />;
+    }
+  };
+
+  const getStatusText = (status: FileAnalysisState['status']) => {
+    switch (status) {
+      case 'pending': return 'Pendiente';
+      case 'analyzing': return 'Analizando...';
+      case 'approved': return 'Aprobada';
+      case 'rejected': return 'Rechazada';
+      default: return 'Desconocido';
+    }
+  };
+
+  return (
+    <div className={cn("flex items-center gap-1 text-xs", getStatusColor(analysisState.status))}>
+      {getStatusIcon(analysisState.status)}
+      <span>{getStatusText(analysisState.status)}</span>
+      {analysisState.result && analysisState.status === 'approved' && (
+        <span className="text-xs opacity-75">
+          ({Math.round(analysisState.result.puntuacion * 100)}%)
+        </span>
+      )}
+    </div>
   );
 };
 
@@ -108,18 +173,20 @@ export const GalleryManager = ({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [analyzingFiles, setAnalyzingFiles] = useState<Set<string>>(new Set());
+  const [fileAnalysisStates, setFileAnalysisStates] = useState<FileAnalysisState[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [autoAnalyze, setAutoAnalyze] = useState(true);
 
   // Hook de moderación de imágenes
   const { 
     modelo, 
     cargando: cargandoModelo, 
     errorModelo,
+    modeloCargado,
     inicializarModelo,
     analizarImagen 
   } = useModeracionImagen();
@@ -178,12 +245,162 @@ export const GalleryManager = ({
       // Limpiar estado cuando se cierra
       setImages([]);
       setSelectedFiles([]);
+      setFileAnalysisStates([]);
       setSelectedImage(null);
       setImageEditorOpen(false);
       setUploadError(null);
-      setAnalyzingFiles(new Set());
     }
   }, [isOpen, placeId, loadGallery]);
+
+  // Función para analizar un archivo individual
+  const analyzeSingleFile = useCallback(async (file: File): Promise<boolean> => {
+    try {
+      // Actualizar estado a "analizando"
+      setFileAnalysisStates(prev => 
+        prev.map(state => 
+          state.fileName === file.name 
+            ? { ...state, status: 'analyzing' as const }
+            : state
+        )
+      );
+
+      // Si el modelo no está disponible, marcar como aprobado con advertencia
+      if (!modelo && !cargandoModelo) {
+        console.warn('⚠️ Modelo de moderación no disponible en GalleryManager');
+        
+        setFileAnalysisStates(prev => 
+          prev.map(state => 
+            state.fileName === file.name 
+              ? { 
+                  ...state, 
+                  status: 'approved' as const,
+                  result: {
+                    esAprobado: true,
+                    puntuacion: 0.5,
+                    razon: 'Modelo no disponible - Aprobado por defecto'
+                  }
+                }
+              : state
+          )
+        );
+
+        return true;
+      }
+
+      // Esperar si el modelo está cargando
+      if (cargandoModelo) {
+        console.log('🔄 GalleryManager: Esperando a que cargue el modelo...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+
+      // Analizar la imagen
+      const resultado = await analizarImagen(file);
+
+      // Actualizar estado con el resultado
+      setFileAnalysisStates(prev => 
+        prev.map(state => 
+          state.fileName === file.name 
+            ? { 
+                ...state, 
+                status: resultado.esAprobado ? 'approved' : 'rejected',
+                result: resultado
+              }
+            : state
+        )
+      );
+
+      if (!resultado.esAprobado) {
+        let descripcionDetallada = '';
+        
+        if (resultado.razon?.includes('Porn')) {
+          descripcionDetallada = 'La imagen contiene contenido pornográfico. Por favor, selecciona una imagen apropiada.';
+        } else if (resultado.razon?.includes('Hentai')) {
+          descripcionDetallada = 'La imagen contiene contenido de anime/manga inapropiado.';
+        } else if (resultado.razon?.includes('Sexy')) {
+          descripcionDetallada = 'La imagen contiene contenido sugerente. Las imágenes deben ser apropiadas para el turismo familiar.';
+        } else {
+          descripcionDetallada = resultado.razon || 'La imagen no cumple con nuestras políticas de contenido.';
+        }
+        
+        toast({
+          title: '🚫 Imagen rechazada',
+          description: (
+            <div className="space-y-2">
+              <p>{descripcionDetallada}</p>
+              <div className="text-xs text-muted-foreground">
+                <strong>Archivo:</strong> {file.name}
+                <br />
+                <strong>Puntuación de seguridad:</strong> {resultado.puntuacion}
+              </div>
+            </div>
+          ),
+          variant: 'destructive',
+          duration: 6000,
+        });
+        
+        return false;
+      }
+
+      // Imagen aprobada
+      console.log(`✅ Imagen aprobada: ${file.name} (puntuación: ${resultado.puntuacion})`);
+      return true;
+
+    } catch (error) {
+      console.error(`❌ Error analizando imagen ${file.name}:`, error);
+      
+      // En caso de error, marcar como aprobado con advertencia
+      setFileAnalysisStates(prev => 
+        prev.map(state => 
+          state.fileName === file.name 
+            ? { 
+                ...state, 
+                status: 'approved' as const,
+                result: {
+                  esAprobado: true,
+                  puntuacion: 0.3,
+                  razon: 'Error en análisis - Aprobado por defecto'
+                }
+              }
+            : state
+        )
+      );
+      
+      toast({
+        title: '⚠️ Advertencia',
+        description: `No se pudo analizar "${file.name}". Se subirá sin verificación completa.`,
+        variant: 'default',
+        duration: 5000,
+      });
+      
+      return true;
+    }
+  }, [modelo, cargandoModelo, analizarImagen, toast]);
+
+  // Función para analizar todos los archivos
+  const analyzeAllFiles = useCallback(async () => {
+    if (!autoAnalyze || selectedFiles.length === 0) return;
+
+    console.log('🔍 Iniciando análisis automático de archivos...');
+    
+    // Inicializar estados de análisis
+    setFileAnalysisStates(selectedFiles.map(file => ({
+      fileName: file.name,
+      status: 'pending'
+    })));
+
+    // Analizar cada archivo secuencialmente
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      await analyzeSingleFile(file);
+    }
+  }, [autoAnalyze, selectedFiles, analyzeSingleFile]);
+
+  // Analizar automáticamente los archivos cuando se seleccionan
+  useEffect(() => {
+    if (autoAnalyze && selectedFiles.length > 0) {
+      analyzeAllFiles();
+    }
+  }, [selectedFiles.length, autoAnalyze, analyzeAllFiles]);
 
   // Función para abrir el editor de imagen
   const openImageEditor = (image: GalleryImage) => {
@@ -238,146 +455,44 @@ export const GalleryManager = ({
   };
 
   const removeSelectedFile = (index: number) => {
+    const fileToRemove = selectedFiles[index];
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setFileAnalysisStates(prev => prev.filter(state => state.fileName !== fileToRemove.name));
   };
 
-  // Función para analizar una imagen individual
-  const analizarImagenIndividual = async (file: File): Promise<boolean> => {
-    try {
-      setAnalyzingFiles(prev => new Set(prev).add(file.name));
-
-      // Si el modelo no está disponible, permitir continuar con advertencia
-      if (!modelo && !cargandoModelo) {
-        console.warn('⚠️ Modelo de moderación no disponible en GalleryManager');
-        toast({
-          title: '⚠️ Advertencia de seguridad',
-          description: 'El filtro de moderación no está disponible. La imagen será subida sin verificación.',
-          variant: 'default',
-          duration: 5000,
-        });
-        return true;
-      }
-
-      // Esperar si el modelo está cargando
-      if (cargandoModelo) {
-        console.log('🔄 GalleryManager: Esperando a que cargue el modelo...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-
-      // Analizar la imagen
-      const resultado = await analizarImagen(file);
-
-      if (!resultado.esAprobado) {
-        let descripcionDetallada = '';
-        
-        if (resultado.razon?.includes('Porn')) {
-          descripcionDetallada = 'La imagen contiene contenido pornográfico. Por favor, selecciona una imagen apropiada.';
-        } else if (resultado.razon?.includes('Hentai')) {
-          descripcionDetallada = 'La imagen contiene contenido de anime/manga inapropiado.';
-        } else if (resultado.razon?.includes('Sexy')) {
-          descripcionDetallada = 'La imagen contiene contenido sugerente. Las imágenes deben ser apropiadas para el turismo familiar.';
-        } else {
-          descripcionDetallada = resultado.razon || 'La imagen no cumple con nuestras políticas de contenido.';
-        }
-        
-        toast({
-          title: '🚫 Imagen rechazada',
-          description: (
-            <div className="space-y-2">
-              <p>{descripcionDetallada}</p>
-              <div className="text-xs text-muted-foreground">
-                <strong>Archivo:</strong> {file.name}
-                <br />
-                <strong>Puntuación de seguridad:</strong> {resultado.puntuacion}
-              </div>
-            </div>
-          ),
-          variant: 'destructive',
-          duration: 8000,
-        });
-        
-        return false;
-      }
-
-      // Imagen aprobada
-      if (resultado.puntuacion > 0.7) {
-        console.log(`✅ Imagen aprobada: ${file.name} (puntuación: ${resultado.puntuacion})`);
-      } else {
-        console.log(`⚠️ Imagen aprobada con baja puntuación: ${file.name} (${resultado.puntuacion})`);
-      }
-
-      return true;
-
-    } catch (error) {
-      console.error(`❌ Error analizando imagen ${file.name}:`, error);
-      
-      // En caso de error, permitir subir con advertencia
-      toast({
-        title: '⚠️ Advertencia',
-        description: `No se pudo analizar "${file.name}". Se subirá sin verificación completa.`,
-        variant: 'default',
-        duration: 5000,
-      });
-      
-      return true;
-    } finally {
-      setAnalyzingFiles(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(file.name);
-        return newSet;
-      });
-    }
+  // Función para reanalizar un archivo específico
+  const reanalyzeFile = async (fileName: string) => {
+    const file = selectedFiles.find(f => f.name === fileName);
+    if (!file) return;
+    
+    await analyzeSingleFile(file);
   };
 
   const uploadImages = async () => {
-    if (selectedFiles.length === 0) return;
+    // Obtener solo los archivos aprobados
+    const archivosAprobados = selectedFiles.filter((_file, index) => {
+      const analysisState = fileAnalysisStates[index];
+      return analysisState?.status === 'approved';
+    });
+
+    if (archivosAprobados.length === 0) {
+      toast({
+        title: '⚠️ No hay imágenes aprobadas',
+        description: 'Todas las imágenes han sido rechazadas por el filtro de seguridad.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     try {
       setUploading(true);
       setUploadError(null);
-      console.log('📤 [GalleryManager] Subiendo imágenes a GALERÍA:', selectedFiles.length);
-
-      // Analizar todas las imágenes antes de subir
-      const archivosAprobados: File[] = [];
-      const archivosRechazados: string[] = [];
-
-      for (const file of selectedFiles) {
-        const esAprobado = await analizarImagenIndividual(file);
-        if (esAprobado) {
-          archivosAprobados.push(file);
-        } else {
-          archivosRechazados.push(file.name);
-        }
-      }
-
-      // Si todas las imágenes fueron rechazadas
-      if (archivosAprobados.length === 0) {
-        toast({
-          title: '🚫 Subida cancelada',
-          description: 'Todas las imágenes fueron rechazadas por el filtro de seguridad.',
-          variant: 'destructive',
-          duration: 6000,
-        });
-        setUploading(false);
-        return;
-      }
-
-      // Si algunas imágenes fueron rechazadas, mostrar advertencia
-      if (archivosRechazados.length > 0) {
-        toast({
-          title: '⚠️ Algunas imágenes rechazadas',
-          description: `${archivosAprobados.length} imágenes aprobadas, ${archivosRechazados.length} rechazadas.`,
-          variant: 'default',
-          duration: 6000,
-        });
-      }
+      console.log('📤 [GalleryManager] Subiendo imágenes a GALERÍA:', archivosAprobados.length);
 
       // Subir solo las imágenes aprobadas
       await uploadMultipleImages(placeId, archivosAprobados);
       
-      const mensajeExito = archivosRechazados.length === 0 
-        ? `${archivosAprobados.length} imágenes agregadas a la galería`
-        : `${archivosAprobados.length} imágenes aprobadas agregadas a la galería`;
+      const mensajeExito = `✅ ${archivosAprobados.length} imágenes aprobadas agregadas a la galería`;
 
       toast({
         title: '✅ Éxito',
@@ -385,6 +500,7 @@ export const GalleryManager = ({
       });
       
       setSelectedFiles([]);
+      setFileAnalysisStates([]);
       await loadGallery();
       onGalleryUpdate?.();
 
@@ -450,15 +566,35 @@ export const GalleryManager = ({
     }
   };
 
-  const handleUpdateDescription = async (imageId: string, descripcion: string) => {
-    try {
-      console.log('📝 Actualizando descripción:', { imageId, descripcion });
-      await updateImageDescription(placeId, imageId, descripcion);
-      await loadGallery();
-    } catch (error: unknown) {
-      console.error('❌ Error actualizando descripción:', error);
+const handleUpdateDescription = async (imageId: string, descripcion: string) => {
+  try {
+    console.log('📝 Actualizando descripción desde GalleryManager:', { 
+      imageId, 
+      descripcion: descripcion.substring(0, 30) + '...' 
+    });
+    
+    // ✅ CORREGIDO: Llamar sin placeId
+    await updateImageDescription(imageId, descripcion);
+    await loadGallery();
+    
+    toast({
+      title: '✅ Descripción actualizada',
+      description: 'La descripción se ha actualizado correctamente',
+    });
+  } catch (error: any) {
+    console.error('❌ Error actualizando descripción desde GalleryManager:', error);
+    
+    // Si es un error de moderación, ya se mostró el toast en useAdminPlaces
+    if (!error.detalles) {
+      toast({
+        title: '❌ Error',
+        description: error.message || 'Error al actualizar la descripción',
+        variant: 'destructive',
+      });
     }
-  };
+    throw error; // Propagar el error para que ImageEditor lo maneje
+  }
+};
 
   const handleDeleteMainImage = async () => {
     if (!selectedImage) return;
@@ -474,13 +610,24 @@ export const GalleryManager = ({
     }
   };
 
-  // Función para verificar si un archivo está siendo analizado
-  const isFileAnalyzing = (fileName: string) => analyzingFiles.has(fileName);
+  // Estadísticas de análisis
+  const analysisStats = {
+    total: fileAnalysisStates.length,
+    pending: fileAnalysisStates.filter(s => s.status === 'pending').length,
+    analyzing: fileAnalysisStates.filter(s => s.status === 'analyzing').length,
+    approved: fileAnalysisStates.filter(s => s.status === 'approved').length,
+    rejected: fileAnalysisStates.filter(s => s.status === 'rejected').length,
+  };
+
+  // Obtener el estado de análisis de un archivo
+  const getFileAnalysisState = (fileName: string) => {
+    return fileAnalysisStates.find(state => state.fileName === fileName);
+  };
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-xl text-white">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-xl text-white">
           <DialogHeader className="pb-4 border-b border-slate-700">
             <div className="flex items-center justify-between">
               <DialogTitle className="flex items-center gap-2 text-xl">
@@ -499,7 +646,9 @@ export const GalleryManager = ({
                 {modelo && (
                   <Badge variant="outline" className="text-green-400 border-green-400 text-xs">
                     <Shield className="h-3 w-3 mr-1" />
-                    Filtro activo
+                    {modeloCargado === 'inception_v3' && 'Filtro Avanzado'}
+                    {modeloCargado === 'mobilenet_v2' && 'Filtro Seguro'}
+                    {modeloCargado === 'mobilenet_v2_mid' && 'Filtro Equilibrado'}
                   </Badge>
                 )}
                 {errorModelo && (
@@ -523,73 +672,152 @@ export const GalleryManager = ({
                       <p className="text-sm text-slate-400 mt-1">
                         Puedes seleccionar múltiples imágenes (JPEG, PNG, WebP, máximo 5MB cada una)
                       </p>
+                      
+                      {/* Configuración de análisis automático */}
+                      <div className="flex items-center gap-2 mt-2">
+                        <input
+                          type="checkbox"
+                          id="auto-analyze"
+                          checked={autoAnalyze}
+                          onChange={(e) => setAutoAnalyze(e.target.checked)}
+                          className="rounded border-slate-600 bg-slate-700"
+                        />
+                        <Label htmlFor="auto-analyze" className="text-sm text-slate-300">
+                          Análisis automático de seguridad
+                        </Label>
+                      </div>
+
                       <div className="mt-2 text-xs text-blue-300">
                         <Shield className="h-3 w-3 inline mr-1" />
                         Todas las imágenes pasan por un filtro de seguridad automático
                       </div>
                     </div>
 
+                    {/* Estadísticas de análisis */}
+                    {selectedFiles.length > 0 && autoAnalyze && (
+                      <div className="bg-slate-700/50 rounded-lg p-3">
+                        <div className="flex justify-between items-center mb-2">
+                          <Label className="text-sm font-medium">
+                            Análisis de Seguridad
+                          </Label>
+                          {analysisStats.analyzing > 0 && (
+                            <span className="text-yellow-400 text-xs">
+                              Analizando {analysisStats.analyzing}...
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-4 gap-2 text-xs">
+                          <div className="text-center">
+                            <div className="text-gray-400">Total</div>
+                            <div className="text-white font-medium">{analysisStats.total}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-yellow-400">Pendiente</div>
+                            <div className="text-white font-medium">{analysisStats.pending}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-green-400">Aprobadas</div>
+                            <div className="text-white font-medium">{analysisStats.approved}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-red-400">Rechazadas</div>
+                            <div className="text-white font-medium">{analysisStats.rejected}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Archivos seleccionados */}
                     {selectedFiles.length > 0 && (
                       <div className="space-y-2">
                         <Label className="text-sm">
                           Imágenes a subir ({selectedFiles.length})
-                          {analyzingFiles.size > 0 && (
-                            <span className="text-yellow-400 ml-2">
-                              • Analizando {analyzingFiles.size}...
-                            </span>
-                          )}
                         </Label>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-32 overflow-y-auto">
-                          {selectedFiles.map((file, index) => (
-                            <div
-                              key={index}
-                              className={cn(
-                                "relative group rounded-md p-2 transition-all",
-                                isFileAnalyzing(file.name) 
-                                  ? "bg-yellow-900/50 border border-yellow-600" 
-                                  : "bg-slate-700"
-                              )}
-                            >
-                              <img
-                                src={URL.createObjectURL(file)}
-                                alt={file.name}
-                                className="w-full h-16 object-cover rounded"
-                              />
-                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeSelectedFile(index)}
-                                  className="h-8 w-8 p-0 text-white hover:bg-red-500"
-                                  disabled={isFileAnalyzing(file.name)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              {isFileAnalyzing(file.name) && (
-                                <div className="absolute inset-0 bg-black/70 rounded flex items-center justify-center">
-                                  <Loader2 className="h-6 w-6 animate-spin text-yellow-400" />
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                          {selectedFiles.map((file, index) => {
+                            const analysisState = getFileAnalysisState(file.name);
+                            
+                            return (
+                              <div
+                                key={index}
+                                className={cn(
+                                  "relative group rounded-md p-2 transition-all border",
+                                  analysisState?.status === 'approved' 
+                                    ? "bg-green-900/20 border-green-600" 
+                                    : analysisState?.status === 'rejected'
+                                    ? "bg-red-900/20 border-red-600"
+                                    : analysisState?.status === 'analyzing'
+                                    ? "bg-yellow-900/20 border-yellow-600"
+                                    : "bg-slate-700 border-slate-600"
+                                )}
+                              >
+                                <img
+                                  src={URL.createObjectURL(file)}
+                                  alt={file.name}
+                                  className="w-full h-16 object-cover rounded"
+                                />
+                                
+                                {/* Overlay de acciones */}
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => removeSelectedFile(index)}
+                                    className="h-8 w-8 p-0 text-white hover:bg-red-500"
+                                    disabled={analysisState?.status === 'analyzing'}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
                                 </div>
-                              )}
-                              <p className="text-xs text-slate-300 truncate mt-1">
-                                {file.name}
-                              </p>
-                              {isFileAnalyzing(file.name) && (
-                                <p className="text-xs text-yellow-400 text-center">
-                                  Analizando...
+
+                                {/* Estado de análisis */}
+                                {analysisState && (
+                                  <div className="mt-2">
+                                    <FileAnalysisStatus analysisState={analysisState} />
+                                    
+                                    {/* Botón para reanalizar si fue rechazada */}
+                                    {analysisState.status === 'rejected' && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => reanalyzeFile(file.name)}
+                                        className="w-full mt-1 h-6 text-xs bg-blue-600 hover:bg-blue-700 border-blue-500"
+                                      >
+                                        Reanalizar
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+
+                                {!analysisState && autoAnalyze && (
+                                  <div className="mt-2 text-xs text-gray-400">
+                                    Pendiente de análisis
+                                  </div>
+                                )}
+
+                                {!autoAnalyze && (
+                                  <div className="mt-2 text-xs text-gray-400">
+                                    Análisis manual requerido
+                                  </div>
+                                )}
+
+                                <p className="text-xs text-slate-300 truncate mt-1">
+                                  {file.name}
                                 </p>
-                              )}
-                            </div>
-                          ))}
+                              </div>
+                            );
+                          })}
                         </div>
                         
                         {/* BOTÓN DE SUBIDA SEGURO */}
                         <SafeUploadButton
                           onClick={uploadImages}
-                          disabled={uploading || analyzingFiles.size > 0}
+                          disabled={uploading || (autoAnalyze && analysisStats.analyzing > 0)}
                           uploading={uploading}
                           fileCount={selectedFiles.length}
+                          approvedCount={analysisStats.approved}
+                          totalCount={analysisStats.total}
                         />
 
                         {uploadError && (

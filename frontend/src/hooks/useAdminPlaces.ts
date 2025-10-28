@@ -2,6 +2,7 @@
 import { useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/lib/axios';
+import { useModeracionDescripciones, type ResultadoAnalisisDescripcion } from './useModeracionDescripciones';
 
 export interface Place {
   id: string;
@@ -110,6 +111,12 @@ const handleError = (err: unknown): string | ModeracionError => {
   
   return error?.response?.data?.error || error?.message || 'Error desconocido';
 };
+
+  const { 
+    validarDescripcionFoto, 
+    analizarDescripcionFoto,
+    cargando: cargandoModeracion 
+  } = useModeracionDescripciones();
 
   // Función para mapear datos de la API al formato del frontend
   const mapApiPlaceToPlace = (apiPlace: ApiPlace): Place => ({
@@ -624,50 +631,121 @@ const handleError = (err: unknown): string | ModeracionError => {
     }
   }, [fetchPlaces, toast]);
 
-  /**
-   * Actualizar descripción de una imagen - CORREGIDA
-   */
-  const updateImageDescription = useCallback(async (placeId: string, imageId: string, descripcion: string) => {
-    try {
-      const response = await api.put<{ 
-        mensaje: string;
-        imagen: { id: string; descripcion: string };
-      }>(`/api/lugares/${placeId}/galeria/${imageId}/descripcion`, {
-        descripcion
-      });
+/**
+ * ✅ CORREGIDO: Actualizar descripción de imagen CON moderación - SIN placeId como primer parámetro
+ */
+const updateImageDescription = useCallback(async (imageId: string, descripcion: string) => {
+  try {
+    setLoading(true);
 
-      // Actualizar el estado local
-      setPlaces(prevPlaces => 
-        prevPlaces.map(place => 
-          place.id === placeId 
-            ? {
-                ...place,
-                gallery_images: place.gallery_images?.map((img: GalleryImage) =>
-                  img.id === imageId ? { ...img, descripcion } : img
-                ) || []
-              }
-            : place
-        )
-      );
+    console.log('✏️ Actualizando descripción con moderación:', { 
+      imageId, 
+      descripcion: descripcion.substring(0, 30) + '...' 
+    });
 
-      toast({
-        title: '✅ Descripción actualizada',
-        description: 'La descripción se ha actualizado correctamente',
-      });
-
-      return response.data;
-    } catch (err: unknown) {
-      const errorMessage = handleError(err);
+    // ✅ PRIMERO: Validar la descripción con el servicio de moderación
+    const resultadoValidacion = await validarDescripcionFoto(descripcion);
+    
+    if (!resultadoValidacion.esAprobado) {
+      // Crear error de moderación con detalles
+      const errorModeracion: ModeracionError = {
+        message: resultadoValidacion.mensaje,
+        detalles: {
+          problemas: resultadoValidacion.detalles?.problemas,
+          sugerencias: resultadoValidacion.detalles?.sugerencias,
+          puntuacion: resultadoValidacion.puntuacion,
+          campoEspecifico: 'descripcion_foto'
+        }
+      };
+      
+      setError(errorModeracion);
       
       toast({
-        title: '❌ Error',
-        description: typeof errorMessage === 'string' ? errorMessage : errorMessage.message,
+        title: '🚫 Descripción rechazada',
+        description: resultadoValidacion.mensaje,
         variant: 'destructive',
+        duration: 6000,
       });
       
-      throw new Error(typeof errorMessage === 'string' ? errorMessage : errorMessage.message);
+      throw errorModeracion;
     }
-  }, [toast]);
+
+    // ✅ SI ES APROBADA: Proceder con la actualización
+    // Necesitamos encontrar el placeId al que pertenece la imagen
+    let placeIdEncontrado = '';
+    
+    // Buscar en los lugares actuales para encontrar a qué lugar pertenece la imagen
+    for (const place of places) {
+      if (place.gallery_images?.some(img => img.id === imageId)) {
+        placeIdEncontrado = place.id;
+        break;
+      }
+    }
+
+    if (!placeIdEncontrado) {
+      throw new Error('No se pudo encontrar el lugar al que pertenece la imagen');
+    }
+
+    const response = await api.put<{ 
+      mensaje: string;
+      imagen: { id: string; descripcion: string };
+      moderacion: {
+        esAprobado: boolean;
+        puntuacion: number;
+        timestamp: string;
+      };
+    }>(`/api/lugares/${placeIdEncontrado}/galeria/${imageId}/descripcion`, {
+      descripcion
+    });
+
+    // Actualizar el estado local
+    setPlaces(prevPlaces => 
+      prevPlaces.map(place => 
+        place.id === placeIdEncontrado 
+          ? {
+              ...place,
+              gallery_images: place.gallery_images?.map((img: GalleryImage) =>
+                img.id === imageId ? { ...img, descripcion } : img
+              ) || []
+            }
+          : place
+      )
+    );
+
+    toast({
+      title: '✅ Descripción actualizada',
+      description: 'La descripción se ha actualizado correctamente',
+    });
+
+    return response.data;
+
+  } catch (err: any) {
+    console.error('❌ Error actualizando descripción:', err);
+    
+    // Si ya es un error de moderación, no mostrar toast adicional
+    if (err.detalles) {
+      throw err;
+    }
+    
+    const errorMessage = err.response?.data?.error || err.message || 'Error al actualizar descripción';
+    
+    toast({
+      title: '❌ Error',
+      description: errorMessage,
+      variant: 'destructive',
+    });
+    
+    throw new Error(errorMessage);
+  } finally {
+    setLoading(false);
+  }
+}, [toast, validarDescripcionFoto, places]);
+  /**
+   * ✅ NUEVA: Función para pre-validar descripción antes de guardar
+   */
+  const prevalidarDescripcion = useCallback(async (descripcion: string): Promise<ResultadoAnalisisDescripcion> => {
+    return await analizarDescripcionFoto(descripcion);
+  }, [analizarDescripcionFoto]);
 
   /**
    * Eliminar imagen principal
@@ -926,7 +1004,7 @@ const handleError = (err: unknown): string | ModeracionError => {
 
   return {
     places,
-    loading,
+     loading: loading || cargandoModeracion,
     error,
     createPlace,
     updatePlace,
@@ -948,5 +1026,6 @@ const handleError = (err: unknown): string | ModeracionError => {
     deletePlaceImage,
     deletePlacePDF,
     clearError,
+    prevalidarDescripcion,
   };
 };

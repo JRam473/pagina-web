@@ -59,7 +59,6 @@ import {
   Shield
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -68,6 +67,7 @@ import { ExpandableText } from '@/components/ui/ExpandableText';
 import { FormErrorBoundary } from './FormErrorBoundary';
 import { AdminErrorBoundary } from './AdminErrorBoundary';
 import { useModeracionImagen } from '@/hooks/useModeracionImagen';
+import { useToast } from '@/hooks/use-toast';
 
 // Función para construir la URL completa de la imagen
 const buildImageUrl = (imagePath: string | null | undefined): string => {
@@ -303,6 +303,10 @@ export const AdminPlaces = () => {
     inicializarModelo,
     analizarImagen 
   } = useModeracionImagen();
+
+  // Hook de toast
+  const { toast } = useToast();
+
   const [galleryManagerOpen, setGalleryManagerOpen] = useState(false);
   const [selectedPlaceForGallery, setSelectedPlaceForGallery] = useState<Place | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -324,11 +328,7 @@ export const AdminPlaces = () => {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   
-  // ✅ NUEVO ESTADO PARA ERRORES DE MODERACIÓN
-  const [moderacionErrors, setModeracionErrors] = useState<{
-    name?: string;
-    description?: string;
-  }>({});
+  // ✅ ELIMINADO: Estado para errores de moderación (ya no se muestran en el formulario)
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -336,41 +336,45 @@ export const AdminPlaces = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // ✅ ELIMINADO: Todas las referencias a toast() directo
-  // Los toast ahora se manejan automáticamente desde el hook useAdminPlaces
-
-  // ✅ EFECTO PARA PROCESAR ERRORES CUANDO CAMBIAN
+  // ✅ EFECTO PARA MOSTRAR TOASTS DE ERRORES
   useEffect(() => {
     if (error) {
-      procesarErrorModeracion(error);
-    } else {
-      setModeracionErrors({});
+      const errorModeracion = parseModeracionError(error);
+      
+      if (errorModeracion) {
+        // Mostrar toast para errores de moderación
+        toast({
+          title: '🚫 Contenido rechazado',
+          description: errorModeracion.message,
+          variant: 'destructive',
+          duration: 8000,
+        });
+      } else {
+        // Mostrar toast para errores generales
+        const errorMessage = typeof error === 'string' ? error : error.message;
+        toast({
+          title: '❌ Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
+      
+      // Limpiar el error después de mostrar el toast
+      clearError();
     }
-  }, [error]);
+  }, [error, toast, clearError]);
 
-  // ✅ FUNCIÓN PARA PROCESAR ERRORES DE MODERACIÓN (sin toast)
-  const procesarErrorModeracion = (error: string | ModeracionError | null) => {
-    const errorModeracion = parseModeracionError(error);
-    
-    if (errorModeracion) {
-      const nuevosErrores: { name?: string; description?: string } = {};
-      
-      const campoProblema = errorModeracion.detalles?.campoEspecifico;
-      const problemas = errorModeracion.detalles?.problemas || [];
-      
-      if (campoProblema === 'nombre' || campoProblema === 'ambos') {
-        nuevosErrores.name = problemas.join(', ') || 'El nombre contiene contenido inapropiado';
-      }
-      
-      if (campoProblema === 'descripcion' || campoProblema === 'ambos') {
-        nuevosErrores.description = problemas.join(', ') || 'La descripción contiene contenido inapropiado';
-      }
-      
-      setModeracionErrors(nuevosErrores);
-    } else {
-      setModeracionErrors({});
+  // ✅ EFECTO PARA MOSTRAR TOASTS DE MODERACIÓN DE IMÁGENES
+  useEffect(() => {
+    if (errorModelo) {
+      toast({
+        title: '⚠️ Filtro de seguridad no disponible',
+        description: 'Las imágenes se subirán sin análisis de contenido inapropiado',
+        variant: 'warning',
+        duration: 6000,
+      });
     }
-  };
+  }, [errorModelo, toast]);
 
   useEffect(() => {
     refetch();
@@ -396,7 +400,6 @@ export const AdminPlaces = () => {
     });
     setFiles({ image: null, pdf: null });
     setFormErrors({});
-    setModeracionErrors({});
     setEditingPlace(null);
   };
 
@@ -440,9 +443,9 @@ export const AdminPlaces = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // ✅ FUNCIÓN MEJORADA PARA OBTENER ERRORES COMBINADOS
+  // ✅ FUNCIÓN SIMPLIFICADA: Solo errores de formulario básicos
   const getFieldError = (field: 'name' | 'description' | 'category' | 'location' | 'image'): string | undefined => {
-    return moderacionErrors[field as keyof typeof moderacionErrors] || formErrors[field];
+    return formErrors[field];
   };
 
   // Función helper para detectar si hay cambios en los datos del formulario
@@ -466,83 +469,104 @@ export const AdminPlaces = () => {
     );
   }, [editingPlace, formData, files]);
 
-const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
-  if (type === 'image' && file) {
-    // Verificar tipo de archivo
-    if (!file.type.startsWith('image/')) {
-      setFormErrors(prev => ({ 
-        ...prev, 
-        image: 'El archivo debe ser una imagen' 
-      }));
-      return;
-    }
-
-    // Verificar tamaño (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setFormErrors(prev => ({ 
-        ...prev, 
-        image: 'La imagen no debe superar los 5MB' 
-      }));
-      return;
-    }
-
-    try {
-      setIsProcessing(true);
-      
-      // Si el modelo no está inicializado, permitir subir sin análisis
-      if (!modelo && !cargandoModelo) {
-        console.warn('⚠️ Modelo de moderación no disponible');
-        setFiles(prev => ({ ...prev, [type]: file }));
-        setFormErrors(prev => ({ ...prev, [type]: '' }));
-        setIsProcessing(false);
-        return;
-      }
-
-      // Si el modelo está cargando, esperar un momento
-      if (cargandoModelo) {
-        console.log('🔄 Esperando a que cargue el modelo...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-
-      // Analizar imagen con el modelo NSFW
-      const resultado = await analizarImagen(file);
-      
-      if (!resultado.esAprobado) {
+  const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
+    if (type === 'image' && file) {
+      // Verificar tipo de archivo
+      if (!file.type.startsWith('image/')) {
         setFormErrors(prev => ({ 
           ...prev, 
-          image: `Imagen rechazada: ${resultado.razon} (Puntuación: ${resultado.puntuacion})` 
+          image: 'El archivo debe ser una imagen' 
         }));
-        setIsProcessing(false);
         return;
       }
 
-      // Si la imagen es apropiada, establecer el archivo
-      setFiles(prev => ({ ...prev, [type]: file }));
-      setFormErrors(prev => ({ ...prev, [type]: '' }));
+      // Verificar tamaño (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setFormErrors(prev => ({ 
+          ...prev, 
+          image: 'La imagen no debe superar los 5MB' 
+        }));
+        return;
+      }
 
-    } catch (error) {
-      console.error('Error analizando imagen:', error);
-      // En caso de error, permitir subir la imagen con advertencia
+      try {
+        setIsProcessing(true);
+        
+        // Si el modelo no está inicializado, permitir subir sin análisis
+        if (!modelo && !cargandoModelo) {
+          console.warn('⚠️ Modelo de moderación no disponible');
+          setFiles(prev => ({ ...prev, [type]: file }));
+          setFormErrors(prev => ({ ...prev, [type]: '' }));
+          setIsProcessing(false);
+          return;
+        }
+
+        // Si el modelo está cargando, esperar un momento
+        if (cargandoModelo) {
+          console.log('🔄 Esperando a que cargue el modelo...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+
+        // Analizar imagen con el modelo NSFW
+        const resultado = await analizarImagen(file);
+        
+        if (!resultado.esAprobado) {
+          // ✅ MOSTRAR TOAST EN LUGAR DE ERROR EN FORMULARIO
+          toast({
+            title: '🚫 Imagen rechazada',
+            description: `La imagen contiene contenido inapropiado: ${resultado.razon}`,
+            variant: 'destructive',
+            duration: 6000,
+          });
+          setFormErrors(prev => ({ ...prev, [type]: '' }));
+          setIsProcessing(false);
+          return;
+        }
+
+        // Si la imagen es apropiada, establecer el archivo
+        setFiles(prev => ({ ...prev, [type]: file }));
+        setFormErrors(prev => ({ ...prev, [type]: '' }));
+
+        // ✅ MOSTRAR TOAST DE ÉXITO
+        toast({
+          title: '✅ Imagen aprobada',
+          description: 'La imagen ha pasado el filtro de seguridad',
+          variant: 'default',
+        });
+
+      } catch (error) {
+        console.error('Error analizando imagen:', error);
+        // En caso de error, permitir subir la imagen con advertencia
+        setFiles(prev => ({ ...prev, [type]: file }));
+        setFormErrors(prev => ({ ...prev, [type]: '' }));
+        
+        toast({
+          title: '⚠️ Advertencia de seguridad',
+          description: 'No se pudo analizar la imagen completamente. Se subirá sin verificación.',
+          variant: 'warning',
+        });
+      } finally {
+        setIsProcessing(false);
+      }
+    } else {
+      // Para PDFs o cuando se elimina un archivo
       setFiles(prev => ({ ...prev, [type]: file }));
-      setFormErrors(prev => ({ ...prev, [type]: '' }));
-    } finally {
-      setIsProcessing(false);
+      if (file) {
+        setFormErrors(prev => ({ ...prev, [type]: '' }));
+      }
     }
-  } else {
-    // Para PDFs o cuando se elimina un archivo
-    setFiles(prev => ({ ...prev, [type]: file }));
-    if (file) {
-      setFormErrors(prev => ({ ...prev, [type]: '' }));
-    }
-  }
-};
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
     if (isSubmitting || isProcessing) {
-      console.log('🛑 Submit ya en proceso, ignorando...');
+      toast({
+        title: '⏳ Operación en curso',
+        description: 'Ya hay una operación en proceso. Por favor espera.',
+        variant: 'warning',
+      });
       return;
     }
 
@@ -595,7 +619,17 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
           }
         }
 
-        // ✅ ELIMINADO: Toast de resultado - ahora se maneja desde el hook
+        // ✅ MOSTRAR TOAST CON RESULTADO
+        const archivosSubidos = [];
+        if (uploadResults.image.success) archivosSubidos.push('imagen');
+        if (uploadResults.pdf.success) archivosSubidos.push('PDF');
+
+        if (archivosSubidos.length > 0) {
+          toast({
+            title: '✅ Archivos subidos',
+            description: `${archivosSubidos.join(' y ')} actualizado(s) correctamente`,
+          });
+        }
 
       } 
       // ✅ CASO 2: CREAR NUEVO LUGAR (con validación completa)
@@ -604,6 +638,9 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
         
         if (!validateForm()) {
           console.log('❌ [VALIDATION] Validación fallida para nuevo lugar');
+          // Los errores de validación se muestran en el formulario
+          setIsSubmitting(false);
+          setIsProcessing(false);
           return;
         }
 
@@ -656,7 +693,11 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
           }
         }
 
-        // ✅ ELIMINADO: Toast de resultado - ahora se maneja desde el hook
+        // ✅ TOAST DE ÉXITO GENERAL
+        toast({
+          title: '✅ Lugar creado',
+          description: 'El lugar se ha creado exitosamente',
+        });
 
       }
       // ✅ CASO 3: EDITAR LUGAR (modificando datos)
@@ -665,6 +706,8 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
         
         if (!validateForm()) {
           console.log('❌ [VALIDATION] Validación fallida para edición');
+          setIsSubmitting(false);
+          setIsProcessing(false);
           return;
         }
 
@@ -725,7 +768,11 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
           }
         }
 
-        // ✅ ELIMINADO: Toast de resultado - ahora se maneja desde el hook
+        // ✅ TOAST DE ÉXITO
+        toast({
+          title: '✅ Lugar actualizado',
+          description: 'El lugar se ha actualizado exitosamente',
+        });
       }
 
       console.log('🏁 [COMPLETED] Proceso terminado, cerrando...');
@@ -740,17 +787,9 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
     } catch (err) {
       console.error('❌ [ERROR] Error crítico:', err);
       
-      console.error('🔴 Detalles completos del error:', {
-        error: err,
-        message: err instanceof Error ? err.message : 'Unknown error',
-        stack: err instanceof Error ? err.stack : undefined,
-        name: err instanceof Error ? err.name : undefined
-      });
+      // ✅ LOS ERRORES SE MANEJAN AUTOMÁTICAMENTE EN EL useEffect CON EL HOOK useAdminPlaces
+      // No es necesario hacer nada aquí, el toast se mostrará automáticamente
       
-      // ✅ PROCESAR EL ERROR PARA VER SI ES DE MODERACIÓN
-      procesarErrorModeracion(err instanceof Error ? err.message : String(err));
-      
-      // ✅ ELIMINADO: Toast de error - ahora se maneja desde el hook
     } finally {
       setIsSubmitting(false);
       setIsProcessing(false);
@@ -770,13 +809,16 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
       pdf_url: place.pdf_url || ''
     });
     setFiles({ image: null, pdf: null });
-    setModeracionErrors({});
     setIsDialogOpen(true);
   };
 
-   const handleDeleteImage = async () => {
+  const handleDeleteImage = async () => {
     if (!editingPlace || !editingPlace.image_url) {
-      // ✅ ELIMINADO: Toast informativo
+      toast({
+        title: 'ℹ️ Información',
+        description: 'No hay imagen para eliminar',
+        variant: 'default',
+      });
       return;
     }
 
@@ -798,7 +840,11 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
 
   const handleDeletePDF = async () => {
     if (!editingPlace || !editingPlace.pdf_url) {
-      // ✅ ELIMINADO: Toast informativo
+      toast({
+        title: 'ℹ️ Información',
+        description: 'No hay PDF para eliminar',
+        variant: 'default',
+      });
       return;
     }
 
@@ -879,11 +925,19 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
 
   const handleRefresh = async () => {
     await refetch();
+    toast({
+      title: '🔄 Lista actualizada',
+      description: 'Los lugares se han actualizado correctamente',
+    });
   };
 
   const removeFile = (type: 'image' | 'pdf') => {
     setFiles(prev => ({ ...prev, [type]: null }));
-    // ✅ ELIMINADO: Toast informativo
+    toast({
+      title: '🗑️ Archivo removido',
+      description: `El ${type === 'image' ? 'imagen' : 'PDF'} ha sido removido`,
+      variant: 'default',
+    });
   };
 
   // Skeletons
@@ -985,12 +1039,7 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
                           <Input
                             id="name"
                             value={formData.name}
-                            onChange={(e) => {
-                              setFormData({ ...formData, name: e.target.value });
-                              if (moderacionErrors.name) {
-                                setModeracionErrors(prev => ({ ...prev, name: undefined }));
-                              }
-                            }}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                             placeholder="Ej: Mirador de la Sierra"
                             className={cn(
                               "border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-black bg-white",
@@ -998,10 +1047,7 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
                             )}
                           />
                           {getFieldError('name') && (
-                            <div className="flex items-center gap-2 text-sm text-red-400">
-                              <Shield className="h-4 w-4" />
-                              <span>{getFieldError('name')}</span>
-                            </div>
+                            <p className="text-sm text-red-400">{getFieldError('name')}</p>
                           )}
                         </div>
                         <div className="space-y-2">
@@ -1057,9 +1103,6 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
                         onChange={(e) => {
                           if (e.target.value.length <= 2000) {
                             setFormData({ ...formData, description: e.target.value });
-                            if (moderacionErrors.description) {
-                              setModeracionErrors(prev => ({ ...prev, description: undefined }));
-                            }
                           }
                         }}
                         placeholder="Describe el lugar, sus características, atractivos, historia, servicios disponibles, horarios, recomendaciones..."
@@ -1070,26 +1113,10 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
                         )}
                       />
                       {getFieldError('description') && (
-                        <div className="flex items-start gap-2 text-sm text-red-400">
-                          <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <span>{getFieldError('description')}</span>
-                            {moderacionErrors.description && (
-                              <div className="mt-2 p-2 bg-red-900/30 rounded border border-red-700">
-                                <p className="font-medium text-red-300 mb-1">Sugerencias:</p>
-                                <ul className="text-xs text-red-200 list-disc list-inside space-y-1">
-                                  <li>Evita lenguaje ofensivo, insultos o palabras vulgares</li>
-                                  <li>No incluyas contenido comercial, promociones o spam</li>
-                                  <li>Asegúrate de que el texto sea coherente y tenga sentido</li>
-                                  <li>No incluyas enlaces, emails o números de teléfono</li>
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                        <p className="text-sm text-red-400">{getFieldError('description')}</p>
                       )}
                       
-                      {formData.description && !moderacionErrors.description && (
+                      {formData.description && !getFieldError('description') && (
                         <div className="mt-4 p-4 bg-gray-800 rounded-lg border border-gray-700">
                           <h4 className="text-sm font-medium text-white mb-2">Vista previa:</h4>
                           <ExpandableText 
@@ -1422,21 +1449,7 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
         </CardContent>
       </Card>
 
-    {/* Error */}
-{error && (
-  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-    <Alert variant="destructive" className="mb-4 border-red-200 bg-red-50">
-      <AlertDescription className="flex justify-between items-center">
-        <span className="text-red-800">
-          {typeof error === 'string' ? error : error.message}
-        </span>
-        <Button variant="ghost" size="sm" onClick={clearError} className="text-red-800 hover:bg-red-100">
-          ×
-        </Button>
-      </AlertDescription>
-    </Alert>
-  </motion.div>
-)}
+      {/* ✅ ELIMINADO: Sección de Alert de error global - Los errores se muestran en toasts */}
 
       {/* Contenido principal con scroll */}
       <div className="flex-1 min-h-0 overflow-hidden">
