@@ -1,4 +1,4 @@
-// rutas/lugarRoutes.ts - VERSIÓN COMPLETA CORREGIDA
+// rutas/lugarRoutes.ts - VERSIÓN ACTUALIZADA CON ENDPOINTS DE MODERACIÓN
 import { Router } from 'express';
 import { lugarController } from '../controladores/lugarController';
 import { autenticarAdmin } from '../middleware/autenticacion';
@@ -8,17 +8,27 @@ import { uploadImage, uploadPDF, uploadMultipleImages } from '../utils/multerCon
 const router = Router();
 
 // ==================== RUTAS PÚBLICAS ====================
-// Obtener todos los lugares (público) - ESTA ES LA QUE FALTA
 router.get('/', lugarController.obtenerLugares);
-
-// Obtener categorías disponibles (público)
 router.get('/categorias', lugarController.obtenerCategorias);
-
-// Obtener lugar específico por ID (público)
 router.get('/:id', lugarController.obtenerLugarPorId);
-
-// Obtener galería de imágenes de un lugar (público)
 router.get('/:id/galeria', lugarController.obtenerGaleriaLugar);
+
+// ==================== RUTAS DE MODERACIÓN (PÚBLICAS/PROTEGIDAS SEGÚN NECESIDAD) ====================
+// ✅ NUEVO: Validar texto previo para lugares (puede ser público o protegido según tu necesidad)
+router.post('/moderacion/validar-texto', 
+  // autenticarAdmin, // Opcional: proteger si solo admins pueden validar
+  lugarController.validarTextoPrev
+);
+
+// ✅ NUEVO: Obtener motivos de rechazo (puede ser público)
+router.get('/moderacion/motivos-rechazo', 
+  lugarController.obtenerMotivosRechazo
+);
+
+// ✅ NUEVO: Analizar texto específico (puede ser público)
+router.post('/moderacion/analizar-texto', 
+  lugarController.analizarTexto
+);
 
 // ==================== RUTAS PROTEGIDAS (ADMIN ONLY) ====================
 // Crear lugar (admin)

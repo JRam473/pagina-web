@@ -41,7 +41,7 @@ import {
 import { useAdminPlaces, type Place, type ModeracionError } from '@/hooks/useAdminPlaces';
 import { useCategories } from '@/hooks/useCategories';
 import { CategoryDropdown } from '@/components/admin/CategoryDropdown';
-import { CategoryFilter }from '@/components/admin/CategoryFilter';
+import { CategoryFilter } from '@/components/admin/CategoryFilter';
 import { 
   Loader2, 
   Plus, 
@@ -64,7 +64,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapLocationSelector } from '@/components/admin/MapLocationSelector';
-import { toast } from '@/hooks/use-toast';
 import { ExpandableText } from '@/components/ui/ExpandableText';
 import { FormErrorBoundary } from './FormErrorBoundary';
 import { AdminErrorBoundary } from './AdminErrorBoundary';
@@ -252,16 +251,13 @@ interface FileState {
 }
 
 // ✅ FUNCIÓN PARA PARSEAR ERRORES DE MODERACIÓN
-// ✅ CORREGIDO: Función mejorada para parsear errores
 const parseModeracionError = (error: string | ModeracionError | null): ModeracionError | null => {
   if (!error) return null;
   
-  // Si ya es un objeto ModeracionError, devolverlo directamente
   if (typeof error === 'object' && error.detalles && error.message) {
     return error as ModeracionError;
   }
   
-  // Si es string, intentar parsearlo como JSON
   if (typeof error === 'string') {
     try {
       const parsed = JSON.parse(error);
@@ -269,7 +265,6 @@ const parseModeracionError = (error: string | ModeracionError | null): Moderacio
         return parsed as ModeracionError;
       }
     } catch {
-      // Si no es JSON, es un error normal
       return null;
     }
   }
@@ -341,14 +336,25 @@ export const AdminPlaces = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // ✅ FUNCIÓN PARA PROCESAR ERRORES DE MODERACIÓN
-  const procesarErrorModeracion = (error: string | null) => {
+  // ✅ ELIMINADO: Todas las referencias a toast() directo
+  // Los toast ahora se manejan automáticamente desde el hook useAdminPlaces
+
+  // ✅ EFECTO PARA PROCESAR ERRORES CUANDO CAMBIAN
+  useEffect(() => {
+    if (error) {
+      procesarErrorModeracion(error);
+    } else {
+      setModeracionErrors({});
+    }
+  }, [error]);
+
+  // ✅ FUNCIÓN PARA PROCESAR ERRORES DE MODERACIÓN (sin toast)
+  const procesarErrorModeracion = (error: string | ModeracionError | null) => {
     const errorModeracion = parseModeracionError(error);
     
     if (errorModeracion) {
       const nuevosErrores: { name?: string; description?: string } = {};
       
-      // Determinar en qué campo está el problema
       const campoProblema = errorModeracion.detalles?.campoEspecifico;
       const problemas = errorModeracion.detalles?.problemas || [];
       
@@ -361,64 +367,10 @@ export const AdminPlaces = () => {
       }
       
       setModeracionErrors(nuevosErrores);
-      
-      // Mostrar toast específico
-      toast({
-        title: '🚫 Contenido rechazado',
-        description: (
-          <div className="space-y-2">
-            <p>{errorModeracion.message}</p>
-            {errorModeracion.detalles?.sugerencias && (
-              <div className="text-sm">
-                <strong>Sugerencias:</strong>
-                <ul className="list-disc list-inside mt-1">
-                  {errorModeracion.detalles.sugerencias.map((sug, idx) => (
-                    <li key={idx}>{sug}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        ),
-        variant: 'destructive',
-        duration: 8000,
-      });
     } else {
       setModeracionErrors({});
     }
   };
-
-  // ✅ EFECTO PARA PROCESAR ERRORES CUANDO CAMBIAN
-  useEffect(() => {
-    if (error) {
-      procesarErrorModeracion(error);
-    } else {
-      setModeracionErrors({});
-    }
-  }, [error]);
-
-  // Agrega este useEffect para notificar sobre el estado del modelo
-  useEffect(() => {
-    if (modelo && !cargandoModelo) {
-      toast({
-        title: '🛡️ Filtro de seguridad activado',
-        description: `El sistema de moderación ${modeloCargado === 'inception_v3' ? 'avanzado' : 'básico'} está listo para analizar imágenes.`,
-        variant: 'default',
-        duration: 4000,
-      });
-    }
-  }, [modelo, cargandoModelo, modeloCargado]);
-
-  useEffect(() => {
-    if (errorModelo) {
-      toast({
-        title: '⚠️ Filtro de seguridad no disponible',
-        description: 'Las imágenes se subirán sin análisis de contenido. Contacta al administrador.',
-        variant: 'destructive',
-        duration: 6000,
-      });
-    }
-  }, [errorModelo]);
 
   useEffect(() => {
     refetch();
@@ -444,7 +396,7 @@ export const AdminPlaces = () => {
     });
     setFiles({ image: null, pdf: null });
     setFormErrors({});
-    setModeracionErrors({}); // ✅ LIMPIAR ERRORES DE MODERACIÓN
+    setModeracionErrors({});
     setEditingPlace(null);
   };
 
@@ -522,13 +474,6 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
         ...prev, 
         image: 'El archivo debe ser una imagen' 
       }));
-      
-      toast({
-        title: '❌ Tipo de archivo no válido',
-        description: 'Por favor, selecciona un archivo de imagen (JPG, PNG, WEBP, etc.)',
-        variant: 'destructive',
-        duration: 5000,
-      });
       return;
     }
 
@@ -538,33 +483,15 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
         ...prev, 
         image: 'La imagen no debe superar los 5MB' 
       }));
-      
-      toast({
-        title: '❌ Archivo demasiado grande',
-        description: 'La imagen no debe superar los 5MB. Por favor, comprime la imagen o selecciona una más pequeña.',
-        variant: 'destructive',
-        duration: 5000,
-      });
       return;
     }
 
     try {
       setIsProcessing(true);
       
-      // Mostrar toast de procesamiento
-
-      // Si el modelo no está inicializado, mostrar advertencia pero permitir continuar
+      // Si el modelo no está inicializado, permitir subir sin análisis
       if (!modelo && !cargandoModelo) {
         console.warn('⚠️ Modelo de moderación no disponible');
-        
-        toast({
-          title: '⚠️ Advertencia de seguridad',
-          description: 'El filtro de moderación no está disponible. La imagen será subida sin verificación de contenido.',
-          variant: 'default',
-          duration: 6000,
-        });
-        
-        // Permitir subir la imagen sin análisis
         setFiles(prev => ({ ...prev, [type]: file }));
         setFormErrors(prev => ({ ...prev, [type]: '' }));
         setIsProcessing(false);
@@ -574,71 +501,17 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
       // Si el modelo está cargando, esperar un momento
       if (cargandoModelo) {
         console.log('🔄 Esperando a que cargue el modelo...');
-        
-        toast({
-          title: '⏳ Cargando filtro de seguridad...',
-          description: 'El sistema de moderación se está inicializando. Por favor, espere unos segundos.',
-          variant: 'default',
-          duration: 5000,
-        });
-        
-        // Esperar máximo 5 segundos
         await new Promise(resolve => setTimeout(resolve, 5000));
       }
 
       // Analizar imagen con el modelo NSFW
       const resultado = await analizarImagen(file);
       
-      // Cerrar toast de procesamiento
-      // processingToast.dismiss();
-
       if (!resultado.esAprobado) {
         setFormErrors(prev => ({ 
           ...prev, 
           image: `Imagen rechazada: ${resultado.razon} (Puntuación: ${resultado.puntuacion})` 
         }));
-        
-        // Toast detallado explicando el rechazo
-        let descripcionDetallada = '';
-        
-        if (resultado.razon?.includes('Porn')) {
-          descripcionDetallada = 'La imagen contiene contenido pornográfico. Por favor, selecciona una imagen apropiada para todos los públicos.';
-        } else if (resultado.razon?.includes('Hentai')) {
-          descripcionDetallada = 'La imagen contiene contenido de anime/manga inapropiado. Solo se permiten imágenes adecuadas para el turismo familiar.';
-        } else if (resultado.razon?.includes('Sexy')) {
-          descripcionDetallada = 'La imagen contiene contenido sugerente o demasiado revelador. Las imágenes deben ser apropiadas para un contexto turístico familiar.';
-        } else if (resultado.razon?.includes('Error técnico')) {
-          descripcionDetallada = 'No pudimos analizar la imagen correctamente. Por favor, intenta con otra imagen o verifica que el archivo no esté corrupto.';
-        } else {
-          descripcionDetallada = resultado.razon || 'La imagen no cumple con nuestras políticas de contenido.';
-        }
-        
-        toast({
-          title: '🚫 Imagen rechazada',
-          description: (
-            <div className="space-y-2">
-              <p>{descripcionDetallada}</p>
-              <div className="text-xs text-muted-foreground mt-2">
-                <strong>Detalles técnicos:</strong> Puntuación de seguridad: {resultado.puntuacion}
-                {resultado.categorias.length > 0 && (
-                  <div className="mt-1">
-                    <strong>Categorías detectadas:</strong>
-                    <ul className="list-disc list-inside">
-                      {resultado.categorias.slice(0, 3).map((cat, idx) => (
-                        <li key={idx}>
-                          {cat.clase}: {(cat.probabilidad * 100).toFixed(1)}%
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </div>
-          ),
-          variant: 'destructive',
-          duration: 8000,
-        });
-        
         setIsProcessing(false);
         return;
       }
@@ -646,49 +519,12 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
       // Si la imagen es apropiada, establecer el archivo
       setFiles(prev => ({ ...prev, [type]: file }));
       setFormErrors(prev => ({ ...prev, [type]: '' }));
-      
-      // Mostrar mensaje de éxito con detalles
-      let mensajeExito = '';
-      if (resultado.puntuacion > 0.9) {
-        mensajeExito = 'Excelente! La imagen es completamente segura.';
-      } else if (resultado.puntuacion > 0.7) {
-        mensajeExito = 'La imagen es apropiada y ha pasado el filtro de seguridad.';
-      } else {
-        mensajeExito = 'La imagen ha sido aprobada, pero se recomienda verificar su contenido.';
-      }
-      
-      toast({
-        title: '✅ Imagen aprobada',
-        description: (
-          <div className="space-y-1">
-            <p>{mensajeExito}</p>
-            <div className="text-xs text-muted-foreground">
-              <strong>Puntuación de seguridad:</strong> {resultado.puntuacion}/1.0
-              {modeloCargado && (
-                <span> • Filtro: {modeloCargado === 'inception_v3' ? 'Inception V3' : 
-                                 modeloCargado === 'mobilenet_v2' ? 'MobileNet V2' : 
-                                 'MobileNet V2 Mid'}</span>
-              )}
-            </div>
-          </div>
-        ),
-        variant: 'default',
-        duration: 5000,
-      });
 
     } catch (error) {
       console.error('Error analizando imagen:', error);
-      
       // En caso de error, permitir subir la imagen con advertencia
       setFiles(prev => ({ ...prev, [type]: file }));
       setFormErrors(prev => ({ ...prev, [type]: '' }));
-      
-      toast({
-        title: '⚠️ Advertencia del sistema',
-        description: 'No se pudo completar el análisis de seguridad. La imagen se subirá sin verificación completa.',
-        variant: 'default',
-        duration: 5000,
-      });
     } finally {
       setIsProcessing(false);
     }
@@ -697,23 +533,6 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
     setFiles(prev => ({ ...prev, [type]: file }));
     if (file) {
       setFormErrors(prev => ({ ...prev, [type]: '' }));
-      
-      if (type === 'pdf') {
-        toast({
-          title: '📄 PDF seleccionado',
-          description: 'El documento PDF ha sido cargado correctamente.',
-          variant: 'default',
-          duration: 3000,
-        });
-      }
-    } else {
-      // Cuando se elimina un archivo
-      toast({
-        title: '🗑️ Archivo removido',
-        description: type === 'image' ? 'La imagen ha sido removida.' : 'El PDF ha sido removido.',
-        variant: 'default',
-        duration: 3000,
-      });
     }
   }
 };
@@ -776,28 +595,7 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
           }
         }
 
-        // Manejar resultados
-        const errors = [];
-        if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
-        if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
-
-        if (errors.length > 0) {
-          toast({ 
-            title: '⚠️ Advertencia', 
-            description: `Archivos procesados con errores: ${errors.join(', ')}`,
-            variant: 'destructive' 
-          });
-        } else if (files.image || files.pdf) {
-          toast({ 
-            title: '✅ Éxito', 
-            description: 'Archivos subidos correctamente' 
-          });
-        } else {
-          toast({ 
-            title: 'ℹ️ Información', 
-            description: 'No se realizaron cambios' 
-          });
-        }
+        // ✅ ELIMINADO: Toast de resultado - ahora se maneja desde el hook
 
       } 
       // ✅ CASO 2: CREAR NUEVO LUGAR (con validación completa)
@@ -858,27 +656,8 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
           }
         }
 
-        // Manejar resultados
-        const errors = [];
-        if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
-        if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
+        // ✅ ELIMINADO: Toast de resultado - ahora se maneja desde el hook
 
-        if (errors.length > 0) {
-          toast({ 
-            title: '⚠️ Advertencia', 
-            description: `Lugar creado pero con errores en archivos: ${errors.join(', ')}`,
-            variant: 'destructive' 
-          });
-        } else {
-          const message = files.image || files.pdf 
-            ? 'Lugar creado correctamente con archivos adjuntos'
-            : 'Lugar creado correctamente';
-          
-          toast({ 
-            title: '✅ Éxito', 
-            description: message 
-          });
-        }
       }
       // ✅ CASO 3: EDITAR LUGAR (modificando datos)
       else {
@@ -946,43 +725,7 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
           }
         }
 
-        // Manejar resultados
-        const errors = [];
-        if (uploadResults.image.error) errors.push(`Imagen: ${uploadResults.image.error}`);
-        if (uploadResults.pdf.error) errors.push(`PDF: ${uploadResults.pdf.error}`);
-
-        if (errors.length > 0) {
-          toast({ 
-            title: '⚠️ Advertencia', 
-            description: `Lugar actualizado pero con errores en archivos: ${errors.join(', ')}`,
-            variant: 'destructive' 
-          });
-        } else {
-          const hasDataChanges = Object.keys(placeData).length > 0;
-          const hasFileChanges = files.image || files.pdf;
-          
-          if (hasDataChanges && hasFileChanges) {
-            toast({ 
-              title: '✅ Éxito', 
-              description: 'Lugar actualizado correctamente con archivos adjuntos' 
-            });
-          } else if (hasDataChanges) {
-            toast({ 
-              title: '✅ Éxito', 
-              description: 'Lugar actualizado correctamente' 
-            });
-          } else if (hasFileChanges) {
-            toast({ 
-              title: '✅ Éxito', 
-              description: 'Archivos subidos correctamente' 
-            });
-          } else {
-            toast({ 
-              title: 'ℹ️ Información', 
-              description: 'No se realizaron cambios' 
-            });
-          }
-        }
+        // ✅ ELIMINADO: Toast de resultado - ahora se maneja desde el hook
       }
 
       console.log('🏁 [COMPLETED] Proceso terminado, cerrando...');
@@ -995,33 +738,26 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
       console.log('🔄 [REFETCH] Lista actualizada');
 
     } catch (err) {
-    console.error('❌ [ERROR] Error crítico:', err);
+      console.error('❌ [ERROR] Error crítico:', err);
+      
+      console.error('🔴 Detalles completos del error:', {
+        error: err,
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined,
+        name: err instanceof Error ? err.name : undefined
+      });
+      
+      // ✅ PROCESAR EL ERROR PARA VER SI ES DE MODERACIÓN
+      procesarErrorModeracion(err instanceof Error ? err.message : String(err));
+      
+      // ✅ ELIMINADO: Toast de error - ahora se maneja desde el hook
+    } finally {
+      setIsSubmitting(false);
+      setIsProcessing(false);
+    }
     
-    // ✅ MEJORADO: Log más detallado del error
-    console.error('🔴 Detalles completos del error:', {
-      error: err,
-      message: err instanceof Error ? err.message : 'Unknown error',
-      stack: err instanceof Error ? err.stack : undefined,
-      name: err instanceof Error ? err.name : undefined
-    });
-    
-    const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-    
-    // ✅ PROCESAR EL ERROR PARA VER SI ES DE MODERACIÓN
-    procesarErrorModeracion(errorMessage);
-    
-    toast({
-      title: '❌ Error',
-      description: errorMessage,
-      variant: 'destructive',
-    });
-  } finally {
-    setIsSubmitting(false);
-    setIsProcessing(false);
-  }
-  
-  return false;
-};
+    return false;
+  };
 
   const handleEdit = (place: Place) => {
     setEditingPlace(place);
@@ -1034,16 +770,13 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
       pdf_url: place.pdf_url || ''
     });
     setFiles({ image: null, pdf: null });
-    setModeracionErrors({}); // ✅ LIMPIAR ERRORES AL EDITAR
+    setModeracionErrors({});
     setIsDialogOpen(true);
   };
 
    const handleDeleteImage = async () => {
     if (!editingPlace || !editingPlace.image_url) {
-      toast({
-        title: 'ℹ️ Información',
-        description: 'No hay imagen para eliminar',
-      });
+      // ✅ ELIMINADO: Toast informativo
       return;
     }
 
@@ -1054,31 +787,18 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
       // Actualizar el estado local
       setFormData(prev => ({ ...prev, image_url: '' }));
       
-      toast({
-        title: '✅ Éxito',
-        description: 'Imagen eliminada correctamente',
-      });
+      // ✅ ELIMINADO: Toast de éxito - ahora se maneja desde el hook
       
       await refetch();
     } catch (err) {
       console.error('❌ Error eliminando imagen:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Error al eliminar la imagen';
-      
-      toast({
-        title: '❌ Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
+      // ✅ ELIMINADO: Toast de error - ahora se maneja desde el hook
     }
   };
 
-
   const handleDeletePDF = async () => {
     if (!editingPlace || !editingPlace.pdf_url) {
-      toast({
-        title: 'ℹ️ Información',
-        description: 'No hay PDF para eliminar',
-      });
+      // ✅ ELIMINADO: Toast informativo
       return;
     }
 
@@ -1089,24 +809,14 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
       // Actualizar el estado local
       setFormData(prev => ({ ...prev, pdf_url: '' }));
       
-      toast({
-        title: '✅ Éxito',
-        description: 'PDF eliminado correctamente',
-      });
+      // ✅ ELIMINADO: Toast de éxito - ahora se maneja desde el hook
       
       await refetch();
     } catch (err) {
       console.error('❌ Error eliminando PDF:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Error al eliminar el PDF';
-      
-      toast({
-        title: '❌ Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
+      // ✅ ELIMINADO: Toast de error - ahora se maneja desde el hook
     }
   };
-
 
   const handleDelete = async () => {
     if (!editingPlace || isDeleting) {
@@ -1133,13 +843,7 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
 
     } catch (err) {
       console.error('❌ [DELETE] Error eliminando lugar:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Error al eliminar el lugar';
-      
-      toast({
-        title: '❌ Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
+      // ✅ ELIMINADO: Toast de error - ahora se maneja desde el hook
     } finally {
       setIsDeleting(false);
     }
@@ -1157,7 +861,7 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
 
   const handleGalleryUpdate = () => {
     refetch();
-    toast({ title: '✅ Galería actualizada', description: 'Los cambios en la galería se han guardado correctamente' });
+    // ✅ ELIMINADO: Toast de éxito - ahora se maneja desde GalleryManager
   };
 
   const openDeleteDialog = (place: Place) => {
@@ -1179,6 +883,7 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
 
   const removeFile = (type: 'image' | 'pdf') => {
     setFiles(prev => ({ ...prev, [type]: null }));
+    // ✅ ELIMINADO: Toast informativo
   };
 
   // Skeletons
@@ -1282,7 +987,6 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
                             value={formData.name}
                             onChange={(e) => {
                               setFormData({ ...formData, name: e.target.value });
-                              // ✅ LIMPIAR ERROR DE MODERACIÓN CUANDO EL USUARIO EDITA
                               if (moderacionErrors.name) {
                                 setModeracionErrors(prev => ({ ...prev, name: undefined }));
                               }
@@ -1353,7 +1057,6 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
                         onChange={(e) => {
                           if (e.target.value.length <= 2000) {
                             setFormData({ ...formData, description: e.target.value });
-                            // ✅ LIMPIAR ERROR DE MODERACIÓN CUANDO EL USUARIO EDITA
                             if (moderacionErrors.description) {
                               setModeracionErrors(prev => ({ ...prev, description: undefined }));
                             }
@@ -1667,7 +1370,6 @@ const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
         </div>
       </motion.div>
 
-      {/* Resto del componente permanece igual... */}
       {/* Filtros */}
       <Card className="border border-gray-200 shadow-lg bg-white">
         <CardContent className="p-6">
