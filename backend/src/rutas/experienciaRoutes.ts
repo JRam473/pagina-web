@@ -1,4 +1,4 @@
-// ✅ rutas/experienciaRoutes.ts (VERSIÓN CORREGIDA)
+// ✅ rutas/experienciaRoutes.ts (VERSIÓN ACTUALIZADA CON MODERACIÓN)
 import { Router } from 'express';
 import { experienciaController } from '../controladores/experienciaController';
 import { uploadExperienciaMiddleware } from '../utils/multerExperiencias'; // ✅ CORREGIDO: usar el middleware correcto
@@ -11,6 +11,10 @@ router.get('/', experienciaController.obtenerExperiencias);
 router.get('/:id', experienciaController.obtenerExperienciaPorId);
 router.post('/:id/vista', experienciaController.registrarVista);
 router.get('/usuario/mis-experiencias', experienciaController.obtenerMisExperiencias);
+
+// ✅ NUEVAS RUTAS DE MODERACIÓN (SIN SUBIDA DE ARCHIVOS)
+router.post('/moderacion/validar-texto', experienciaController.validarTextoPrev);
+router.get('/moderacion/motivos-rechazo', experienciaController.obtenerMotivosRechazo);
 
 // ✅ RUTAS QUE CREAN CONTENIDO (CON MODERACIÓN)
 router.post('/',

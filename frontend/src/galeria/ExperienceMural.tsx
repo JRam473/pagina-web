@@ -1,4 +1,4 @@
-// components/ExperienceMural.tsx (ACTUALIZADO CON CAMBIO DE FOTO Y MODERACIÓN)
+// components/ExperienceMural.tsx (VERSIÓN ACTUALIZADA CON NOMBRE DE USUARIO)
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -19,7 +19,10 @@ import {
   MoreVertical,
   RefreshCw,
   Shield,
-  Loader2
+  Loader2,
+  User,
+  UserCheck,
+  UserX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useExperiences, type Experience } from '@/hooks/useExperiences';
@@ -36,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-// ✅ CORREGIDO: Componente Badge con tipos correctos
+// Componente Badge
 const Badge = ({ 
   variant = 'default', 
   className = '', 
@@ -61,7 +64,34 @@ const Badge = ({
   );
 };
 
-// ✅ CORREGIDO: Componente para el estado del modelo de moderación
+// Componente para mostrar el nombre de usuario
+const UserNameDisplay = ({ 
+  nombreUsuario,
+  className = ''
+}: {
+  nombreUsuario: string;
+  className?: string;
+}) => {
+  const displayName = nombreUsuario?.trim() || 'Usuario Anónimo';
+  const isAnonymous = !nombreUsuario?.trim();
+  
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      {isAnonymous ? (
+        <UserX className="w-4 h-4 text-gray-500" />
+      ) : (
+        <UserCheck className="w-4 h-4 text-green-600" />
+      )}
+      <span className={`text-sm font-medium ${
+        isAnonymous ? 'text-gray-500' : 'text-gray-700'
+      }`}>
+        {displayName}
+      </span>
+    </div>
+  );
+};
+
+// Componente para el estado del modelo de moderación
 const ModeloModeracionStatus = ({ 
   modelo, 
   cargando, 
@@ -101,7 +131,7 @@ const ModeloModeracionStatus = ({
   return null;
 };
 
-// ✅ NUEVO: Componente para el botón "Ver más"
+// Componente para el botón "Ver más"
 const LoadMoreButton = ({ 
   loading, 
   hasMore, 
@@ -134,7 +164,7 @@ const LoadMoreButton = ({
   );
 };
 
-// ✅ NUEVO: Componente para el indicador de actualización automática
+// Componente para el indicador de actualización automática
 const AutoRefreshIndicator = ({ 
   enabled, 
   onToggle 
@@ -245,12 +275,14 @@ const ExperienceInvitationBanner = () => {
   );
 };
 
-// ✅ ACTUALIZADO: Componente para mostrar estadísticas del usuario (sin estados)
+// Componente para mostrar estadísticas del usuario
 const UserStatsBanner = ({ myExperiences }: { myExperiences: Experience[] }) => {
   if (myExperiences.length === 0) return null;
 
   const totalVistas = myExperiences.reduce((sum, exp) => sum + exp.contador_vistas, 0);
   const promedioVistas = myExperiences.length > 0 ? Math.round(totalVistas / myExperiences.length) : 0;
+  const experienciasConNombre = myExperiences.filter(exp => exp.nombre_usuario?.trim()).length;
+  const porcentajeConNombre = myExperiences.length > 0 ? Math.round((experienciasConNombre / myExperiences.length) * 100) : 0;
 
   return (
     <motion.div 
@@ -272,11 +304,16 @@ const UserStatsBanner = ({ myExperiences }: { myExperiences: Experience[] }) => 
           <div className="text-2xl font-bold text-green-600">{promedioVistas}</div>
           <div className="text-sm text-gray-600">Vistas/Promedio</div>
         </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-indigo-600">{porcentajeConNombre}%</div>
+          <div className="text-sm text-gray-600">Con Nombre</div>
+        </div>
       </div>
     </motion.div>
   );
 };
 
+// Modal de edición ACTUALIZADO con nombre de usuario
 const ExperienceEditModal = ({ 
   experience, 
   isOpen, 
@@ -292,8 +329,8 @@ const ExperienceEditModal = ({
   experience: Experience | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (descripcion: string) => void;
-  onSaveWithImage: (descripcion: string, imageFile: File | null) => void;
+  onSave: (descripcion: string, nombreUsuario?: string) => void;
+  onSaveWithImage: (descripcion: string, imageFile: File | null, nombreUsuario?: string) => void;
   loading: boolean;
   modelo: boolean;
   cargandoModelo: boolean;
@@ -301,6 +338,7 @@ const ExperienceEditModal = ({
   analizarImagen: (file: File) => Promise<any>;
 }) => {
   const [descripcion, setDescripcion] = useState('');
+  const [nombreUsuario, setNombreUsuario] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
@@ -311,13 +349,13 @@ const ExperienceEditModal = ({
   useEffect(() => {
     if (experience) {
       setDescripcion(experience.descripcion);
+      setNombreUsuario(experience.nombre_usuario || '');
       setPreviewUrl(null);
       setSelectedFile(null);
       setIsProcessingImage(false);
     }
   }, [experience]);
 
-  // ✅ CORREGIDO: Manejo de selección de archivo con moderación
   const handleFileSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast({
@@ -340,7 +378,6 @@ const ExperienceEditModal = ({
     try {
       setIsProcessingImage(true);
       
-      // ✅ ANÁLISIS DE MODERACIÓN para nueva imagen
       const resultado = await analizarImagen(file);
       
       if (!resultado.esAprobado) {
@@ -352,7 +389,6 @@ const ExperienceEditModal = ({
         return;
       }
 
-      // Imagen aprobada
       toast({
         title: '✅ Imagen aprobada',
         description: `La imagen ha pasado el filtro de moderación`,
@@ -364,7 +400,6 @@ const ExperienceEditModal = ({
 
     } catch (error) {
       console.error('Error analizando imagen:', error);
-      // En caso de error, permitir con advertencia
       toast({
         title: '⚠️ Advertencia',
         description: 'No se pudo analizar la imagen. Se usará sin verificación.',
@@ -391,14 +426,11 @@ const ExperienceEditModal = ({
     }
   };
 
-  // ✅ ACTUALIZADO: Manejo de guardado
   const handleSave = () => {
     if (selectedFile) {
-      // Si hay nueva imagen, usar función con imagen
-      onSaveWithImage(descripcion, selectedFile);
+      onSaveWithImage(descripcion, selectedFile, nombreUsuario);
     } else {
-      // Si no hay nueva imagen, usar función normal
-      onSave(descripcion);
+      onSave(descripcion, nombreUsuario);
     }
   };
 
@@ -410,12 +442,31 @@ const ExperienceEditModal = ({
         <DialogHeader>
           <DialogTitle>Editar Experiencia</DialogTitle>
           <DialogDescription className="text-gray-300">
-            Modifica la descripción o cambia la imagen de tu experiencia
+            Modifica la descripción, nombre de usuario o cambia la imagen de tu experiencia
           </DialogDescription>
         </DialogHeader>
         
         <div className="space-y-4">
-          {/* Imagen actual y opción para cambiar */}
+          {/* Campo de nombre de usuario */}
+          <div>
+            <label className="block text-sm font-medium text-white mb-2">
+              Tu nombre (opcional)
+            </label>
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Cómo quieres que te llamen (máx. 50 caracteres)"
+                value={nombreUsuario}
+                onChange={(e) => setNombreUsuario(e.target.value)}
+                maxLength={50}
+                className="bg-white/10 border-white/20 text-white placeholder-gray-400"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              💡 Si dejas este campo vacío, se mostrará como "Usuario Anónimo"
+            </p>
+          </div>
+
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <label className="block text-sm font-medium text-white">
@@ -429,7 +480,6 @@ const ExperienceEditModal = ({
             </div>
             
             <div className="flex gap-4 items-start">
-              {/* Imagen actual */}
               <div className="flex-1">
                 <p className="text-sm text-gray-300 mb-2">Imagen actual:</p>
                 <img
@@ -439,7 +489,6 @@ const ExperienceEditModal = ({
                 />
               </div>
               
-              {/* Opción para cambiar imagen */}
               <div className="flex-1">
                 <p className="text-sm text-gray-300 mb-2">Nueva imagen (opcional):</p>
                 
@@ -493,7 +542,6 @@ const ExperienceEditModal = ({
             </p>
           </div>
 
-          {/* Descripción */}
           <div>
             <label className="block text-sm font-medium text-white mb-2">
               Descripción *
@@ -507,7 +555,6 @@ const ExperienceEditModal = ({
             />
           </div>
 
-          {/* Información de la experiencia */}
           <div className="bg-gray-800/50 rounded-lg p-3">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
@@ -523,7 +570,6 @@ const ExperienceEditModal = ({
             </div>
           </div>
 
-          {/* Botones */}
           <div className="flex gap-3 pt-4">
             <Button
               variant="outline"
@@ -553,19 +599,21 @@ const ExperienceEditModal = ({
     </Dialog>
   );
 };
-// Interfaz para datos de subida
+
+// Interfaces
 interface UploadData {
   descripcion: string;
   lugarId: string;
   imageFile: File | null;
   previewUrl: string | null;
+  nombreUsuario: string; // ✅ AGREGADO: Campo para nombre de usuario
 }
 
-// Interfaz para experiencia pendiente
 interface PendingExperience {
   imageFile: File;
   descripcion: string;
   lugarId?: string;
+  nombreUsuario?: string; // ✅ AGREGADO: Campo para nombre de usuario
 }
 
 export const ExperienceMural = () => {
@@ -579,7 +627,7 @@ export const ExperienceMural = () => {
     pagination,
     loadingMore,
     autoRefresh,
-    uploadExperience, 
+    uploadExperienceWithValidation,
     editExperience,
     editExperienceWithImage,
     deleteExperience,
@@ -594,7 +642,6 @@ export const ExperienceMural = () => {
   const { places } = usePlaces();
   const { toast } = useToast();
 
-  // ✅ CORREGIDO: Hook de moderación con inicialización automática
   const { 
     modelo, 
     cargando: cargandoModelo, 
@@ -617,30 +664,26 @@ export const ExperienceMural = () => {
     descripcion: '',
     lugarId: '',
     imageFile: null,
-    previewUrl: null
+    previewUrl: null,
+    nombreUsuario: '' // ✅ AGREGADO: Inicializar campo de nombre de usuario
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
-  // ✅ CORREGIDO: Inicializar modelo de moderación al cargar el componente
   useEffect(() => {
     fetchExperiences({ pagina: 1, limite: 6 });
     fetchMyExperiences();
     startAutoRefresh();
-    
-    // Inicializar modelo de moderación
     inicializarModelo();
   }, [fetchExperiences, fetchMyExperiences, startAutoRefresh, inicializarModelo]);
 
-  // Efecto para cambiar entre pestañas
   useEffect(() => {
     if (activeTab === 'comunidad') {
       fetchExperiences({ pagina: 1, limite: 6 });
     }
   }, [activeTab, fetchExperiences]);
 
-  // Manejar el toggle de auto-refresh
   const handleAutoRefreshToggle = (enabled: boolean) => {
     if (enabled) {
       startAutoRefresh();
@@ -649,17 +692,9 @@ export const ExperienceMural = () => {
     }
   };
 
-  // Determinar qué experiencias mostrar según la pestaña activa
-  const displayedExperiences = activeTab === 'comunidad' 
-    ? experiences 
-    : myExperiences;
+  const displayedExperiences = activeTab === 'comunidad' ? experiences : myExperiences;
+  const hasMoreExperiences = activeTab === 'comunidad' ? pagination?.tieneMas : false;
 
-  // ✅ CORREGIDO: Determinar si hay más experiencias para cargar
-  const hasMoreExperiences = activeTab === 'comunidad' 
-    ? pagination?.tieneMas 
-    : false;
-
-  // ✅ CORREGIDO: Manejo de selección de archivo con mejor manejo de errores
   const handleFileSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast({
@@ -682,7 +717,6 @@ export const ExperienceMural = () => {
     try {
       setIsProcessingImage(true);
       
-      // ✅ MEJORADO: Manejo más robusto del análisis
       const resultado = await analizarImagen(file);
       
       if (!resultado.esAprobado) {
@@ -694,13 +728,6 @@ export const ExperienceMural = () => {
         return;
       }
 
-      // Imagen aprobada
-      toast({
-        title: '✅ Imagen aprobada',
-        description: `La imagen ha pasado el filtro de moderación`,
-        variant: 'default',
-      });
-
       setUploadData(prev => ({
         ...prev,
         imageFile: file,
@@ -709,13 +736,6 @@ export const ExperienceMural = () => {
 
     } catch (error) {
       console.error('Error analizando imagen:', error);
-      // En caso de error, permitir subir con advertencia
-      toast({
-        title: '⚠️ Advertencia',
-        description: 'No se pudo analizar la imagen. Se subirá sin verificación.',
-        variant: 'default',
-      });
-      
       setUploadData(prev => ({
         ...prev,
         imageFile: file,
@@ -741,18 +761,17 @@ export const ExperienceMural = () => {
     e.preventDefault();
   };
 
-  // ✅ CORREGIDO: Reset del formulario
   const resetUploadForm = () => {
     setUploadData({
       descripcion: '',
       lugarId: '',
       imageFile: null,
-      previewUrl: null
+      previewUrl: null,
+      nombreUsuario: '' // ✅ AGREGADO: Resetear campo de nombre de usuario
     });
     setIsUploadOpen(false);
     setIsProcessingImage(false);
     
-    // Recargar experiencias
     setTimeout(() => {
       if (activeTab === 'comunidad') {
         fetchExperiences({ pagina: 1, limite: 6 });
@@ -772,30 +791,27 @@ export const ExperienceMural = () => {
       return;
     }
 
-    try {
-      const success = await uploadExperience(
-        uploadData.imageFile,
-        uploadData.descripcion,
-        uploadData.lugarId || undefined
-      );
+    const result = await uploadExperienceWithValidation(
+      uploadData.imageFile,
+      uploadData.descripcion,
+      uploadData.lugarId || undefined,
+      uploadData.nombreUsuario // ✅ AGREGADO: Pasar nombre de usuario
+    );
 
-      if (success) {
-        resetUploadForm();
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message === 'TERMS_REQUIRED') {
-        setPendingExperience({
-          imageFile: uploadData.imageFile,
-          descripcion: uploadData.descripcion,
-          lugarId: uploadData.lugarId || undefined
-        });
-        setShowTermsDialog(true);
-      }
+    if (result.success) {
+      resetUploadForm();
+    } else if (result.necesitaTerminos) {
+      setPendingExperience({
+        imageFile: uploadData.imageFile,
+        descripcion: uploadData.descripcion,
+        lugarId: uploadData.lugarId || undefined,
+        nombreUsuario: uploadData.nombreUsuario // ✅ AGREGADO: Pasar nombre de usuario
+      });
+      setShowTermsDialog(true);
     }
   };
 
-  // ✅ ACTUALIZADO: Función para editar solo descripción
-  const handleEdit = async (descripcion: string) => {
+  const handleEdit = async (descripcion: string, nombreUsuario?: string) => {
     if (!descripcion.trim()) {
       toast({
         title: 'Descripción requerida',
@@ -806,7 +822,7 @@ export const ExperienceMural = () => {
     }
 
     if (experienceToEdit) {
-      const success = await editExperience(experienceToEdit.id, descripcion);
+      const success = await editExperience(experienceToEdit.id, descripcion, nombreUsuario);
       if (success) {
         setExperienceToEdit(null);
         setIsEditOpen(false);
@@ -819,41 +835,40 @@ export const ExperienceMural = () => {
     }
   };
 
-  // ✅ NUEVO: Función para editar con imagen
-  const handleEditWithImage = async (descripcion: string, imageFile: File | null) => {
-    if (!descripcion.trim()) {
-      toast({
-        title: 'Descripción requerida',
-        description: 'Por favor escribe una descripción.',
-        variant: 'destructive',
-      });
-      return;
-    }
+const handleEditWithImage = async (descripcion: string, imageFile: File | null, nombreUsuario?: string) => {
+  if (!descripcion.trim()) {
+    toast({
+      title: 'Descripción requerida',
+      description: 'Por favor escribe una descripción.',
+      variant: 'destructive',
+    });
+    return;
+  }
 
-    if (experienceToEdit) {
-      let success = false;
-      
-      if (imageFile) {
-        // Usar la nueva función con imagen
-        success = await editExperienceWithImage(experienceToEdit.id, descripcion, imageFile);
-      } else {
-        // Usar la función normal
-        success = await editExperience(experienceToEdit.id, descripcion);
-      }
-      
-      if (success) {
-        setExperienceToEdit(null);
-        setIsEditOpen(false);
-        toast({
-          title: '✅ Experiencia actualizada',
-          description: imageFile 
-            ? 'Tu experiencia e imagen han sido actualizadas correctamente.' 
-            : 'Tu experiencia ha sido actualizada correctamente.',
-          variant: 'default',
-        });
-      }
+  if (experienceToEdit) {
+    let success = false;
+    
+    // ✅ CORRECCIÓN: Pasar imageFile incluso si es null
+    success = await editExperienceWithImage(
+      experienceToEdit.id, 
+      descripcion, 
+      imageFile, // ✅ Esto puede ser File o null
+      nombreUsuario
+    );
+    
+    if (success) {
+      setExperienceToEdit(null);
+      setIsEditOpen(false);
+      toast({
+        title: '✅ Experiencia actualizada',
+        description: imageFile 
+          ? 'Tu experiencia e imagen han sido actualizadas correctamente.' 
+          : 'Tu experiencia ha sido actualizada correctamente.',
+        variant: 'default',
+      });
     }
-  };
+  }
+};
 
   const handleDelete = async () => {
     if (experienceToDelete) {
@@ -864,7 +879,6 @@ export const ExperienceMural = () => {
     }
   };
 
-  // ✅ CORREGIDO: Función para abrir modal de edición
   const openEditModal = (experience: Experience) => {
     setExperienceToEdit(experience);
     setIsEditOpen(true);
@@ -878,13 +892,14 @@ export const ExperienceMural = () => {
     if (pendingExperience) {
       localStorage.setItem('experience_terms_accepted', 'true');
       
-      const success = await uploadExperience(
+      const result = await uploadExperienceWithValidation(
         pendingExperience.imageFile,
         pendingExperience.descripcion,
-        pendingExperience.lugarId
+        pendingExperience.lugarId,
+        pendingExperience.nombreUsuario // ✅ AGREGADO: Pasar nombre de usuario
       );
 
-      if (success) {
+      if (result.success) {
         resetUploadForm();
         setPendingExperience(null);
         setShowTermsDialog(false);
@@ -892,19 +907,13 @@ export const ExperienceMural = () => {
     }
   };
 
-  // ✅ MODIFICADO: Manejo de clic en experiencia con actualización automática de vistas
   const handleExperienceClick = async (experience: Experience) => {
-    console.log('🖱️ Click en experiencia:', experience.id);
-    
-    // 1. Abrir el modal inmediatamente para mejor UX
     setSelectedExperience(experience);
     
-    // 2. Registrar la vista en segundo plano
     try {
       const result = await incrementViewCount(experience.id);
       if (result.success) {
         console.log('✅ Vista procesada para:', experience.id);
-        // ✅ EL CONTADOR SE ACTUALIZA AUTOMÁTICAMENTE EN EL HOOK
       }
     } catch (error) {
       console.error('❌ Error al registrar vista:', error);
@@ -941,7 +950,6 @@ export const ExperienceMural = () => {
     <>
       <section className="py-20 bg-gradient-to-br from-blue-50 via-green-50 to-emerald-50">
         <div className="container mx-auto px-4">
-          {/* Header con estado del modelo */}
           <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <div className="text-center md:text-left">
               <h2 className="text-4xl font-bold text-gray-900 mb-2">
@@ -969,13 +977,11 @@ export const ExperienceMural = () => {
             </div>
           </div>
 
-          {/* ✅ NUEVO: Indicador de actualización automática */}
           <AutoRefreshIndicator 
             enabled={autoRefresh}
             onToggle={handleAutoRefreshToggle}
           />
 
-          {/* Pestañas */}
           <div className="flex border-b border-gray-200 mb-6">
             <button
               onClick={() => setActiveTab('comunidad')}
@@ -999,15 +1005,12 @@ export const ExperienceMural = () => {
             </button>
           </div>
 
-          {/* Banner de estadísticas del usuario */}
           {activeTab === 'mis-experiencias' && (
             <UserStatsBanner myExperiences={myExperiences} />
           )}
 
-          {/* Banner de invitación - solo mostrar en pestaña comunidad */}
           {activeTab === 'comunidad' && <ExperienceInvitationBanner />}
 
-          {/* Grid de experiencias */}
           {loading && displayedExperiences.length === 0 ? (
             <ExperienceSkeletonGrid count={6} />
           ) : displayedExperiences.length === 0 ? (
@@ -1042,7 +1045,6 @@ export const ExperienceMural = () => {
                       transition={{ duration: 0.4, delay: index * 0.1 }}
                       className="bg-white rounded-2xl overflow-hidden shadow-card hover:shadow-xl transition-all duration-300 group relative"
                     >
-                      {/* Imagen */}
                       <div className="relative overflow-hidden">
                         <img
                           src={experience.url_foto}
@@ -1053,7 +1055,6 @@ export const ExperienceMural = () => {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" 
                         onClick={() => handleExperienceClick(experience)}/>
                         
-                        {/* Menú de acciones (solo en "Mis Experiencias") */}
                         {activeTab === 'mis-experiencias' && (
                           <div className="absolute top-3 right-3">
                             <DropdownMenu>
@@ -1090,8 +1091,14 @@ export const ExperienceMural = () => {
                         )}
                       </div>
 
-                      {/* Contenido */}
                       <div className="p-4">
+                        {/* ✅ AGREGADO: Mostrar nombre de usuario */}
+                        <div className="mb-3">
+                          <UserNameDisplay 
+                            nombreUsuario={experience.nombre_usuario}
+                          />
+                        </div>
+                        
                         <p 
                           className="text-gray-700 line-clamp-2 mb-3 leading-relaxed cursor-pointer"
                           onClick={() => handleExperienceClick(experience)}
@@ -1103,7 +1110,6 @@ export const ExperienceMural = () => {
                           <div className="flex items-center gap-4">
                             <div className="flex items-center gap-1">
                               <Eye className="w-4 h-4" />
-                              {/* ✅ EL CONTADOR SE ACTUALIZA AUTOMÁTICAMENTE */}
                               <span>{experience.contador_vistas} vistas</span>
                             </div>
                             <div className="flex items-center gap-1">
@@ -1127,7 +1133,6 @@ export const ExperienceMural = () => {
                 </AnimatePresence>
               </div>
 
-              {/* ✅ NUEVO: Botón "Ver más" */}
               {activeTab === 'comunidad' && (
                 <LoadMoreButton 
                   loading={loadingMore}
@@ -1140,9 +1145,9 @@ export const ExperienceMural = () => {
         </div>
       </section>
 
-      {/* Modal de subida ACTUALIZADO */}
+      {/* ✅ MODAL ACTUALIZADO: Con campo para nombre de usuario */}
       <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-        <DialogContent className="max-w-4xl max-h-[95vh] overflow-hidden bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-xl text-white flex flex-col">
+        <DialogContent className="max-w-4xl max-h-[95vh] overflow-hidden bg-slate-900/95 backdrop-blur-sm border border-slate-700 shadow-xl text-white flex flex-col ">
           <DialogHeader>
             <DialogTitle className="text-center">Compartir Experiencia</DialogTitle>
             <DialogDescription className="text-white/70">
@@ -1150,8 +1155,28 @@ export const ExperienceMural = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4">
-            {/* Área de subida de imagen ACTUALIZADA */}
+          <div className="space-y-4 bg-scroll overflow-y-auto px-6 pb-6 flex-1">
+            {/* ✅ AGREGADO: Campo para nombre de usuario */}
+            <div>
+              <label className="block text-sm font-medium text-white mb-2">
+                Tu nombre (opcional)
+              </label>
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Cómo quieres que te llamen (máx. 50 caracteres)"
+                  value={uploadData.nombreUsuario}
+                  onChange={(e) => setUploadData(prev => ({ ...prev, nombreUsuario: e.target.value }))}
+                  maxLength={50}
+                  className="bg-white/10 border-white/20 text-white placeholder-gray-400"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                💡 Si dejas este campo vacío, se mostrará como "Usuario Anónimo"
+              </p>
+            </div>
+
+            {/* Área de subida de imagen */}
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <label className="block text-sm font-medium text-white">
@@ -1224,7 +1249,6 @@ export const ExperienceMural = () => {
               </div>
             </div>
 
-            {/* Descripción */}
             <div>
               <label className="block text-sm font-medium text-white mb-2">
                 Describe tu experiencia *
@@ -1236,6 +1260,9 @@ export const ExperienceMural = () => {
                 rows={4}
                 className="resize-none bg-white/10 border-white/20 text-white placeholder-gray-400"
               />
+              <p className="text-xs text-gray-400 mt-1">
+                💡 El texto será validado automáticamente al compartir
+              </p>
             </div>
 
             {/* Lugar relacionado (opcional) */}
@@ -1257,7 +1284,7 @@ export const ExperienceMural = () => {
               </select>
             </div>
 
-            {/* Footer ACTUALIZADO */}
+            {/* Footer */}
             <div className="flex gap-3 pt-4">
               <Button
                 variant="outline"
@@ -1283,7 +1310,7 @@ export const ExperienceMural = () => {
                     Subiendo...
                   </>
                 ) : (
-                  'Compartir'
+                  'Compartir Experiencia'
                 )}
               </Button>
             </div>
@@ -1292,21 +1319,21 @@ export const ExperienceMural = () => {
       </Dialog>
 
       {/* Modal de edición ACTUALIZADO */}
-<ExperienceEditModal
-  experience={experienceToEdit}
-  isOpen={isEditOpen}
-  onClose={() => {
-    setExperienceToEdit(null);
-    setIsEditOpen(false);
-  }}
-  onSave={handleEdit}
-  onSaveWithImage={handleEditWithImage}
-  loading={editing === experienceToEdit?.id}
-  modelo={!!modelo}
-  cargandoModelo={cargandoModelo}
-  errorModelo={errorModelo}
-  analizarImagen={analizarImagen}
-/>
+      <ExperienceEditModal
+        experience={experienceToEdit}
+        isOpen={isEditOpen}
+        onClose={() => {
+          setExperienceToEdit(null);
+          setIsEditOpen(false);
+        }}
+        onSave={handleEdit}
+        onSaveWithImage={handleEditWithImage}
+        loading={editing === experienceToEdit?.id}
+        modelo={!!modelo}
+        cargandoModelo={cargandoModelo}
+        errorModelo={errorModelo}
+        analizarImagen={analizarImagen}
+      />
 
       {/* Modal de confirmación de eliminación */}
       <Dialog open={!!experienceToDelete} onOpenChange={() => setExperienceToDelete(null)}>
@@ -1335,6 +1362,9 @@ export const ExperienceMural = () => {
                   </p>
                   <p className="text-xs text-gray-500">
                     {experienceToDelete.contador_vistas} vistas
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Por: {experienceToDelete.nombre_usuario || 'Usuario Anónimo'}
                   </p>
                 </div>
               </div>
@@ -1368,7 +1398,7 @@ export const ExperienceMural = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de imagen de experiencia - SIN LIKES */}
+      {/* Modal de imagen de experiencia */}
       <ExperienceImageModal
         experience={selectedExperience}
         isOpen={!!selectedExperience}

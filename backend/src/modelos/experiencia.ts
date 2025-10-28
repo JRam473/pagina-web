@@ -3,6 +3,7 @@ export interface Experiencia {
   id: string;
   url_foto: string;
   descripcion: string;
+  nombre_usuario: string;
   creado_en: Date;
   ruta_almacenamiento: string;
   
@@ -28,11 +29,13 @@ export interface Experiencia {
 
 export interface ExperienciaRequest {
   descripcion: string;
+  nombre_usuario: string;
   lugarId?: string;
 }
 
 export interface ExperienciaConLugar extends Experiencia {
   lugar_nombre?: string;
+  
   lugar_ubicacion?: string;
 }
 

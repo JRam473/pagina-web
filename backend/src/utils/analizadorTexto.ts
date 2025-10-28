@@ -692,7 +692,7 @@ const filtroPalabras = new FiltroPalabras();
 export class AnalizadorTexto {
   
   /**
-   * Analiza texto y retorna resultado compatible con el nuevo sistema
+   * Analiza texto y retorna resultado con todas las propiedades necesarias - CORREGIDO
    */
   analizarTexto(texto: string): AnalisisTexto {
     if (!texto?.trim()) {
@@ -701,6 +701,13 @@ export class AnalizadorTexto {
         puntuacion: 0.1,
         palabrasOfensivas: [],
         razon: 'Texto vacío o muy corto',
+        // ✅ CORREGIDO: Propiedades opcionales con valores por defecto
+        tieneSpam: false,
+        tieneUrls: false,
+        tieneContacto: false,
+        esCohorente: false,
+        longitud: 0,
+        cantidadPalabras: 0,
         detalles: { 
           metodo: 'texto_vacio',
           intencion: 'sinsentido',
@@ -719,10 +726,15 @@ export class AnalizadorTexto {
     const resultadoScan = filtroPalabras.scan(texto);
     const intencion = filtroPalabras.analizarIntencion(texto);
     
+    // ✅ CALCULAR PROPIEDADES ADICIONALES
+    const tieneSpam = resultadoScan.esSpam || intencion === 'spam';
+    const tieneUrls = resultadoScan.tienePatronesSpam;
+    const tieneContacto = resultadoScan.tienePatronesSpam; // Puedes refinar esto
+    const esCohorente = resultadoScan.calidadTexto.tieneSentido && !resultadoScan.estructuraTexto.esSinSentido;
+    const palabras = texto.split(/\s+/).filter(p => p.length > 0);
+    
     console.log(`🔍 Intención detectada: ${intencion}`);
-    console.log(`🔍 Estructura sin sentido: ${resultadoScan.estructuraTexto.esSinSentido}`);
-    console.log(`🔍 Calidad sin sentido: ${!resultadoScan.calidadTexto.tieneSentido}`);
-    console.log(`🔍 Palabras encontradas:`, resultadoScan.palabras);
+    console.log(`🔍 Spam: ${tieneSpam}, URLs: ${tieneUrls}, Coherente: ${esCohorente}`);
 
     // ✅ LÓGICA DE PUNTUACIÓN MEJORADA CON MÚLTIPLES FACTORES
     let puntuacionBase = 1.0;
