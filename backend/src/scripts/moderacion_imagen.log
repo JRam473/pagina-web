@@ -1,0 +1,372 @@
+2025-10-30 13:04:28,096 - huggingface_hub.file_download - WARNING - Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
+2025-10-30 13:11:16,557 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761851473537-874766990.jpeg
+2025-10-30 13:11:16,557 - __main__ - INFO - Intentando cargar modelos de Hugging Face...
+2025-10-30 13:11:27,641 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:11:27,641 - __main__ - INFO - Probando modelo: microsoft/resnet-50
+2025-10-30 13:11:28,785 - __main__ - INFO - Modelo cargado exitosamente: microsoft/resnet-50
+2025-10-30 13:11:28,786 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:11:28,897 - __main__ - INFO - Imagen identificada como paisaje - aplicando ajuste
+2025-10-30 13:11:29,207 - __main__ - INFO - Resultado análisis - Bruto: 0.000, Ajustado: 0.000, Umbral: 0.50
+2025-10-30 13:11:29,208 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 960, 'relacion_aspecto': 1.3333333333333333, 'variacion_color': 3255.7722487986307}
+2025-10-30 13:11:29,208 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:11:29,208 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.000
+2025-10-30 13:12:12,982 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761851531734-83769069.jpg
+2025-10-30 13:12:12,982 - __main__ - INFO - Intentando cargar modelos de Hugging Face...
+2025-10-30 13:12:20,770 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:12:20,770 - __main__ - INFO - Probando modelo: microsoft/resnet-50
+2025-10-30 13:12:21,795 - __main__ - INFO - Modelo cargado exitosamente: microsoft/resnet-50
+2025-10-30 13:12:21,795 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:12:21,862 - __main__ - INFO - Imagen identificada como paisaje - aplicando ajuste
+2025-10-30 13:12:22,041 - __main__ - INFO - Resultado análisis - Bruto: 0.000, Ajustado: 0.000, Umbral: 0.50
+2025-10-30 13:12:22,041 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 13:12:22,041 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:12:22,041 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.000
+2025-10-30 13:26:57,045 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761852415883-335818050.jpg
+2025-10-30 13:26:57,345 - __main__ - INFO - Intentando cargar modelos de Hugging Face...
+2025-10-30 13:27:07,606 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:27:07,606 - __main__ - INFO - Probando modelo: microsoft/resnet-50
+2025-10-30 13:27:09,186 - __main__ - INFO - Modelo cargado exitosamente: microsoft/resnet-50
+2025-10-30 13:27:09,187 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:27:09,305 - __main__ - INFO - Imagen identificada como paisaje - aplicando ajuste
+2025-10-30 13:27:09,955 - __main__ - INFO - Resultado análisis - Bruto: 0.000, Ajustado: 0.000, Umbral: 0.50
+2025-10-30 13:27:09,956 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 13:27:09,956 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:27:09,956 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.000
+2025-10-30 13:29:43,462 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761852582075-362040441.jpeg
+2025-10-30 13:29:43,462 - __main__ - INFO - Intentando cargar modelos de Hugging Face...
+2025-10-30 13:29:56,015 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:29:56,015 - __main__ - INFO - Probando modelo: microsoft/resnet-50
+2025-10-30 13:29:57,640 - __main__ - INFO - Modelo cargado exitosamente: microsoft/resnet-50
+2025-10-30 13:29:57,640 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:29:57,849 - __main__ - INFO - Imagen identificada como paisaje - aplicando ajuste
+2025-10-30 13:29:58,175 - __main__ - INFO - Resultado análisis - Bruto: 0.000, Ajustado: 0.000, Umbral: 0.50
+2025-10-30 13:29:58,175 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 960, 'relacion_aspecto': 1.3333333333333333, 'variacion_color': 3255.7722487986307}
+2025-10-30 13:29:58,176 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:29:58,176 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.000
+2025-10-30 13:32:27,914 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761852744759-580312922.jpg
+2025-10-30 13:32:27,915 - __main__ - INFO - Intentando cargar modelos de Hugging Face...
+2025-10-30 13:32:49,771 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:32:49,771 - __main__ - INFO - Probando modelo: microsoft/resnet-50
+2025-10-30 13:32:51,265 - __main__ - INFO - Modelo cargado exitosamente: microsoft/resnet-50
+2025-10-30 13:32:51,266 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:32:51,361 - __main__ - INFO - Imagen identificada como paisaje - aplicando ajuste
+2025-10-30 13:32:51,596 - __main__ - INFO - Resultado análisis - Bruto: 0.000, Ajustado: 0.000, Umbral: 0.50
+2025-10-30 13:32:51,597 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 13:32:51,597 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:32:51,597 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.000
+2025-10-30 13:34:08,243 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761852847120-888950964.jpg
+2025-10-30 13:34:08,244 - __main__ - INFO - Intentando cargar modelos de Hugging Face...
+2025-10-30 13:34:16,319 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:34:16,319 - __main__ - INFO - Probando modelo: microsoft/resnet-50
+2025-10-30 13:34:17,408 - __main__ - INFO - Modelo cargado exitosamente: microsoft/resnet-50
+2025-10-30 13:34:17,408 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:34:17,606 - __main__ - INFO - Resultado análisis - Bruto: 0.000, Ajustado: 0.000, Umbral: 0.30
+2025-10-30 13:34:17,606 - __main__ - INFO - Características: {'es_paisaje': False, 'es_retrato': False, 'ancho': 275, 'alto': 183, 'relacion_aspecto': 1.5027322404371584, 'variacion_color': 7244.67473378693}
+2025-10-30 13:34:17,607 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:34:17,607 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.000
+2025-10-30 13:35:09,876 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761852908547-489783054.jpeg
+2025-10-30 13:35:09,876 - __main__ - INFO - Intentando cargar modelos de Hugging Face...
+2025-10-30 13:35:26,889 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:35:26,890 - __main__ - INFO - Probando modelo: microsoft/resnet-50
+2025-10-30 13:35:28,987 - __main__ - INFO - Modelo cargado exitosamente: microsoft/resnet-50
+2025-10-30 13:35:28,987 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:35:29,198 - __main__ - INFO - Imagen identificada como paisaje - aplicando ajuste
+2025-10-30 13:35:29,501 - __main__ - INFO - Resultado análisis - Bruto: 0.000, Ajustado: 0.000, Umbral: 0.50
+2025-10-30 13:35:29,501 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 960, 'relacion_aspecto': 1.3333333333333333, 'variacion_color': 3255.7722487986307}
+2025-10-30 13:35:29,502 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:35:29,502 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.000
+2025-10-30 13:40:00,267 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761853198952-808901825.jpg
+2025-10-30 13:40:00,267 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 13:40:09,522 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:40:09,523 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 13:40:11,532 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 13:40:11,532 - __main__ - INFO - Etiquetas del modelo: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 13:40:11,532 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:40:12,394 - __main__ - INFO - Probabilidades brutas: tensor([0.3134, 0.6866])
+2025-10-30 13:40:12,394 - __main__ - INFO - Paisaje detectado - umbral ajustado a: 0.7
+2025-10-30 13:40:12,394 - __main__ - INFO - Resultado violencia: 0.6866, Umbral: 0.70
+2025-10-30 13:40:12,394 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 13:40:12,394 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:40:12,394 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.687
+2025-10-30 13:41:03,850 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761853262606-239205070.jpg
+2025-10-30 13:41:03,851 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 13:41:13,654 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:41:13,654 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 13:41:15,715 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 13:41:15,715 - __main__ - INFO - Etiquetas del modelo: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 13:41:15,716 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:41:16,186 - __main__ - INFO - Probabilidades brutas: tensor([0.7047, 0.2953])
+2025-10-30 13:41:16,187 - __main__ - INFO - Resultado violencia: 0.2953, Umbral: 0.30
+2025-10-30 13:41:16,187 - __main__ - INFO - Características: {'es_paisaje': False, 'es_retrato': False, 'ancho': 275, 'alto': 183, 'relacion_aspecto': 1.5027322404371584, 'variacion_color': 7244.67473378693}
+2025-10-30 13:41:16,187 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:41:16,187 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.295
+2025-10-30 13:42:13,322 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761853331901-303454250.jpeg
+2025-10-30 13:42:13,323 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 13:42:22,577 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:42:22,577 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 13:42:24,801 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 13:42:24,801 - __main__ - INFO - Etiquetas del modelo: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 13:42:24,801 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:42:25,310 - __main__ - INFO - Probabilidades brutas: tensor([0.4433, 0.5567])
+2025-10-30 13:42:25,311 - __main__ - INFO - Paisaje detectado - umbral ajustado a: 0.7
+2025-10-30 13:42:25,311 - __main__ - INFO - Resultado violencia: 0.5567, Umbral: 0.70
+2025-10-30 13:42:25,311 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 960, 'relacion_aspecto': 1.3333333333333333, 'variacion_color': 3255.7722487986307}
+2025-10-30 13:42:25,311 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:42:25,311 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.557
+2025-10-30 13:58:35,398 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761854314193-219005850.jpg
+2025-10-30 13:58:35,398 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 13:58:43,296 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:58:43,297 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 13:58:45,246 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 13:58:45,246 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 13:58:45,246 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:58:45,343 - __main__ - INFO - Características de la imagen: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 13:58:45,697 - __main__ - INFO - Probabilidades brutas: tensor([0.6800, 0.3200])
+2025-10-30 13:58:45,697 - __main__ - INFO - Modelo violencia: no_violence=0.6800, violence=0.3200
+2025-10-30 13:58:45,697 - __main__ - INFO - Resultado final - Violencia: 0.3200, Umbral: 0.1000, Es violento: True
+2025-10-30 13:58:45,698 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:58:45,768 - __main__ - INFO - Análisis completado: Apto=False, Riesgo=0.320
+2025-10-30 13:59:10,590 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761854349017-786167817.jpeg
+2025-10-30 13:59:10,590 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 13:59:22,773 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:59:22,773 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 13:59:24,558 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 13:59:24,558 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 13:59:24,558 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:59:24,700 - __main__ - INFO - Características de la imagen: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 960, 'relacion_aspecto': 1.3333333333333333, 'variacion_color': 3255.7722487986307}
+2025-10-30 13:59:25,076 - __main__ - INFO - Probabilidades brutas: tensor([0.7478, 0.2522])
+2025-10-30 13:59:25,076 - __main__ - INFO - Modelo violencia: no_violence=0.7478, violence=0.2522
+2025-10-30 13:59:25,076 - __main__ - INFO - Resultado final - Violencia: 0.2522, Umbral: 0.6000, Es violento: False
+2025-10-30 13:59:25,077 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:59:25,185 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.252
+2025-10-30 13:59:44,305 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761854382658-451121391.jpg
+2025-10-30 13:59:44,305 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 13:59:53,366 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 13:59:53,366 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 13:59:55,327 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 13:59:55,327 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 13:59:55,356 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 13:59:55,379 - __main__ - INFO - Características de la imagen: {'es_paisaje': False, 'es_retrato': False, 'ancho': 275, 'alto': 183, 'relacion_aspecto': 1.5027322404371584, 'variacion_color': 7244.67473378693}
+2025-10-30 13:59:55,777 - __main__ - INFO - Probabilidades brutas: tensor([0.7366, 0.2634])
+2025-10-30 13:59:55,777 - __main__ - INFO - Modelo violencia: no_violence=0.7366, violence=0.2634
+2025-10-30 13:59:55,777 - __main__ - INFO - Resultado final - Violencia: 0.2634, Umbral: 0.1500, Es violento: True
+2025-10-30 13:59:55,777 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 13:59:55,784 - __main__ - INFO - Análisis completado: Apto=False, Riesgo=0.263
+2025-10-30 14:00:18,667 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761854417003-40159308.jpg
+2025-10-30 14:00:18,668 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 14:00:29,706 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 14:00:29,706 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 14:00:31,621 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 14:00:31,621 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 14:00:31,621 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 14:00:31,793 - __main__ - INFO - Características de la imagen: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1600, 'alto': 1065, 'relacion_aspecto': 1.5023474178403755, 'variacion_color': 2765.9619504942325}
+2025-10-30 14:00:32,157 - __main__ - INFO - Probabilidades brutas: tensor([0.2125, 0.7875])
+2025-10-30 14:00:32,158 - __main__ - INFO - Modelo violencia: no_violence=0.2125, violence=0.7875
+2025-10-30 14:00:32,158 - __main__ - WARNING - Probabilidad de violencia alta (0.7875) - Rechazando
+2025-10-30 14:00:32,158 - __main__ - INFO - Resultado final - Violencia: 0.7875, Umbral: 0.1000, Es violento: True
+2025-10-30 14:00:32,158 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 14:00:32,288 - __main__ - INFO - Análisis completado: Apto=False, Riesgo=0.788
+2025-10-30 14:01:02,878 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761854461057-147219582.jpg
+2025-10-30 14:01:02,878 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 14:01:15,815 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 14:01:15,816 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 14:01:18,002 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 14:01:18,003 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 14:01:18,003 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 14:01:18,326 - __main__ - INFO - Características de la imagen: {'es_paisaje': False, 'es_retrato': True, 'ancho': 1365, 'alto': 2048, 'relacion_aspecto': 0.66650390625, 'variacion_color': 4442.9695729963905}
+2025-10-30 14:01:20,269 - __main__ - INFO - Probabilidades brutas: tensor([0.4073, 0.5927])
+2025-10-30 14:01:20,270 - __main__ - INFO - Modelo violencia: no_violence=0.4073, violence=0.5927
+2025-10-30 14:01:20,270 - __main__ - WARNING - Probabilidad de violencia alta (0.5927) - Rechazando
+2025-10-30 14:01:20,270 - __main__ - INFO - Resultado final - Violencia: 0.5927, Umbral: 0.1000, Es violento: True
+2025-10-30 14:01:20,273 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 14:01:20,613 - __main__ - INFO - Análisis completado: Apto=False, Riesgo=0.593
+2025-10-30 14:32:51,645 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761856368554-551022725.jpg
+2025-10-30 14:32:51,645 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 14:33:04,457 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 14:33:04,457 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 14:33:06,594 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 14:33:06,595 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 14:33:06,595 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 14:33:06,689 - __main__ - INFO - Características de la imagen: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 14:33:07,057 - __main__ - INFO - Probabilidades brutas: tensor([0.3934, 0.6066])
+2025-10-30 14:33:07,057 - __main__ - INFO - Modelo violencia: no_violence=0.3934, violence=0.6066
+2025-10-30 14:33:07,057 - __main__ - INFO - Paisaje detectado - aplicando umbral más permisivo
+2025-10-30 14:33:07,057 - __main__ - INFO - Resultado final - Violencia: 0.6066, Umbral: 0.7000, Es violento: False
+2025-10-30 14:33:07,057 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 14:33:07,124 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.607
+2025-10-30 14:33:39,874 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761856417730-769183805.jpg
+2025-10-30 14:33:39,874 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 14:33:48,220 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 14:33:48,220 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 14:33:50,083 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 14:33:50,083 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 14:33:50,083 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 14:33:50,108 - __main__ - INFO - Características de la imagen: {'es_paisaje': False, 'es_retrato': False, 'ancho': 275, 'alto': 183, 'relacion_aspecto': 1.5027322404371584, 'variacion_color': 7244.67473378693}
+2025-10-30 14:33:50,475 - __main__ - INFO - Probabilidades brutas: tensor([0.3111, 0.6889])
+2025-10-30 14:33:50,476 - __main__ - INFO - Modelo violencia: no_violence=0.3111, violence=0.6889
+2025-10-30 14:33:50,476 - __main__ - INFO - Resultado final - Violencia: 0.6889, Umbral: 0.4000, Es violento: True
+2025-10-30 14:33:50,476 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 14:33:50,482 - __main__ - INFO - Análisis completado: Apto=False, Riesgo=0.689
+2025-10-30 14:34:10,030 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761856448227-691202518.jpg
+2025-10-30 14:34:10,030 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 14:34:20,117 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 14:34:20,117 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 14:34:21,963 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 14:34:21,963 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 14:34:21,963 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 14:34:22,057 - __main__ - INFO - Características de la imagen: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 14:34:22,442 - __main__ - INFO - Probabilidades brutas: tensor([0.5022, 0.4978])
+2025-10-30 14:34:22,443 - __main__ - INFO - Modelo violencia: no_violence=0.5022, violence=0.4978
+2025-10-30 14:34:22,443 - __main__ - INFO - Paisaje detectado - aplicando umbral más permisivo
+2025-10-30 14:34:22,443 - __main__ - INFO - Paisaje detectado - dando beneficio de la duda
+2025-10-30 14:34:22,443 - __main__ - INFO - Resultado final - Violencia: 0.4978, Umbral: 0.7000, Es violento: False
+2025-10-30 14:34:22,443 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 14:34:22,525 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.498
+2025-10-30 14:34:40,960 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761856478720-222858942.jpeg
+2025-10-30 14:34:40,961 - __main__ - INFO - Intentando cargar modelos especializados en violencia...
+2025-10-30 14:34:52,095 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 14:34:52,095 - __main__ - INFO - Probando modelo especializado: jaranohaal/vit-base-violence-detection
+2025-10-30 14:34:54,057 - __main__ - INFO - Etiquetas del modelo jaranohaal/vit-base-violence-detection: {0: 'LABEL_0', 1: 'LABEL_1'}
+2025-10-30 14:34:54,057 - __main__ - INFO - Modelo especializado cargado exitosamente: jaranohaal/vit-base-violence-detection
+2025-10-30 14:34:54,057 - __main__ - INFO - Analizando contenido violento...
+2025-10-30 14:34:54,290 - __main__ - INFO - Características de la imagen: {'es_paisaje': False, 'es_retrato': True, 'ancho': 1440, 'alto': 1800, 'relacion_aspecto': 0.8, 'variacion_color': 4586.53117947825}
+2025-10-30 14:34:54,653 - __main__ - INFO - Probabilidades brutas: tensor([0.2137, 0.7863])
+2025-10-30 14:34:54,653 - __main__ - INFO - Modelo violencia: no_violence=0.2137, violence=0.7863
+2025-10-30 14:34:54,653 - __main__ - INFO - Resultado final - Violencia: 0.7863, Umbral: 0.6000, Es violento: True
+2025-10-30 14:34:54,654 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 14:34:54,848 - __main__ - INFO - Análisis completado: Apto=False, Riesgo=0.786
+2025-10-30 14:39:15,644 - __main__ - INFO - Iniciando análisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761856754248-378679503.jpg
+2025-10-30 14:39:15,644 - __main__ - INFO - Intentando cargar modelos NSFW confiables...
+2025-10-30 14:39:26,070 - __main__ - INFO - Dependencias importadas correctamente
+2025-10-30 14:39:26,071 - __main__ - INFO - Probando modelo: Falconsai/nsfw_image_detection
+2025-10-30 14:39:27,622 - huggingface_hub.file_download - WARNING - Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
+2025-10-30 14:40:47,881 - __main__ - INFO - Etiquetas del modelo Falconsai/nsfw_image_detection: {0: 'normal', 1: 'nsfw'}
+2025-10-30 14:40:47,883 - __main__ - INFO - Analizando contenido inapropiado...
+2025-10-30 14:40:47,947 - __main__ - INFO - Características: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 14:40:48,356 - __main__ - INFO - Probabilidades brutas: tensor([9.9938e-01, 6.1846e-04])
+2025-10-30 14:40:48,356 - __main__ - INFO - Etiquetas disponibles: {0: 'normal', 1: 'nsfw'}
+2025-10-30 14:40:48,356 - __main__ - INFO - Etiqueta inapropiada detectada: nsfw = 0.0006
+2025-10-30 14:40:48,356 - __main__ - INFO - Paisaje detectado - dando beneficio de la duda
+2025-10-30 14:40:48,356 - __main__ - INFO - Resultado - Inapropiado: 0.0006, Umbral: 0.8000, Es inapropiado: False
+2025-10-30 14:40:48,356 - __main__ - INFO - Analizando detección de armas...
+2025-10-30 14:40:48,356 - __main__ - INFO - Paisaje detectado - aprobado automáticamente
+2025-10-30 14:40:48,357 - __main__ - INFO - Análisis completado: Apto=True, Riesgo=0.001
+2025-10-30 14:47:25,385 - __main__ - INFO - Iniciando analisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761857242952-606520624.jpg
+2025-10-30 14:47:25,385 - __main__ - INFO - Cargando modelos especializados para moderacion...
+2025-10-30 14:47:37,881 - __main__ - INFO - Cargando modelo: microsoft/resnet-50
+2025-10-30 14:47:39,325 - __main__ - INFO - Modelo cargado: microsoft/resnet-50
+2025-10-30 14:47:39,325 - __main__ - INFO - Cargando modelo: Falconsai/nsfw_image_detection
+2025-10-30 14:47:39,935 - __main__ - INFO - Modelo cargado: Falconsai/nsfw_image_detection
+2025-10-30 14:47:39,935 - __main__ - INFO - Cargando modelo: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:47:40,756 - huggingface_hub.file_download - WARNING - Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
+2025-10-30 14:48:46,583 - __main__ - INFO - Modelo cargado: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:48:46,583 - __main__ - INFO - Modelos cargados exitosamente: 3
+2025-10-30 14:48:46,583 - __main__ - INFO - Analizando contenido peligroso...
+2025-10-30 14:48:46,597 - __main__ - INFO - Caracteristicas de la imagen: {'es_paisaje': False, 'es_retrato': False, 'ancho': 275, 'alto': 183, 'relacion_aspecto': 1.5027322404371584, 'variacion_color': 7244.67473378693}
+2025-10-30 14:48:47,164 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:48:47,164 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.9989
+2025-10-30 14:48:47,590 - __main__ - INFO - Clase peligrosa detectada: nsfw = 0.0015
+2025-10-30 14:48:48,004 - __main__ - INFO - Analisis completo - Peligroso: True, Probabilidad: 0.5002
+2025-10-30 14:48:48,004 - __main__ - INFO - Analizando deteccion de armas...
+2025-10-30 14:48:48,149 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:48:48,150 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.9989
+2025-10-30 14:48:48,150 - __main__ - INFO - Analisis completado: Apto=False, Riesgo=0.500
+2025-10-30 14:51:37,282 - __main__ - INFO - Iniciando analisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761857495919-541227632.jpg
+2025-10-30 14:51:37,282 - __main__ - INFO - Cargando modelos especializados para moderacion...
+2025-10-30 14:51:47,823 - __main__ - INFO - Cargando modelo: microsoft/resnet-50
+2025-10-30 14:51:49,024 - __main__ - INFO - Modelo cargado: microsoft/resnet-50
+2025-10-30 14:51:49,025 - __main__ - INFO - Cargando modelo: Falconsai/nsfw_image_detection
+2025-10-30 14:51:49,623 - __main__ - INFO - Modelo cargado: Falconsai/nsfw_image_detection
+2025-10-30 14:51:49,624 - __main__ - INFO - Cargando modelo: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:51:50,091 - __main__ - INFO - Modelo cargado: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:51:50,091 - __main__ - INFO - Modelos cargados exitosamente: 3
+2025-10-30 14:51:50,091 - __main__ - INFO - Analizando contenido peligroso...
+2025-10-30 14:51:50,178 - __main__ - INFO - Caracteristicas de la imagen: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 720, 'relacion_aspecto': 1.7777777777777777, 'variacion_color': 4405.372784158787}
+2025-10-30 14:51:50,401 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:51:50,402 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.0000
+2025-10-30 14:51:50,864 - __main__ - INFO - Clase peligrosa detectada: nsfw = 0.0006
+2025-10-30 14:51:51,340 - __main__ - INFO - Paisaje detectado - criterio mas permisivo aplicado
+2025-10-30 14:51:51,340 - __main__ - INFO - Analisis completo - Peligroso: False, Probabilidad: 0.0003
+2025-10-30 14:51:51,340 - __main__ - INFO - Analizando deteccion de armas...
+2025-10-30 14:51:51,510 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:51:51,510 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.0000
+2025-10-30 14:51:51,510 - __main__ - INFO - Paisaje muy claro con baja probabilidad - aprobado
+2025-10-30 14:51:51,510 - __main__ - INFO - Analisis completado: Apto=True, Riesgo=0.000
+2025-10-30 14:52:13,517 - __main__ - INFO - Iniciando analisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761857531534-102301246.jpeg
+2025-10-30 14:52:13,517 - __main__ - INFO - Cargando modelos especializados para moderacion...
+2025-10-30 14:52:30,490 - __main__ - INFO - Cargando modelo: microsoft/resnet-50
+2025-10-30 14:52:32,529 - __main__ - INFO - Modelo cargado: microsoft/resnet-50
+2025-10-30 14:52:32,529 - __main__ - INFO - Cargando modelo: Falconsai/nsfw_image_detection
+2025-10-30 14:52:33,439 - __main__ - INFO - Modelo cargado: Falconsai/nsfw_image_detection
+2025-10-30 14:52:33,439 - __main__ - INFO - Cargando modelo: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:52:34,095 - __main__ - INFO - Modelo cargado: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:52:34,095 - __main__ - INFO - Modelos cargados exitosamente: 3
+2025-10-30 14:52:34,095 - __main__ - INFO - Analizando contenido peligroso...
+2025-10-30 14:52:34,191 - __main__ - INFO - Caracteristicas de la imagen: {'es_paisaje': True, 'es_retrato': False, 'ancho': 1280, 'alto': 960, 'relacion_aspecto': 1.3333333333333333, 'variacion_color': 3255.7722487986307}
+2025-10-30 14:52:34,391 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:52:34,392 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.0000
+2025-10-30 14:52:34,870 - __main__ - INFO - Clase peligrosa detectada: nsfw = 0.0001
+2025-10-30 14:52:35,316 - __main__ - INFO - Paisaje detectado - criterio mas permisivo aplicado
+2025-10-30 14:52:35,317 - __main__ - INFO - Analisis completo - Peligroso: False, Probabilidad: 0.0001
+2025-10-30 14:52:35,317 - __main__ - INFO - Analizando deteccion de armas...
+2025-10-30 14:52:35,544 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:52:35,545 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.0000
+2025-10-30 14:52:35,545 - __main__ - INFO - Paisaje muy claro con baja probabilidad - aprobado
+2025-10-30 14:52:35,546 - __main__ - INFO - Analisis completado: Apto=True, Riesgo=0.000
+2025-10-30 14:53:48,917 - __main__ - INFO - Iniciando analisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761857627483-646249558.jpg
+2025-10-30 14:53:48,917 - __main__ - INFO - Cargando modelos especializados para moderacion...
+2025-10-30 14:54:01,461 - __main__ - INFO - Cargando modelo: microsoft/resnet-50
+2025-10-30 14:54:02,926 - __main__ - INFO - Modelo cargado: microsoft/resnet-50
+2025-10-30 14:54:02,926 - __main__ - INFO - Cargando modelo: Falconsai/nsfw_image_detection
+2025-10-30 14:54:03,576 - __main__ - INFO - Modelo cargado: Falconsai/nsfw_image_detection
+2025-10-30 14:54:03,576 - __main__ - INFO - Cargando modelo: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:54:04,023 - __main__ - INFO - Modelo cargado: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:54:04,023 - __main__ - INFO - Modelos cargados exitosamente: 3
+2025-10-30 14:54:04,023 - __main__ - INFO - Analizando contenido peligroso...
+2025-10-30 14:54:04,044 - __main__ - INFO - Caracteristicas de la imagen: {'es_paisaje': False, 'es_retrato': False, 'ancho': 275, 'alto': 183, 'relacion_aspecto': 1.5027322404371584, 'variacion_color': 4473.639587503043}
+2025-10-30 14:54:04,209 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:54:04,210 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 1.0000
+2025-10-30 14:54:04,628 - __main__ - INFO - Clase peligrosa detectada: nsfw = 0.0002
+2025-10-30 14:54:05,051 - __main__ - INFO - Analisis completo - Peligroso: True, Probabilidad: 0.5001
+2025-10-30 14:54:05,051 - __main__ - INFO - Analizando deteccion de armas...
+2025-10-30 14:54:05,192 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:54:05,193 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 1.0000
+2025-10-30 14:54:05,193 - __main__ - INFO - Analisis completado: Apto=False, Riesgo=0.500
+2025-10-30 14:55:58,739 - __main__ - INFO - Iniciando analisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761857757258-590045232.jpg
+2025-10-30 14:55:58,740 - __main__ - INFO - Cargando modelos especializados para moderacion...
+2025-10-30 14:56:10,842 - __main__ - INFO - Cargando modelo: microsoft/resnet-50
+2025-10-30 14:56:13,096 - __main__ - INFO - Modelo cargado: microsoft/resnet-50
+2025-10-30 14:56:13,096 - __main__ - INFO - Cargando modelo: Falconsai/nsfw_image_detection
+2025-10-30 14:56:13,858 - __main__ - INFO - Modelo cargado: Falconsai/nsfw_image_detection
+2025-10-30 14:56:13,858 - __main__ - INFO - Cargando modelo: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:56:14,477 - __main__ - INFO - Modelo cargado: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:56:14,477 - __main__ - INFO - Modelos cargados exitosamente: 3
+2025-10-30 14:56:14,477 - __main__ - INFO - Analizando contenido peligroso...
+2025-10-30 14:56:14,504 - __main__ - INFO - Caracteristicas de la imagen: {'es_paisaje': False, 'es_retrato': False, 'ancho': 300, 'alto': 168, 'relacion_aspecto': 1.7857142857142858, 'variacion_color': 1663.2409715408019}
+2025-10-30 14:56:14,771 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:56:14,772 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.0905
+2025-10-30 14:56:15,440 - __main__ - INFO - Clase peligrosa detectada: nsfw = 0.0003
+2025-10-30 14:56:16,125 - __main__ - INFO - Analisis completo - Peligroso: False, Probabilidad: 0.0454
+2025-10-30 14:56:16,125 - __main__ - INFO - Analizando deteccion de armas...
+2025-10-30 14:56:16,354 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:56:16,355 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.0905
+2025-10-30 14:56:16,356 - __main__ - INFO - Analisis completado: Apto=False, Riesgo=0.045
+2025-10-30 14:57:16,078 - __main__ - INFO - Iniciando analisis de imagen: D:\Residencias\pagina-web\backend\uploads\images\experiencias\experiencia-1761857834610-335774947.jpg
+2025-10-30 14:57:16,079 - __main__ - INFO - Cargando modelos especializados para moderacion...
+2025-10-30 14:57:31,522 - __main__ - INFO - Cargando modelo: microsoft/resnet-50
+2025-10-30 14:57:32,571 - __main__ - INFO - Modelo cargado: microsoft/resnet-50
+2025-10-30 14:57:32,571 - __main__ - INFO - Cargando modelo: Falconsai/nsfw_image_detection
+2025-10-30 14:57:33,098 - __main__ - INFO - Modelo cargado: Falconsai/nsfw_image_detection
+2025-10-30 14:57:33,098 - __main__ - INFO - Cargando modelo: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:57:33,569 - __main__ - INFO - Modelo cargado: dima806/deepfake_vs_real_image_detection
+2025-10-30 14:57:33,569 - __main__ - INFO - Modelos cargados exitosamente: 3
+2025-10-30 14:57:33,569 - __main__ - INFO - Analizando contenido peligroso...
+2025-10-30 14:57:33,585 - __main__ - INFO - Caracteristicas de la imagen: {'es_paisaje': False, 'es_retrato': False, 'ancho': 275, 'alto': 183, 'relacion_aspecto': 1.5027322404371584, 'variacion_color': 7244.67473378693}
+2025-10-30 14:57:33,764 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:57:33,764 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.9989
+2025-10-30 14:57:34,165 - __main__ - INFO - Clase peligrosa detectada: nsfw = 0.0015
+2025-10-30 14:57:34,582 - __main__ - INFO - Analisis completo - Peligroso: True, Probabilidad: 0.5002
+2025-10-30 14:57:34,583 - __main__ - INFO - Analizando deteccion de armas...
+2025-10-30 14:57:34,721 - __main__ - INFO - Clase peligrosa detectada: letter opener, paper knife, paperknife = 0.0000
+2025-10-30 14:57:34,722 - __main__ - INFO - Clase peligrosa detectada: revolver, six-gun, six-shooter = 0.9989
+2025-10-30 14:57:34,722 - __main__ - INFO - Analisis completado: Apto=False, Riesgo=0.500
