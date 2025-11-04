@@ -6,18 +6,21 @@ import os
 from PIL import Image
 import numpy as np
 
-# Configurar logging básico (sin emojis)
+# Configurar logging MÍNIMO
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Cambiado a WARNING para reducir logs
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("moderacion_armas.log")]
+    handlers=[
+        logging.FileHandler("moderacion_completa.log", encoding='utf-8'),
+    ]
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("MODERACION_COMPLETA")
+
+# SILENCIAR YOLO - IMPORTANTE para evitar logs en stdout
+os.environ['YOLO_VERBOSE'] = 'False'
 
 class CustomJSONEncoder(json.JSONEncoder):
-    """Maneja correctamente tipos de numpy"""
     def default(self, obj):
-        import numpy as np
         if isinstance(obj, (np.bool_,)):
             return bool(obj)
         if isinstance(obj, (np.integer,)):
@@ -29,99 +32,334 @@ class CustomJSONEncoder(json.JSONEncoder):
 class WeaponDetector:
     def __init__(self):
         self.model = None
-        self.processor = None
-        self.labels = {}
         self.cargado = False
-        self.load_model()
+        self.model_name = "YOLOv8n"
+        self.model_type = None
 
     def load_model(self):
-        """Carga un modelo liviano para detección de objetos/armas"""
+        """Carga el mejor modelo disponible para detección de armas"""
         try:
-            from transformers import AutoImageProcessor, AutoModelForImageClassification
-            import torch
-
-            modelo = "microsoft/resnet-50"  # Alternativa ligera y estable
-            logger.info(f"Cargando modelo {modelo}...")
-
-            self.processor = AutoImageProcessor.from_pretrained(modelo)
-            self.model = AutoModelForImageClassification.from_pretrained(modelo)
-            self.model.eval()
-            self.labels = self.model.config.id2label
-            self.cargado = True
-            logger.info("Modelo cargado correctamente.")
-
+            # Intentar cargar YOLO primero (mejor para detección de objetos)
+            try:
+                from ultralytics import YOLO
+                self.model = YOLO('yolov8n.pt')
+                self.model_type = 'yolo'
+                self.cargado = True
+                logger.info("YOLOv8 cargado correctamente")
+            except ImportError:
+                from transformers import pipeline
+                self.classifier = pipeline(
+                    "zero-shot-image-classification", 
+                    model="openai/clip-vit-base-patch32"
+                )
+                self.model_type = 'clip'
+                self.model_name = "CLIP"
+                self.cargado = True
+                logger.info("CLIP cargado como fallback para armas")
         except Exception as e:
-            logger.error(f"Error cargando modelo: {e}")
+            logger.error(f"Error cargando modelo de armas: {e}")
             self.cargado = False
 
     def analyze_weapons(self, image_path: str):
-        """Analiza una imagen y detecta armas (gun, knife, rifle, pistol...)"""
+        """Detección de armas con modelo ESPECIALIZADO"""
         if not self.cargado:
             return {"armas_detectadas": False, "confianza": 0.0, "error": "Modelo no cargado"}
 
         try:
-            import torch
-            image = Image.open(image_path).convert("RGB")
-            inputs = self.processor(image, return_tensors="pt")
+            if self.model_type == 'yolo':
+                # Detección con YOLO
+                results = self.model(image_path, verbose=False)
+                weapons_detected = []
+                
+                for result in results:
+                    for box in result.boxes:
+                        class_id = int(box.cls[0])
+                        class_name = result.names[class_id]
+                        confidence = float(box.conf[0])
+                        
+                        if class_name in ['knife', 'gun'] and confidence > 0.5:
+                            weapons_detected.append({
+                                'weapon': class_name,
+                                'confidence': confidence
+                            })
+                
+                armas_detectadas = len(weapons_detected) > 0
+                confianza_max = max([w['confidence'] for w in weapons_detected]) if weapons_detected else 0.0
+                
+                resultado = {
+                    "armas_detectadas": armas_detectadas,
+                    "confianza": confianza_max,
+                    "detalles_armas": weapons_detected,
+                    "total_armas_detectadas": len(weapons_detected),
+                    "modelo_utilizado": "YOLOv8"
+                }
+                
+            else:
+                # Detección con CLIP (FALLBACK)
+                candidate_labels = [
+                    "gun", "knife", "weapon", "firearm", "pistol", "rifle", 
+                    "sword", "dagger", "machete", "shotgun", "revolver"
+                ]
+                
+                result = self.classifier(image_path, candidate_labels=candidate_labels)
+                
+                # Solo considerar armas con buena confianza
+                weapons_detected = [pred for pred in result if pred['score'] > 0.4]
+                armas_detectadas = len(weapons_detected) > 0
+                confianza_max = max([pred['score'] for pred in weapons_detected]) if weapons_detected else 0.0
+                
+                resultado = {
+                    "armas_detectadas": armas_detectadas,
+                    "confianza": confianza_max,
+                    "detalles_armas": weapons_detected,
+                    "total_armas_detectadas": len(weapons_detected),
+                    "modelo_utilizado": "CLIP"
+                }
+            
+            if armas_detectadas:
+                logger.warning(f"Armas detectadas: {resultado['total_armas_detectadas']}")
+            
+            return resultado
+            
+        except Exception as e:
+            logger.error(f"Error analizando armas: {e}")
+            return {"armas_detectadas": False, "confianza": 0.0, "error": str(e)}
 
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                probabilities = torch.nn.functional.softmax(outputs.logits, dim=-1)[0]
+class ViolenceDetector:
+    def __init__(self):
+        self.model = None
+        self.cargado = False
+        self.model_name = "CLIP"
 
-            pred_idx = int(torch.argmax(probabilities).item())
-            confianza = float(torch.max(probabilities).item())
-            clase = self.labels.get(pred_idx, "desconocido").lower()
+    def load_model(self):
+        """Carga modelo para detección de violencia"""
+        try:
+            from transformers import pipeline
+            self.classifier = pipeline(
+                "zero-shot-image-classification",
+                model="openai/clip-vit-base-patch32"
+            )
+            self.cargado = True
+            logger.info("Modelo CLIP cargado correctamente")
+        except Exception as e:
+            logger.error(f"Error cargando modelo CLIP: {e}")
+            self.cargado = False
 
-            # Lista de palabras clave relacionadas con armas
-            armas_keywords = ["gun", "pistol", "rifle", "weapon", "knife", "revolver"]
-
-            armas_detectadas = any(p in clase for p in armas_keywords)
-            logger.info(f"Predicción principal: {clase} ({confianza:.4f})")
-
-            # Revisar otras clases con confianza significativa
-            armas_adicionales = []
-            for idx, label in self.labels.items():
-                label_lower = label.lower()
-                if any(p in label_lower for p in armas_keywords):
-                    prob = float(probabilities[int(idx)].item())
-                    if prob > 0.25:  # Umbral moderado
-                        armas_adicionales.append({"clase": label, "probabilidad": prob})
-
-            if armas_adicionales:
-                armas_detectadas = True
-                confianza = max(a["probabilidad"] for a in armas_adicionales)
-
+    def analyze_violence(self, image_path: str):
+        """Analiza contenido violento"""
+        if not self.cargado:
             return {
-                "armas_detectadas": bool(armas_detectadas),
-                "confianza": float(confianza),
-                "clases_detectadas": armas_adicionales or [{"clase": clase, "probabilidad": confianza}],
+                "es_violento": False, 
+                "probabilidad_violencia": 0.0, 
+                "error": "Modelo no cargado"
             }
+
+        try:
+            # Categorías para violencia
+            candidate_labels = [
+                # CONTENIDO EXPLÍCITO Y ARMAS
+                "blood", "gore", "injured person", "bloody scene", "violence",
+                "gun", "knife", "weapon", "firearm", "pistol", "rifle",
+                "porn", "sexual content", "explicit content", "nudity",
+                
+                # SITUACIONES PELIGROSAS
+                "fight", "battle", "war", "horror", "terror",
+                
+                # CONTENIDO SEGURO
+                "landscape", "peaceful image", "normal scene", "safe content",
+                "person smiling", "everyday life", "nature", "building"
+            ]
+            
+            # Ejecutar clasificación
+            result = self.classifier(image_path, candidate_labels=candidate_labels)
+            
+            # Filtrar predicciones de violencia
+            violencia_detectada = []
+            
+            for pred in result:
+                score = pred['score']
+                label_lower = pred['label'].lower()
+                
+                if score > 0.15:
+                    # CATEGORÍAS DE ALTA PRIORIDAD
+                    alta_prioridad = [
+                        'blood', 'gore', 'injured', 'bloody', 'porn', 'sexual', 'explicit', 'nudity',
+                        'gun', 'knife', 'weapon', 'firearm', 'pistol', 'rifle'
+                    ]
+                    if any(keyword in label_lower for keyword in alta_prioridad) and score > 0.1:
+                        if any(arma in label_lower for arma in ['gun', 'knife', 'weapon', 'firearm', 'pistol', 'rifle']):
+                            tipo = 'armas'
+                        elif any(explicito in label_lower for explicito in ['porn', 'sexual', 'explicit', 'nudity']):
+                            tipo = 'contenido_sexual'
+                        else:
+                            tipo = 'violencia_graphica'
+                            
+                        violencia_detectada.append({
+                            'label': pred['label'],
+                            'score': pred['score'],
+                            'tipo': tipo,
+                            'prioridad': 'alta'
+                        })
+                    
+                    # CATEGORÍAS DE BAJA PRIORIDAD
+                    baja_prioridad = ['fight', 'battle', 'war', 'horror', 'terror', 'violence']
+                    if any(keyword in label_lower for keyword in baja_prioridad) and score > 0.3:
+                        violencia_detectada.append({
+                            'label': pred['label'],
+                            'score': pred['score'],
+                            'tipo': 'violencia_general',
+                            'prioridad': 'baja'
+                        })
+            
+            # Determinar resultado
+            es_violento = len(violencia_detectada) > 0
+            probabilidad_violencia = max([v['score'] for v in violencia_detectada]) if violencia_detectada else 0.0
+            
+            if violencia_detectada:
+                logger.warning(f"Violencia detectada: {len(violencia_detectada)} categorías")
+            
+            resultado = {
+                "es_violento": es_violento,
+                "probabilidad_violencia": probabilidad_violencia,
+                "detalles_violencia": violencia_detectada,
+                "total_categorias_analizadas": len(candidate_labels),
+                "categorias_encontradas": [v['label'] for v in violencia_detectada]
+            }
+            
+            return resultado
+            
+        except Exception as e:
+            logger.error(f"Error analizando violencia: {e}")
+            return {
+                "es_violento": False, 
+                "probabilidad_violencia": 0.0, 
+                "error": str(e)
+            }
+
+class ImageAnalyzer:
+    def __init__(self):
+        self.weapon_detector = WeaponDetector()
+        self.violence_detector = ViolenceDetector()
+        self.cargado = False
+        self.load_models()
+
+    def load_models(self):
+        """Carga todos los modelos necesarios"""
+        try:
+            self.violence_detector.load_model()
+            self.weapon_detector.load_model()
+            self.cargado = self.weapon_detector.cargado and self.violence_detector.cargado
+            
+            if self.cargado:
+                logger.info("Todos los modelos cargados correctamente")
+            else:
+                logger.error("Falló la carga de algún modelo")
+                
+        except Exception as e:
+            logger.error(f"Error cargando modelos: {e}")
+            self.cargado = False
+
+    def analyze_image(self, image_path: str):
+        """Analiza una imagen para contenido inapropiado"""
+        if not self.cargado:
+            return {
+                "es_apto": False,
+                "error": "Modelos no cargados",
+                "puntuacion_riesgo": 1.0
+            }
+
+        try:
+            # Verificar que la imagen existe
+            if not os.path.exists(image_path):
+                return {
+                    "es_apto": False,
+                    "error": "Archivo no encontrado",
+                    "puntuacion_riesgo": 1.0
+                }
+
+            # Análisis paralelo
+            resultado_violencia = self.violence_detector.analyze_violence(image_path)
+            resultado_armas = self.weapon_detector.analyze_weapons(image_path)
+            
+            # Calcular riesgos
+            riesgo_violencia = resultado_violencia.get("probabilidad_violencia", 0)
+            riesgo_armas = resultado_armas.get("confianza", 0) if resultado_armas.get("armas_detectadas") else 0
+            
+            # Detectar armas en análisis de violencia
+            armas_en_violencia = False
+            confianza_armas_violencia = 0.0
+            
+            if resultado_violencia.get("detalles_violencia"):
+                for deteccion in resultado_violencia["detalles_violencia"]:
+                    if deteccion.get("tipo") == "armas":
+                        armas_en_violencia = True
+                        confianza_armas_violencia = max(confianza_armas_violencia, deteccion["score"])
+
+            # Determinar si es apto
+            es_apto = not (
+                (resultado_violencia.get("es_violento", False) and riesgo_violencia > 0.5) or 
+                (resultado_armas.get("armas_detectadas", False) and riesgo_armas > 0.4) or
+                (armas_en_violencia and confianza_armas_violencia > 0.3)
+            )
+            
+            puntuacion_riesgo = max(riesgo_violencia, riesgo_armas)
+            
+            # Log solo si hay problemas
+            if not es_apto:
+                razones = []
+                if resultado_violencia.get("es_violento") and riesgo_violencia > 0.5:
+                    razones.append(f"violencia ({riesgo_violencia:.4f})")
+                if resultado_armas.get("armas_detectadas") and riesgo_armas > 0.4:
+                    razones.append(f"armas YOLO/CLIP ({riesgo_armas:.4f})")
+                if armas_en_violencia and confianza_armas_violencia > 0.3:
+                    razones.append(f"armas en violencia ({confianza_armas_violencia:.4f})")
+                
+                logger.warning(f"Imagen rechazada - Razones: {', '.join(razones)}")
+            
+            resultado_final = {
+                "es_apto": es_apto,
+                "analisis_violencia": resultado_violencia,
+                "analisis_armas": resultado_armas,
+                "puntuacion_riesgo": float(puntuacion_riesgo),
+                "armas_detectadas_en_violencia": armas_en_violencia,
+                "confianza_armas_violencia": float(confianza_armas_violencia)
+            }
+            
+            return resultado_final
 
         except Exception as e:
             logger.error(f"Error analizando imagen: {e}")
-            return {"armas_detectadas": False, "confianza": 0.0, "error": str(e)}
+            return {
+                "es_apto": False,
+                "error": str(e),
+                "puntuacion_riesgo": 1.0
+            }
 
 def main():
     if len(sys.argv) != 2:
-        print(json.dumps({"error": "Uso: analisis_armas.py <imagen>"}))
+        error_msg = {"error": "Uso: moderacion_completa.py <ruta_imagen>"}
+        print(json.dumps(error_msg))
         sys.exit(1)
 
     image_path = sys.argv[1]
+    
     if not os.path.exists(image_path):
-        print(json.dumps({"error": "Archivo no encontrado", "armas_detectadas": False}))
+        error_msg = {"error": f"Archivo no encontrado: {image_path}", "es_apto": False}
+        print(json.dumps(error_msg))
         sys.exit(1)
-
-    detector = WeaponDetector()
-    result = detector.analyze_weapons(image_path)
-
-    # Resultado final
-    result_final = {
-        "es_apto": not result.get("armas_detectadas", False),
-        "analisis_armas": result,
-        "puntuacion_riesgo": result.get("confianza", 0.0),
-    }
-
-    print(json.dumps(result_final, cls=CustomJSONEncoder))
+    
+    try:
+        analyzer = ImageAnalyzer()
+        result = analyzer.analyze_image(image_path)
+        print(json.dumps(result, cls=CustomJSONEncoder, ensure_ascii=False, indent=2))
+        
+    except Exception as e:
+        error_result = {
+            "es_apto": False,
+            "error": f"Error critico: {str(e)}",
+            "puntuacion_riesgo": 1.0
+        }
+        print(json.dumps(error_result, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()

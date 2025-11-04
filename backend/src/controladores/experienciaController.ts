@@ -822,7 +822,7 @@ export const experienciaController = {
     }
   },
 
-  // ... (el resto de los métodos permanecen igual)
+
 
   /**
    * Eliminar experiencia - SIN CAMBIOS (pero ya incluye nombre_usuario en la respuesta)

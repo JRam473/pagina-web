@@ -11,6 +11,7 @@ export interface AnalisisArmas {
   confianza: number;
   nota?: string;
   error?: string;
+  
 }
 
 export interface AnalisisImagenResultado {

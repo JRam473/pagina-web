@@ -32,6 +32,7 @@ export interface AnalisisTexto {
 
 export interface ResultadoModeracion {
   esAprobado: boolean;
+  
   puntuacionGeneral: number;
   motivoRechazo?: string; // ✅ CORREGIDO: Sin | undefined
   detalles: {

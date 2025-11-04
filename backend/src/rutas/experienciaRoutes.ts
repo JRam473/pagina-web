@@ -16,6 +16,7 @@ router.get('/usuario/mis-experiencias', experienciaController.obtenerMisExperien
 router.post('/moderacion/validar-texto', experienciaController.validarTextoPrev);
 router.get('/moderacion/motivos-rechazo', experienciaController.obtenerMotivosRechazo);
 
+
 // ✅ RUTAS QUE CREAN CONTENIDO (CON MODERACIÓN)
 router.post('/',
   uploadExperienciaMiddleware, // ✅ Multer primero
