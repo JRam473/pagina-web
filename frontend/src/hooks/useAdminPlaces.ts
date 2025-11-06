@@ -151,8 +151,10 @@ export const useAdminPlaces = () => {
   const [error, setError] = useState<string | ModeracionError | null>(null);
   const { toast } = useToast();
 
-  // ✅ CORREGIDO: Manejar errores igual que en experiencias
+  // ✅ CORREGIDO: Manejar errores con mejor logging y estructura
   const handleError = (err: unknown): string | ModeracionError => {
+    console.log('🔍 [ERROR HANDLER] Analizando error:', err);
+    
     const error = err as ApiError;
     
     // Si es error de moderación con detalles específicos
@@ -163,6 +165,8 @@ export const useAdminPlaces = () => {
          error.response.data.error === 'TEXTO_RECHAZADO' ||
          error.response.data.error === 'VALIDACION_RECHAZADA')) {
       
+      console.log('🎯 [ERROR HANDLER] Es error de moderación:', error.response.data);
+      
       return {
         message: error.response.data.message || 'Contenido rechazado por moderación',
         motivo: error.response.data.motivo,
@@ -171,33 +175,43 @@ export const useAdminPlaces = () => {
       };
     }
     
-    return error?.response?.data?.error || error?.message || 'Error desconocido';
+    // Si es error de axios con response
+    if (error?.response?.data) {
+      const errorData = error.response.data;
+      return errorData.error || errorData.message || 'Error del servidor';
+    }
+    
+    // Si es error nativo
+    return error?.message || 'Error desconocido';
   };
 
-  // ✅ CORREGIDO: Mostrar toast de rechazo con detalles (eliminado parámetro no usado)
+  // ✅ MEJORADO: Mostrar toast de rechazo con detalles mejorados
   const mostrarToastRechazo = useCallback((resultado: ModeracionError) => {
-    if (resultado.motivo) {
-      const problemas = resultado.detalles?.problemas;
-      const tieneProblemas = problemas && problemas.length > 0;
-      
-      const title = '🚫 Contenido no aprobado';
-      let description = resultado.motivo;
-      
-      if (tieneProblemas) {
-        description += `\n\nProblemas detectados:\n• ${problemas.join('\n• ')}`;
-      }
-
-      if (resultado.detalles?.sugerencias) {
-        description += `\n\nSugerencias:\n• ${resultado.detalles.sugerencias.join('\n• ')}`;
-      }
-
-      toast({
-        title,
-        description,
-        variant: 'destructive',
-        duration: 10000,
-      });
+    console.log('🎯 [TOAST] Mostrando toast de rechazo:', resultado);
+    
+    const title = '🚫 Contenido no aprobado';
+    let description = resultado.motivo || resultado.message;
+    
+    // Construir descripción detallada
+    if (resultado.detalles?.problemas && resultado.detalles.problemas.length > 0) {
+      description += `\n\nProblemas detectados:\n• ${resultado.detalles.problemas.join('\n• ')}`;
     }
+    
+    if (resultado.detalles?.sugerencias && resultado.detalles.sugerencias.length > 0) {
+      description += `\n\nSugerencias:\n• ${resultado.detalles.sugerencias.join('\n• ')}`;
+    }
+    
+    // Agregar puntuación si está disponible
+    if (resultado.detalles?.puntuacion) {
+      description += `\n\nNivel de riesgo: ${(resultado.detalles.puntuacion * 100).toFixed(1)}%`;
+    }
+
+    toast({
+      title,
+      description,
+      variant: 'destructive',
+      duration: 10000, // 10 segundos para leer
+    });
   }, [toast]);
 
   const { 
@@ -437,16 +451,12 @@ export const useAdminPlaces = () => {
     } catch (err: unknown) {
       const errorResult = handleError(err);
       
+      console.log('❌ [CREATE PLACE] Error capturado:', errorResult);
+      
       // ✅ CORREGIDO: Manejar correctamente el objeto de error
       if (typeof errorResult === 'object' && 'detalles' in errorResult) {
         setError(errorResult);
-        
-        toast({
-          title: '🚫 Contenido rechazado',
-          description: errorResult.message,
-          variant: 'destructive',
-          duration: 6000,
-        });
+        mostrarToastRechazo(errorResult); // ← Usar la función mejorada
       } else {
         const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
         setError(errorMessage);
@@ -462,10 +472,10 @@ export const useAdminPlaces = () => {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, mostrarToastRechazo]);
 
   /**
-   * ✅ CORREGIDO: Actualizar lugar con manejo de errores como experiencias
+   * ✅ CORREGIDO: Actualizar lugar con manejo de errores mejorado
    */
   const updatePlace = useCallback(async (
     placeId: string, 
@@ -476,6 +486,12 @@ export const useAdminPlaces = () => {
     } = {}
   ) => {
     try {
+      console.log('🎯 [UPDATE PLACE] Iniciando actualización:', {
+        placeId,
+        placeData,
+        opciones
+      });
+
       setLoading(true);
       setError(null);
 
@@ -574,7 +590,9 @@ export const useAdminPlaces = () => {
       };
 
     } catch (err: unknown) {
+      console.error('❌ [UPDATE PLACE] Error completo:', err);
       const errorResult = handleError(err);
+      console.log('🔍 [UPDATE PLACE] Error procesado:', errorResult);
       
       // ✅ CORREGIDO: Manejar diferentes tipos de error como experiencias
       if (typeof errorResult === 'object' && 'detalles' in errorResult) {
@@ -681,93 +699,95 @@ export const useAdminPlaces = () => {
   }, [toast]);
 
   /**
-   * Subir imagen de un lugar
+   * Subir imagen de un lugar - MEJORADO CON MANEJO DE ERRORES
    */
-  const uploadPlaceImage = useCallback(async (placeId: string, imageFile: File) => {
-    try {
-      console.log('🖼️ [UPLOAD] Subiendo imagen para lugar:', placeId);
-      
-      const formData = new FormData();
-      formData.append('imagen', imageFile);
 
-      const response = await api.post<{ 
-        mensaje: string;
-        url_imagen: string;
-        es_principal: boolean;
-        imagen_id: string;
-        moderacion?: {
-          esAprobado: boolean;
-          puntuacionRiesgo?: number;
-          timestamp: string;
-        };
-        archivo: {
-          nombre: string;
-          tamaño: number;
-          tipo: string;
-        };
-      }>(`/api/lugares/${placeId}/imagen`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000,
-      });
+const uploadPlaceImage = useCallback(async (placeId: string, imageFile: File) => {
+  try {
+    console.log('🖼️ [UPLOAD] Subiendo imagen para lugar:', placeId);
+    
+    const formData = new FormData();
+    formData.append('imagen', imageFile);
 
-      console.log('✅ [UPLOAD] Imagen subida y aprobada correctamente');
+    const response = await api.post<{ 
+      mensaje: string;
+      url_imagen: string;
+      es_principal: boolean;
+      imagen_id: string;
+      moderacion?: {
+        esAprobado: boolean;
+        puntuacionRiesgo?: number;
+        timestamp: string;
+      };
+      archivo: {
+        nombre: string;
+        tamaño: number;
+        tipo: string;
+      };
+    }>(`/api/lugares/${placeId}/imagen`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000,
+    });
 
-      // Actualizar el estado local
-      setPlaces(prevPlaces => 
-        prevPlaces.map(place => 
-          place.id === placeId 
-            ? { 
-                ...place, 
-                image_url: response.data.url_imagen,
-                gallery_images: [
-                  ...(place.gallery_images || []),
-                  {
-                    id: response.data.imagen_id,
-                    url_foto: response.data.url_imagen,
-                    descripcion: 'Imagen principal del lugar',
-                    es_principal: true,
-                    orden: 1,
-                    creado_en: new Date().toISOString()
-                  }
-                ]
-              }
-            : place
-        )
-      );
+    console.log('✅ [UPLOAD] Imagen subida y aprobada correctamente');
 
+    // Actualizar el estado local
+    setPlaces(prevPlaces => 
+      prevPlaces.map(place => 
+        place.id === placeId 
+          ? { 
+              ...place, 
+              image_url: response.data.url_imagen,
+              gallery_images: [
+                ...(place.gallery_images || []),
+                {
+                  id: response.data.imagen_id,
+                  url_foto: response.data.url_imagen,
+                  descripcion: 'Imagen principal del lugar',
+                  es_principal: true,
+                  orden: 1,
+                  creado_en: new Date().toISOString()
+                }
+              ]
+            }
+          : place
+      )
+    );
+
+    // ✅ MOVER el toast de éxito aquí dentro del try
+    toast({
+      title: '✅ Imagen aprobada',
+      description: 'La imagen ha sido subida y aprobada por moderación',
+    });
+
+    return response.data;
+
+  } catch (err: unknown) {
+    const errorResult = handleError(err);
+    console.error('❌ [UPLOAD] Error subiendo imagen:', errorResult);
+    
+    // ✅ MEJORADO: Usar función centralizada para errores de moderación
+    if (typeof errorResult === 'object' && 'detalles' in errorResult) {
+      mostrarToastRechazo(errorResult);
+    } else {
+      const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
       toast({
-        title: '✅ Imagen aprobada',
-        description: 'La imagen ha sido subida y aprobada por moderación',
+        title: '❌ Error',
+        description: errorMessage,
+        variant: 'destructive',
       });
-
-      return response.data;
-    } catch (err: unknown) {
-      const errorResult = handleError(err);
-      console.error('❌ [UPLOAD] Error subiendo imagen:', errorResult);
-      
-      // ✅ MEJORADO: Manejar errores de moderación de imágenes
-      if (typeof errorResult === 'object' && 'detalles' in errorResult) {
-        toast({
-          title: '🚫 Imagen rechazada',
-          description: errorResult.message,
-          variant: 'destructive',
-          duration: 6000,
-        });
-      } else {
-        const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
-        toast({
-          title: '❌ Error',
-          description: errorMessage,
-          variant: 'destructive',
-        });
-      }
-      
-      throw errorResult;
     }
-  }, [toast]);
+    
+    // ✅ IMPORTANTE: Rechazar la promesa para que el componente sepa que falló
+    throw errorResult;
+  }
+}, [toast, mostrarToastRechazo]);
 
+  /**
+   * Subir PDF para un lugar
+   */
   const uploadPlacePDF = useCallback(async (placeId: string, pdfFile: File) => {
     try {
       console.log('📄 [UPLOAD] Subiendo PDF para lugar:', placeId);
@@ -860,12 +880,7 @@ export const useAdminPlaces = () => {
       console.error('❌ [uploadMultipleImages] Error:', errorResult);
       
       if (typeof errorResult === 'object' && 'detalles' in errorResult) {
-        toast({
-          title: '🚫 Imágenes rechazadas',
-          description: errorResult.message,
-          variant: 'destructive',
-          duration: 6000,
-        });
+        mostrarToastRechazo(errorResult);
       } else {
         const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
         toast({
@@ -877,7 +892,7 @@ export const useAdminPlaces = () => {
       
       throw errorResult;
     }
-  }, [toast]);
+  }, [toast, mostrarToastRechazo]);
 
   /**
    * Reemplazar imagen principal
@@ -1037,115 +1052,110 @@ export const useAdminPlaces = () => {
     }
   }, [fetchPlaces, toast]);
 
-/**
- * ✅ CORREGIDO: Actualizar descripción de imagen CON moderación
- */
-const updateImageDescription = useCallback(async (imageId: string, descripcion: string) => {
-  try {
-    setLoading(true);
+  /**
+   * ✅ CORREGIDO: Actualizar descripción de imagen CON moderación
+   */
+  const updateImageDescription = useCallback(async (imageId: string, descripcion: string) => {
+    try {
+      setLoading(true);
 
-    console.log('✏️ Actualizando descripción con moderación:', { 
-      imageId, 
-      descripcion: descripcion.substring(0, 30) + '...' 
-    });
+      console.log('✏️ Actualizando descripción con moderación:', { 
+        imageId, 
+        descripcion: descripcion.substring(0, 30) + '...' 
+      });
 
-    // ✅ PRIMERO: Validar la descripción con el servicio de moderación
-    const resultadoValidacion = await validarDescripcionFoto(descripcion);
-    
-    if (!resultadoValidacion.esAprobado) {
-      // Crear error de moderación con detalles
-      const errorModeracion: ModeracionError = {
-        message: resultadoValidacion.mensaje,
-        detalles: {
-          problemas: resultadoValidacion.detalles?.problemas,
-          sugerencias: resultadoValidacion.detalles?.sugerencias,
-          puntuacion: resultadoValidacion.puntuacion,
-          campoEspecifico: 'descripcion_foto'
-        }
-      };
+      // ✅ PRIMERO: Validar la descripción con el servicio de moderación
+      const resultadoValidacion = await validarDescripcionFoto(descripcion);
       
-      setError(errorModeracion);
+      if (!resultadoValidacion.esAprobado) {
+        // Crear error de moderación con detalles
+        const errorModeracion: ModeracionError = {
+          message: resultadoValidacion.mensaje,
+          detalles: {
+            problemas: resultadoValidacion.detalles?.problemas,
+            sugerencias: resultadoValidacion.detalles?.sugerencias,
+            puntuacion: resultadoValidacion.puntuacion,
+            campoEspecifico: 'descripcion_foto'
+          }
+        };
+        
+        setError(errorModeracion);
+        
+        mostrarToastRechazo(errorModeracion);
+        
+        throw errorModeracion;
+      }
+
+      // ✅ SI ES APROBADA: Proceder con la actualización
+      // Necesitamos encontrar el placeId al que pertenece la imagen
+      let placeIdEncontrado = '';
+      
+      // Buscar en los lugares actuales para encontrar a qué lugar pertenece la imagen
+      for (const place of places) {
+        if (place.gallery_images?.some(img => img.id === imageId)) {
+          placeIdEncontrado = place.id;
+          break;
+        }
+      }
+
+      if (!placeIdEncontrado) {
+        throw new Error('No se pudo encontrar el lugar al que pertenece la imagen');
+      }
+
+      const response = await api.put<{ 
+        mensaje: string;
+        imagen: { id: string; descripcion: string };
+        moderacion: {
+          esAprobado: boolean;
+          puntuacion: number;
+          timestamp: string;
+        };
+      }>(`/api/lugares/${placeIdEncontrado}/galeria/${imageId}/descripcion`, {
+        descripcion
+      });
+
+      // Actualizar el estado local
+      setPlaces(prevPlaces => 
+        prevPlaces.map(place => 
+          place.id === placeIdEncontrado 
+            ? {
+                ...place,
+                gallery_images: place.gallery_images?.map((img: GalleryImage) =>
+                  img.id === imageId ? { ...img, descripcion } : img
+                ) || []
+              }
+            : place
+        )
+      );
+
+      toast({
+        title: '✅ Descripción actualizada',
+        description: 'La descripción se ha actualizado correctamente',
+      });
+
+      return response.data;
+
+    } catch (err: any) {
+      console.error('❌ Error actualizando descripción:', err);
+      
+      // Si ya es un error de moderación, no mostrar toast adicional
+      if (err.detalles) {
+        throw err;
+      }
+      
+      const errorMessage = err.response?.data?.error || err.message || 'Error al actualizar descripción';
       
       toast({
-        title: '🚫 Descripción rechazada',
-        description: resultadoValidacion.mensaje,
+        title: '❌ Error',
+        description: errorMessage,
         variant: 'destructive',
-        duration: 6000,
       });
       
-      throw errorModeracion;
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
     }
-
-    // ✅ SI ES APROBADA: Proceder con la actualización
-    // Necesitamos encontrar el placeId al que pertenece la imagen
-    let placeIdEncontrado = '';
-    
-    // Buscar en los lugares actuales para encontrar a qué lugar pertenece la imagen
-    for (const place of places) {
-      if (place.gallery_images?.some(img => img.id === imageId)) {
-        placeIdEncontrado = place.id;
-        break;
-      }
-    }
-
-    if (!placeIdEncontrado) {
-      throw new Error('No se pudo encontrar el lugar al que pertenece la imagen');
-    }
-
-    const response = await api.put<{ 
-      mensaje: string;
-      imagen: { id: string; descripcion: string };
-      moderacion: {
-        esAprobado: boolean;
-        puntuacion: number;
-        timestamp: string;
-      };
-    }>(`/api/lugares/${placeIdEncontrado}/galeria/${imageId}/descripcion`, {
-      descripcion
-    });
-
-    // Actualizar el estado local
-    setPlaces(prevPlaces => 
-      prevPlaces.map(place => 
-        place.id === placeIdEncontrado 
-          ? {
-              ...place,
-              gallery_images: place.gallery_images?.map((img: GalleryImage) =>
-                img.id === imageId ? { ...img, descripcion } : img
-              ) || []
-            }
-          : place
-      )
-    );
-
-    toast({
-      title: '✅ Descripción actualizada',
-      description: 'La descripción se ha actualizado correctamente',
-    });
-
-    return response.data;
-
-  } catch (err: any) {
-    console.error('❌ Error actualizando descripción:', err);
-    
-    // Si ya es un error de moderación, no mostrar toast adicional
-    if (err.detalles) {
-      throw err;
-    }
-    
-    const errorMessage = err.response?.data?.error || err.message || 'Error al actualizar descripción';
-    
-    toast({
-      title: '❌ Error',
-      description: errorMessage,
-      variant: 'destructive',
-    });
-    
-    throw new Error(errorMessage);
-  } finally {
-    setLoading(false);
-  }
-}, [toast, validarDescripcionFoto, places]);
+  }, [toast, validarDescripcionFoto, places, mostrarToastRechazo]);
 
   /**
    * ✅ NUEVA: Función para pre-validar descripción antes de guardar
@@ -1254,14 +1264,21 @@ const updateImageDescription = useCallback(async (imageId: string, descripcion: 
       
       if (typeof errorResult === 'object' && errorResult.detalles) {
         setError(JSON.stringify(errorResult));
+        mostrarToastRechazo(errorResult);
       } else {
-        setError(typeof errorResult === 'string' ? errorResult : errorResult.message);
+        const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
+        setError(errorMessage);
+        toast({
+          title: '❌ Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
       }
       throw new Error(typeof errorResult === 'string' ? errorResult : errorResult.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast, mostrarToastRechazo]);
 
   /**
    * Subir imagen para un lugar existente

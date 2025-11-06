@@ -8,6 +8,7 @@ import path from 'path';
 import { ModeracionService } from '../services/moderacionService';
 import { generarHashNavegador } from '../utils/hashNavegador';
 import { ModeracionImagenService } from '../services/moderacionImagenService';
+import { PdfAnalysisService } from '../services/pdfAnalysisService';
 
 // ✅ FUNCIONES AUXILIARES MEJORADAS
 const generarSugerenciasLugar = (tipoProblema: string): string[] => {
@@ -1753,6 +1754,152 @@ if (!resultadoModeracionTexto.esAprobado) {
     }
   },
 
+
+  // controladores/lugarController.ts - AGREGAR este método
+
+/**
+ * ✅ NUEVO: Subir PDF CON moderación de contenido textual
+ */
+async subirPDFLugarConModeracion(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    
+    console.log('📄 Subiendo PDF con moderación para lugar:', id);
+
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'No se proporcionó ningún PDF' 
+      });
+    }
+
+    const hashNavegador = generarHashNavegador(req);
+    const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+
+    // ✅ NUEVO: Análisis del PDF
+    const pdfAnalysisService = new PdfAnalysisService();
+    
+    // Validación básica primero
+    const validacionBasica = await pdfAnalysisService.validarPDFBasico(req.file.path);
+    if (!validacionBasica.valido) {
+      await fsPromises.unlink(req.file.path);
+      return res.status(400).json({
+        success: false,
+        error: 'PDF_INVALIDO',
+        message: validacionBasica.error || 'PDF no válido',
+        detalles: {
+          problemas: [validacionBasica.error || 'Archivo PDF no válido'],
+          sugerencias: [
+            'Asegúrate de que el archivo sea un PDF válido',
+            'Verifica que el tamaño no supere los 10MB',
+            'Intenta con otro archivo PDF'
+          ]
+        }
+      });
+    }
+
+    console.log('✅ PDF válido, procediendo con análisis de contenido...');
+
+    // Análisis de contenido textual
+    const resultadoAnalisis = await pdfAnalysisService.analizarTextoPDF(
+      req.file.path,
+      ipUsuario,
+      hashNavegador
+    );
+
+    // ✅ SI EL PDF ES RECHAZADO
+    if (!resultadoAnalisis.esAprobado) {
+      console.log('❌ PDF rechazado por moderación:', resultadoAnalisis.motivo);
+      
+      // Eliminar archivo
+      try {
+        await fsPromises.unlink(req.file.path);
+      } catch (error) {
+        console.error('Error eliminando PDF:', error);
+      }
+      
+      return res.status(400).json({
+        success: false,
+        error: 'PDF_RECHAZADO',
+        message: 'El contenido del PDF no cumple con las políticas de moderación',
+        motivo: resultadoAnalisis.motivo,
+        tipo: 'pdf_texto',
+        detalles: {
+          puntuacion: resultadoAnalisis.puntuacion,
+          problemas: [resultadoAnalisis.motivo || 'Contenido inapropiado detectado'],
+          sugerencias: [
+            'Revisa que el PDF no contenga lenguaje ofensivo o inapropiado',
+            'Asegúrate de que el contenido sea apropiado para todos los públicos',
+            'Evita contenido promocional, spam o enlaces no permitidos'
+          ],
+          metadata: resultadoAnalisis.metadata
+        }
+      });
+    }
+
+    console.log('✅ PDF aprobado por moderación');
+
+    // Verificar que el lugar existe
+    const lugarResult = await pool.query(
+      'SELECT id, nombre FROM lugares WHERE id = $1',
+      [id]
+    );
+
+    if (lugarResult.rows.length === 0) {
+      await fsPromises.unlink(req.file.path);
+      return res.status(404).json({ 
+        success: false,
+        error: 'Lugar no encontrado' 
+      });
+    }
+
+    const rutaPDF = `/uploads/pdfs/${req.file.filename}`;
+
+    // Actualizar la base de datos
+    await pool.query(
+      'UPDATE lugares SET pdf_url = $1, actualizado_en = NOW() WHERE id = $2',
+      [rutaPDF, id]
+    );
+
+    const lugar = lugarResult.rows[0];
+    console.log('✅ PDF subido y aprobado para lugar:', lugar.nombre);
+
+    res.json({
+      success: true,
+      mensaje: 'PDF subido y aprobado exitosamente',
+      url_pdf: rutaPDF,
+      moderacion: {
+        esAprobado: true,
+        puntuacion: resultadoAnalisis.puntuacion,
+        metadata: resultadoAnalisis.metadata
+      },
+      archivo: {
+        nombre: req.file.filename,
+        tamaño: req.file.size,
+        tipo: req.file.mimetype
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error subiendo PDF con moderación:', error);
+    
+    // Limpiar archivo en caso de error
+    if (req.file?.path) {
+      try {
+        await fsPromises.unlink(req.file.path);
+      } catch (unlinkError) {
+        console.error('Error eliminando archivo:', unlinkError);
+      }
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al subir PDF',
+      detalle: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+},
+
   // Obtener galería de imágenes de un lugar - SIN CAMBIOS
   async obtenerGaleriaLugar(req: Request, res: Response) {
     try {
@@ -2335,23 +2482,21 @@ async reemplazarImagenPrincipal(req: Request, res: Response) {
         console.error('Error eliminando archivo:', error);
       }
       
-      return res.status(400).json({
-        success: false,
-        error: 'IMAGEN_RECHAZADA',
-        message: 'La imagen no cumple con las políticas de contenido',
-        motivo: resultadoModeracion.motivoRechazo,
-        tipo: 'imagen',
-        detalles: {
-          puntuacion: resultadoModeracion.puntuacionRiesgo,
-          problemas: [resultadoModeracion.motivoRechazo || 'Contenido inapropiado detectado'],
-          sugerencias: [
-            'Asegúrate de que la imagen no contenga contenido violento o gráfico',
-            'No incluyas armas o elementos peligrosos',
-            'Usa imágenes apropiadas para todas las edades'
-          ],
-          timestamp: new Date().toISOString()
-        }
-      });
+      // controladores/lugarController.ts - CORREGIR estructura de error
+
+return res.status(400).json({
+  success: false,
+  error: 'IMAGEN_RECHAZADA', // ← Tipo de error consistente
+  message: 'La imagen no cumple con las políticas de contenido', // ← Mensaje para usuario
+  motivo: resultadoModeracion.motivoRechazo, // ← Motivo técnico
+  tipo: 'imagen', // ← Tipo de contenido
+  detalles: {
+    puntuacion: resultadoModeracion.puntuacionRiesgo,
+    problemas: [resultadoModeracion.motivoRechazo || 'Contenido inapropiado detectado'],
+    sugerencias: generarSugerenciasLugar('imagen'),
+    timestamp: new Date().toISOString()
+  }
+});
     }
 
     console.log('✅ Imagen aprobada para reemplazar imagen principal');

@@ -570,289 +570,313 @@ const hasFormChanges = useCallback((): boolean => {
 }, [editingPlace, formData, files, analizarCambios]);
 
 
- /**
-   * ✅ MEJORADO: Manejar envío con estrategias inteligentes Y manejo de errores de moderación
-   */
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (isSubmitting || isProcessing) {
+/**
+ * ✅ CORREGIDO: Manejar envío con manejo correcto de errores de moderación
+ */
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  if (isSubmitting || isProcessing) {
+    toast({
+      title: '⏳ Operación en curso',
+      description: 'Ya hay una operación en proceso. Por favor espera.',
+      variant: 'warning',
+    });
+    return;
+  }
+
+  console.log('🎯 [SUBMIT] Iniciando proceso inteligente...');
+  
+  setIsSubmitting(true);
+  setIsProcessing(true);
+  
+  try {
+    // ✅ CASO 1: CREAR NUEVO LUGAR
+    if (!editingPlace) {
+      console.log('🆕 [SUBMIT] Creando nuevo lugar...');
+      
+      if (!validateForm()) {
+        console.log('❌ [VALIDATION] Validación fallida para nuevo lugar');
+        setIsSubmitting(false);
+        setIsProcessing(false);
+        return;
+      }
+
+      const placeData: PlaceFormData = {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        category: formData.category,
+        location: formData.location.trim(),
+      };
+
+      console.log('📤 [CREATE] Creando lugar con datos básicos...');
+      const savedPlace = await createPlace(placeData, files.image || undefined);
+      
+      if (!savedPlace?.id) {
+        throw new Error('No se pudo obtener el ID del lugar creado');
+      }
+
+      // ✅ SUBIR PDF SI EXISTE (manejar errores individualmente)
+      if (files.pdf) {
+        try {
+          console.log('📄 [UPLOAD] Subiendo PDF para nuevo lugar...');
+          await uploadPlacePDF(savedPlace.id, files.pdf);
+          console.log('✅ [UPLOAD] PDF subido correctamente');
+        } catch (err) {
+          console.error('❌ [UPLOAD] Error subiendo PDF:', err);
+          // No mostrar toast aquí, ya se maneja en el hook
+        }
+      }
+
+      // ✅ ÉXITO - Mostrar toast solo si todo salió bien
       toast({
-        title: '⏳ Operación en curso',
-        description: 'Ya hay una operación en proceso. Por favor espera.',
-        variant: 'warning',
+        title: '✅ Lugar creado',
+        description: 'El lugar se ha creado exitosamente',
       });
-      return;
-    }
 
-    console.log('🎯 [SUBMIT] Iniciando proceso inteligente...');
-    
-    setIsSubmitting(true);
-    setIsProcessing(true);
-    
-    try {
-      // ✅ CASO 1: CREAR NUEVO LUGAR
-      if (!editingPlace) {
-        console.log('🆕 [SUBMIT] Creando nuevo lugar...');
+    } 
+    // ✅ CASO 2: EDITAR LUGAR EXISTENTE
+    else {
+      console.log('✏️ [SUBMIT] Editando lugar existente...');
+      
+      // ✅ ANÁLISIS INTELIGENTE DE CAMBIOS
+      const analisis = analizarCambios(editingPlace, formData);
+      console.log('🔍 Análisis de cambios:', analisis);
+
+      // ✅ ESTRATEGIA 1: SOLO SUBIR ARCHIVOS (sin cambios en datos)
+      if (analisis.camposModificados.length === 0 && (files.image || files.pdf)) {
+        console.log('📤 [STRATEGY] Solo subiendo archivos...');
         
-        if (!validateForm()) {
-          console.log('❌ [VALIDATION] Validación fallida para nuevo lugar');
-          setIsSubmitting(false);
-          setIsProcessing(false);
-          return;
-        }
-
-        const placeData: PlaceFormData = {
-          name: formData.name.trim(),
-          description: formData.description.trim(),
-          category: formData.category,
-          location: formData.location.trim(),
-        };
-
-        console.log('📤 [CREATE] Creando lugar con datos básicos...');
-        const savedPlace = await createPlace(placeData, files.image || undefined);
+        const uploadPromises = [];
         
-        if (!savedPlace?.id) {
-          throw new Error('No se pudo obtener el ID del lugar creado');
+        if (files.image) {
+          uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
         }
-
-        // ✅ SUBIR PDF SI EXISTE
+        
         if (files.pdf) {
-          try {
-            console.log('📄 [UPLOAD] Subiendo PDF para nuevo lugar...');
-            await uploadPlacePDF(savedPlace.id, files.pdf);
-            console.log('✅ [UPLOAD] PDF subido correctamente');
-          } catch (err) {
-            console.error('❌ [UPLOAD] Error subiendo PDF:', err);
-            // El error se maneja automáticamente en el hook
-          }
+          uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
         }
-
-        toast({
-          title: '✅ Lugar creado',
-          description: 'El lugar se ha creado exitosamente',
-        });
-
-      } 
-      // ✅ CASO 2: EDITAR LUGAR EXISTENTE
-      else {
-        console.log('✏️ [SUBMIT] Editando lugar existente...');
         
-        // ✅ ANÁLISIS INTELIGENTE DE CAMBIOS
-        const analisis = analizarCambios(editingPlace, formData);
-        console.log('🔍 Análisis de cambios:', analisis);
-
-        // ✅ ESTRATEGIA 1: SOLO SUBIR ARCHIVOS (sin cambios en datos)
-        if (analisis.camposModificados.length === 0 && (files.image || files.pdf)) {
-          console.log('📤 [STRATEGY] Solo subiendo archivos...');
-          
-          const uploadPromises = [];
-          
-          if (files.image) {
-            uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
-          }
-          
-          if (files.pdf) {
-            uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
-          }
-          
-          await Promise.allSettled(uploadPromises);
-          
+        // ✅ IMPORTANTE: Usar allSettled y verificar resultados
+        const resultados = await Promise.allSettled(uploadPromises);
+        
+        // Verificar si algún archivo fue rechazado
+        const archivosRechazados = resultados.filter(result => 
+          result.status === 'rejected'
+        );
+        
+        if (archivosRechazados.length === 0) {
           toast({
             title: '✅ Archivos actualizados',
             description: 'Los archivos se han actualizado correctamente',
           });
+        } else {
+          console.log('⚠️ Algunos archivos fueron rechazados:', archivosRechazados);
+          // No mostrar toast de éxito aquí, los errores ya se mostraron individualmente
         }
-        // ✅ ESTRATEGIA 2: SOLO METADATOS (ubicación/categoría)
-        else if (!analisis.requiereModeracion && analisis.camposModificados.length > 0) {
-          console.log('📝 [STRATEGY] Actualizando solo metadatos...');
-          
-          const datosActualizacion: Partial<PlaceFormData> = {};
-          if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
-          if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
-          
-          await updatePlaceMetadata(editingPlace.id, {
-            location: datosActualizacion.location,
-            category: datosActualizacion.category
-          });
+      }
+      // ✅ ESTRATEGIA 2: SOLO METADATOS (ubicación/categoría)
+      else if (!analisis.requiereModeracion && analisis.camposModificados.length > 0) {
+        console.log('📝 [STRATEGY] Actualizando solo metadatos...');
+        
+        const datosActualizacion: Partial<PlaceFormData> = {};
+        if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
+        if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
+        
+        // ✅ ACTUALIZAR METADATOS
+        await updatePlaceMetadata(editingPlace.id, {
+          location: datosActualizacion.location,
+          category: datosActualizacion.category
+        });
 
-          // ✅ SUBIR ARCHIVOS EN PARALELO SI EXISTEN
-          const uploadPromises = [];
-          if (files.image) {
-            uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
-          }
-          if (files.pdf) {
-            uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
-          }
+        // ✅ SUBIR ARCHIVOS EN PARALELO SI EXISTEN (manejar individualmente)
+        const uploadPromises = [];
+        if (files.image) {
+          uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
+        }
+        if (files.pdf) {
+          uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+        }
+        
+        if (uploadPromises.length > 0) {
+          const resultados = await Promise.allSettled(uploadPromises);
+          const archivosRechazados = resultados.filter(result => 
+            result.status === 'rejected'
+          );
           
-          if (uploadPromises.length > 0) {
-            await Promise.allSettled(uploadPromises);
+          // Solo mostrar éxito si no hay archivos rechazados
+          if (archivosRechazados.length === 0) {
+            toast({
+              title: '✅ Lugar actualizado',
+              description: 'La información se ha actualizado correctamente',
+            });
           }
-
+        } else {
+          // Si no hay archivos, mostrar éxito de la actualización
           toast({
             title: '✅ Lugar actualizado',
             description: 'La información se ha actualizado correctamente',
           });
         }
-        // ✅ ESTRATEGIA 3: CAMBIOS EN TEXTO (requiere moderación)
-        else if (analisis.requiereModeracion) {
-          console.log('🔍 [STRATEGY] Cambios en texto - aplicando moderación...');
+      }
+      // ✅ ESTRATEGIA 3: CAMBIOS EN TEXTO (requiere moderación)
+      else if (analisis.requiereModeracion) {
+        console.log('🔍 [STRATEGY] Cambios en texto - aplicando moderación...');
+        
+        // ✅ VALIDACIÓN PREVIA OPCIONAL
+        try {
+          const validacion = await validarCambiosLugar(editingPlace.id, formData);
           
-          // ✅ VALIDACIÓN PREVIA OPCIONAL
-          try {
-            const validacion = await validarCambiosLugar(editingPlace.id, formData);
+          if (!validacion.esAprobado) {
+            console.log('❌ [VALIDATION] Validación previa fallida:', validacion.motivo);
             
-            if (!validacion.esAprobado) {
-              // ❌ CORREGIDO: Mostrar toast específico para validación fallida
-              console.log('❌ [VALIDATION] Validación previa fallida:', validacion.motivo);
-              
-              toast({
-                title: '🚫 Contenido rechazado',
-                description: validacion.motivo || 'El contenido no cumple con las políticas de moderación',
-                variant: 'destructive',
-                duration: 10000,
-              });
-              
-              setIsSubmitting(false);
-              setIsProcessing(false);
-              return;
-            }
-          } catch (err: any) {
-            // ❌ CORREGIDO: Manejar error de validación previa
-            console.log('⚠️ Validación previa fallida, continuando...', err);
+            toast({
+              title: '🚫 Contenido rechazado',
+              description: validacion.motivo || 'El contenido no cumple con las políticas de moderación',
+              variant: 'destructive',
+              duration: 10000,
+            });
             
-            // Mostrar toast si es un error de moderación
-            if (err?.motivo || err?.detalles) {
-              toast({
-                title: '🚫 Contenido rechazado',
-                description: err.motivo || err.message || 'El contenido no cumple con las políticas',
-                variant: 'destructive',
-                duration: 10000,
-              });
-              
-              setIsSubmitting(false);
-              setIsProcessing(false);
-              return;
-            }
+            setIsSubmitting(false);
+            setIsProcessing(false);
+            return;
           }
-
-          // ✅ ACTUALIZACIÓN CON MODERACIÓN
-          const datosActualizacion: Partial<PlaceFormData> = {};
-          if (analisis.nombreModificado) datosActualizacion.name = formData.name;
-          if (analisis.descripcionModificada) datosActualizacion.description = formData.description;
-          if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
-          if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
-
-          await updatePlace(editingPlace.id, datosActualizacion, {
-            validarPreviamente: false // Ya validamos arriba
-          });
-
-          // ✅ SUBIR ARCHIVOS EN PARALELO
-          const uploadPromises = [];
-          if (files.image) {
-            uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
-          }
-          if (files.pdf) {
-            uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
-          }
+        } catch (err: any) {
+          console.log('⚠️ Validación previa fallida, continuando...', err);
           
-          if (uploadPromises.length > 0) {
-            await Promise.allSettled(uploadPromises);
+          // Si es error de moderación, detener el proceso
+          if (err?.motivo || err?.detalles) {
+            // El toast ya se mostró en el hook, solo detener
+            setIsSubmitting(false);
+            setIsProcessing(false);
+            return;
           }
+        }
 
+        // ✅ ACTUALIZACIÓN CON MODERACIÓN
+        const datosActualizacion: Partial<PlaceFormData> = {};
+        if (analisis.nombreModificado) datosActualizacion.name = formData.name;
+        if (analisis.descripcionModificada) datosActualizacion.description = formData.description;
+        if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
+        if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
+
+        // ✅ ACTUALIZAR DATOS PRIMERO
+        await updatePlace(editingPlace.id, datosActualizacion, {
+          validarPreviamente: false // Ya validamos arriba
+        });
+
+        // ✅ SUBIR ARCHIVOS EN PARALELO (manejar individualmente)
+        const uploadPromises = [];
+        if (files.image) {
+          uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
+        }
+        if (files.pdf) {
+          uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+        }
+        
+        if (uploadPromises.length > 0) {
+          const resultados = await Promise.allSettled(uploadPromises);
+          const archivosRechazados = resultados.filter(result => 
+            result.status === 'rejected'
+          );
+          
+          // Solo mostrar éxito si no hay archivos rechazados
+          if (archivosRechazados.length === 0) {
+            toast({
+              title: '✅ Lugar actualizado',
+              description: 'El lugar se ha actualizado exitosamente',
+            });
+          }
+        } else {
+          // Si no hay archivos, mostrar éxito de la actualización
           toast({
             title: '✅ Lugar actualizado',
             description: 'El lugar se ha actualizado exitosamente',
           });
         }
-        // ✅ ESTRATEGIA 4: ACTUALIZACIÓN RÁPIDA (sin validación)
-        else {
-          console.log('⚡ [STRATEGY] Actualización rápida...');
+      }
+      // ✅ ESTRATEGIA 4: ACTUALIZACIÓN RÁPIDA (sin validación)
+      else {
+        console.log('⚡ [STRATEGY] Actualización rápida...');
+        
+        const datosActualizacion: Partial<PlaceFormData> = {};
+        if (analisis.nombreModificado) datosActualizacion.name = formData.name;
+        if (analisis.descripcionModificada) datosActualizacion.description = formData.description;
+        if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
+        if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
+
+        // ✅ ACTUALIZAR DATOS
+        await updatePlaceFast(editingPlace.id, datosActualizacion);
+
+        // ✅ SUBIR ARCHIVOS (manejar individualmente)
+        const uploadPromises = [];
+        if (files.image) {
+          uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
+        }
+        if (files.pdf) {
+          uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+        }
+        
+        if (uploadPromises.length > 0) {
+          const resultados = await Promise.allSettled(uploadPromises);
+          const archivosRechazados = resultados.filter(result => 
+            result.status === 'rejected'
+          );
           
-          const datosActualizacion: Partial<PlaceFormData> = {};
-          if (analisis.nombreModificado) datosActualizacion.name = formData.name;
-          if (analisis.descripcionModificada) datosActualizacion.description = formData.description;
-          if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
-          if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
-
-          await updatePlaceFast(editingPlace.id, datosActualizacion);
-
-          // ✅ SUBIR ARCHIVOS
-          const uploadPromises = [];
-          if (files.image) {
-            uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
+          // Solo mostrar éxito si no hay archivos rechazados
+          if (archivosRechazados.length === 0) {
+            toast({
+              title: '✅ Lugar actualizado',
+              description: 'Los cambios se han guardado correctamente',
+            });
           }
-          if (files.pdf) {
-            uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
-          }
-          
-          if (uploadPromises.length > 0) {
-            await Promise.allSettled(uploadPromises);
-          }
-
+        } else {
+          // Si no hay archivos, mostrar éxito de la actualización
           toast({
             title: '✅ Lugar actualizado',
             description: 'Los cambios se han guardado correctamente',
           });
         }
       }
-
-      console.log('🏁 [COMPLETED] Proceso terminado exitosamente');
-      
-      // ✅ LIMPIEZA Y CIERRE
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setIsDialogOpen(false);
-      resetForm();
-      await refetch();
-
-    } catch (err: any) {
-      console.error('❌ [ERROR DETALLADO] Error en handleSubmit:', {
-        error: err,
-        message: err?.message,
-        motivo: err?.motivo,
-        detalles: err?.detalles,
-        tipo: err?.tipo,
-        stack: err?.stack
-      });
-      
-      // ✅ CORREGIDO: Manejo específico de errores de moderación
-      if (err?.motivo || err?.detalles) {
-        console.log('🎯 ES ERROR DE MODERACIÓN - Mostrando toast...');
-        
-        // Construir mensaje detallado
-        let descripcion = err.motivo || err.message || 'El contenido no cumple con las políticas de moderación';
-        
-        // Agregar detalles específicos si existen
-        if (err.detalles?.problemas && Array.isArray(err.detalles.problemas)) {
-          descripcion += `\n\nProblemas detectados:\n• ${err.detalles.problemas.join('\n• ')}`;
-        }
-        
-        if (err.detalles?.sugerencias && Array.isArray(err.detalles.sugerencias)) {
-          descripcion += `\n\nSugerencias:\n• ${err.detalles.sugerencias.join('\n• ')}`;
-        }
-
-        toast({
-          title: '🚫 Contenido rechazado',
-          description: descripcion,
-          variant: 'destructive',
-          duration: 10000,
-        });
-      } else {
-        console.log('⚠️ ES ERROR GENÉRICO');
-        // Error genérico
-        const errorMessage = err?.message || 'Error al procesar la solicitud';
-        toast({
-          title: '❌ Error',
-          description: errorMessage,
-          variant: 'destructive',
-        });
-      }
-    } finally {
-      setIsSubmitting(false);
-      setIsProcessing(false);
     }
-  };
+
+    console.log('🏁 [COMPLETED] Proceso terminado exitosamente');
+    
+    // ✅ LIMPIEZA Y CIERRE (solo si no hubo errores de moderación)
+    await new Promise(resolve => setTimeout(resolve, 500));
+    setIsDialogOpen(false);
+    resetForm();
+    await refetch();
+
+  } catch (err: any) {
+    console.error('❌ [ERROR DETALLADO] Error en handleSubmit:', {
+      error: err,
+      message: err?.message,
+      motivo: err?.motivo,
+      detalles: err?.detalles,
+      tipo: err?.tipo,
+      stack: err?.stack
+    });
+    
+    // ✅ CORREGIDO: Solo mostrar toast si NO es un error de moderación
+    // Los errores de moderación ya se mostraron en los hooks individuales
+    if (!err?.motivo && !err?.detalles) {
+      console.log('⚠️ ES ERROR GENÉRICO - Mostrando toast...');
+      const errorMessage = err?.message || 'Error al procesar la solicitud';
+      toast({
+        title: '❌ Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } else {
+      console.log('🎯 ES ERROR DE MODERACIÓN - Toast ya mostrado en hook');
+    }
+  } finally {
+    setIsSubmitting(false);
+    setIsProcessing(false);
+  }
+};
 
   const handleEdit = (place: Place) => {
     setEditingPlace(place);

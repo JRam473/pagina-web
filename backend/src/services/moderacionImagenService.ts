@@ -1,116 +1,99 @@
-import { PythonBridge, AnalisisImagenResultado } from '../utils/pythonBridge';
+import { ModeloClient } from './modeloClient';
 import { pool } from '../utils/baseDeDatos';
 
-export interface ResultadoModeracionImagen {
-  esAprobado: boolean;
-  motivoRechazo?: string;
-  puntuacionRiesgo: number;
-  detalles?: AnalisisImagenResultado;
-}
-
 export class ModeracionImagenService {
-  private pythonBridge: PythonBridge;
+  private modeloClient: ModeloClient;
 
   constructor() {
-    this.pythonBridge = new PythonBridge();
+    this.modeloClient = new ModeloClient();
   }
 
-  async moderarImagen(imagePath: string, ipUsuario: string, hashNavegador: string): Promise<ResultadoModeracionImagen> {
+  async moderarImagen(imagePath: string, ipUsuario: string, hashNavegador: string) {
+    console.log(`🖼️ Iniciando moderación optimizada de: ${imagePath}`);
+    
     try {
-      console.log(`🖼️ Iniciando moderación de imagen: ${imagePath}`);
+      // Esperar a que el servidor esté listo
+      const servidorListo = await this.modeloClient.waitForServerReady(10);
       
-      const resultado = await this.pythonBridge.esImagenApta(imagePath);
-      
-      // Registrar log de moderación
+      if (!servidorListo) {
+        console.warn('⚠️ Servidor de modelos no disponible, usando fallback...');
+        return await this.usarMetodoOriginal(imagePath, ipUsuario, hashNavegador);
+      }
+
+      const resultado = await this.modeloClient.analizarImagen(imagePath);
+
+      // Registrar log (sin tiempo_procesamiento)
       await this.registrarLogModeracionImagen({
         imagePath,
         ipUsuario,
         hashNavegador,
-        resultado: resultado.detalles || null,
-        esAprobado: resultado.esApto
+        resultado,
+        esAprobado: resultado.es_apto
       });
 
-      // ✅ CASO 1: Imagen rechazada con detalles
-      if (!resultado.esApto && resultado.detalles) {
-        const motivo = this.generarMotivoRechazo(resultado.detalles);
+      if (!resultado.es_apto) {
+        const motivo = this.generarMotivoRechazo(resultado);
         return {
           esAprobado: false,
           motivoRechazo: motivo,
-          puntuacionRiesgo: resultado.detalles.puntuacion_riesgo,
-          detalles: resultado.detalles
+          puntuacionRiesgo: resultado.puntuacion_riesgo,
+          detalles: resultado
         };
       }
 
-      // ✅ CASO 2: Imagen rechazada sin detalles
-      if (!resultado.esApto) {
-        return {
-          esAprobado: false,
-          motivoRechazo: 'Error en el análisis de la imagen',
-          puntuacionRiesgo: 1.0
-        };
-      }
-
-      // ✅ CASO 3: Imagen aprobada con detalles
-      if (resultado.detalles) {
-        return {
-          esAprobado: true,
-          puntuacionRiesgo: resultado.detalles.puntuacion_riesgo,
-          detalles: resultado.detalles
-        };
-      }
-
-      // ✅ CASO 4: Imagen aprobada sin detalles (fallback)
       return {
         esAprobado: true,
-        puntuacionRiesgo: 0.1,
+        puntuacionRiesgo: resultado.puntuacion_riesgo,
+        detalles: resultado
       };
 
     } catch (error) {
       console.error('❌ Error en moderación de imagen:', error);
-      
-      await this.registrarLogModeracionImagen({
-        imagePath,
-        ipUsuario,
-        hashNavegador,
-        resultado: null,
-        esAprobado: false,
-        error: error instanceof Error ? error.message : 'Error desconocido'
-      });
-
-      // ✅ CASO 5: Error en el proceso
-      return {
-        esAprobado: false,
-        motivoRechazo: 'Error técnico en el análisis de la imagen',
-        puntuacionRiesgo: 1.0
-      };
+      return await this.usarMetodoOriginal(imagePath, ipUsuario, hashNavegador);
     }
   }
 
-  private generarMotivoRechazo(detalles: AnalisisImagenResultado): string {
+  private async usarMetodoOriginal(imagePath: string, ipUsuario: string, hashNavegador: string) {
+    console.log('🔄 Usando método PythonBridge como fallback...');
+    const { PythonBridge } = await import('../utils/pythonBridge');
+    const bridge = new PythonBridge();
+    const resultado = await bridge.esImagenApta(imagePath);
+
+    await this.registrarLogModeracionImagen({
+      imagePath,
+      ipUsuario,
+      hashNavegador,
+      resultado: resultado.detalles || null,
+      esAprobado: resultado.esApto
+    });
+
+    if (!resultado.esApto) {
+      return {
+        esAprobado: false,
+        motivoRechazo: resultado.detalles?.error || 'Contenido inapropiado',
+        puntuacionRiesgo: resultado.detalles?.puntuacion_riesgo || 1.0,
+        detalles: resultado.detalles
+      };
+    }
+
+    return {
+      esAprobado: true,
+      puntuacionRiesgo: resultado.detalles?.puntuacion_riesgo || 0.1,
+      detalles: resultado.detalles
+    };
+  }
+
+  private generarMotivoRechazo(detalles: any): string {
     const motivos: string[] = [];
 
-    // ✅ MEJORADO: Mostrar sugerencias más específicas
     if (detalles.analisis_violencia?.es_violento) {
       const prob = Math.round(detalles.analisis_violencia.probabilidad_violencia * 100);
-      motivos.push(`Contenido inapropiado detectado (${prob}% de confianza)`);
+      motivos.push(`Contenido inapropiado (${prob}% confianza)`);
     }
 
     if (detalles.analisis_armas?.armas_detectadas) {
       const conf = Math.round(detalles.analisis_armas.confianza * 100);
-      motivos.push(`Elementos prohibidos detectados (${conf}% de confianza)`);
-    }
-
-    // ✅ NUEVO: Manejar errores de análisis
-    if (detalles.analisis_violencia?.error) {
-      motivos.push(`Problema técnico: ${detalles.analisis_violencia.error}`);
-    }
-
-    if (detalles.analisis_armas?.error) {
-      motivos.push(`Problema técnico: ${detalles.analisis_armas.error}`);
-    }
-
-    if (detalles.error) {
-      motivos.push(`Error del sistema: ${detalles.error}`);
+      motivos.push(`Elementos prohibidos (${conf}% confianza)`);
     }
 
     return motivos.join('; ') || 'La imagen no cumple con las políticas de contenido';
@@ -120,27 +103,26 @@ export class ModeracionImagenService {
     imagePath: string;
     ipUsuario: string;
     hashNavegador: string;
-    resultado: AnalisisImagenResultado | null;
+    resultado: any;
     esAprobado: boolean;
-    error?: string;
   }): Promise<void> {
     try {
+      // ✅ CORREGIDO: Sin tiempo_procesamiento
       await pool.query(
         `INSERT INTO logs_moderacion_imagenes 
-         (ruta_imagen, ip_usuario, hash_navegador, resultado_analisis, es_aprobado, error, creado_en)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+         (ruta_imagen, ip_usuario, hash_navegador, resultado_analisis, es_aprobado, creado_en)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
         [
           log.imagePath,
           log.ipUsuario,
           log.hashNavegador,
           log.resultado ? JSON.stringify(log.resultado) : null,
-          log.esAprobado,
-          log.error || null
+          log.esAprobado
         ]
       );
-      console.log('✅ Log de moderación de imagen registrado');
+      console.log('✅ Log de moderación registrado');
     } catch (error) {
-      console.error('❌ Error registrando log de moderación de imagen:', error);
+      console.error('❌ Error registrando log de moderación:', error);
     }
   }
 }

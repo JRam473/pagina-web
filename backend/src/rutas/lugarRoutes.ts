@@ -69,7 +69,7 @@ router.post('/:id/pdf',
   autenticarAdmin, 
   uploadPDF.single('pdf'),
   validacion.validarArchivoPDF,
-  lugarController.subirPDFLugar
+  lugarController.subirPDFLugarConModeracion  
 );
 
 // Eliminar imagen de galería (admin)

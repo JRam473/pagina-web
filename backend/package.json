@@ -9,7 +9,17 @@
     "start": "node dist/index.js",
     "test": "echo \"No test configured\" && exit 0",
     "test-db": "ts-node src/testDB.ts",
-    "check-env": "ts-node src/check-env.ts"
+    "check-env": "ts-node src/check-env.ts",
+    
+    
+    "model-server": "cd scripts && python modelo_server.py",
+    "model-server-simple": "cd scripts && python modelo_server_simple.py",
+    "install-python-deps": "cd scripts && pip install -r requirements_optimizado.txt",
+    "dev-with-models": "concurrently \"npm run model-server\" \"npm run dev\"",
+    "dev-full": "concurrently \"npm run model-server\" \"npm run dev\"",
+    
+    
+    "start-with-models": "concurrently \"npm run model-server\" \"npm run start\""
   },
   "keywords": [],
   "author": "",
@@ -23,16 +33,21 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
-    "express-validator": "7.2.0",
+    "express-validator": "^7.3.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
+    "node-fetch": "^2.7.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.16.3",
     "sharp": "^0.34.4",
     "tar": "^7.5.1",
-    "validator": "13.12.0"
+    "validator": "^13.15.20",
+    
+    
+    "concurrently": "^7.6.0"
   },
   "devDependencies": {
     "@types/axios": "^0.9.36",
@@ -47,8 +62,10 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.9.0",
+    "@types/node-fetch": "^2.6.13",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.16",
+    "@types/pdf-parse": "^1.1.5",
     "@types/pg": "^8.15.5",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
