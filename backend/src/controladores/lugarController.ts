@@ -1,15 +1,15 @@
-// controladores/lugarController.ts - VERSIÓN CORREGIDA
+// controladores/lugarController.ts - VERSIÓN MEJORADA PARA MANEJO COMPLETO DE EDICIÓN
 import { Request, Response } from 'express';
 import { pool } from '../utils/baseDeDatos';
 import fs from 'fs';
-import { promises as fsPromises } from 'fs'; // ✅ AÑADIDO
+import { promises as fsPromises } from 'fs';
 import sharp from 'sharp';
 import path from 'path';
 import { ModeracionService } from '../services/moderacionService';
 import { generarHashNavegador } from '../utils/hashNavegador';
 import { ModeracionImagenService } from '../services/moderacionImagenService';
 
-// ✅ FUNCIONES AUXILIARES PARA MODERACIÓN (actualizadas para incluir descripciones de fotos)
+// ✅ FUNCIONES AUXILIARES MEJORADAS
 const generarSugerenciasLugar = (tipoProblema: string): string[] => {
   const sugerencias: string[] = [];
   
@@ -34,6 +34,11 @@ const generarSugerenciasLugar = (tipoProblema: string): string[] => {
     sugerencias.push('Evita lenguaje ofensivo o inapropiado en la descripción');
     sugerencias.push('No incluyas contenido comercial o promocional');
     sugerencias.push('La descripción debe ser relevante para la imagen del lugar');
+  } else if (tipoProblema === 'imagen') {
+    sugerencias.push('Asegúrate de que la imagen no contenga contenido violento o gráfico');
+    sugerencias.push('No incluyas armas o elementos peligrosos');
+    sugerencias.push('Usa imágenes apropiadas para todas las edades');
+    sugerencias.push('Verifica que la imagen sea clara y de buena calidad');
   } else {
     sugerencias.push('Revisa el contenido antes de publicarlo');
     sugerencias.push('Asegúrate de que cumpla con las políticas de la comunidad');
@@ -42,97 +47,77 @@ const generarSugerenciasLugar = (tipoProblema: string): string[] => {
   return sugerencias;
 };
 
+// ✅ FUNCIÓN MEJORADA PARA ANALIZAR MOTIVOS DE RECHAZO
 const analizarMotivoRechazoLugar = (resultadoModeracion: any): { 
   mensajeUsuario: string; 
   tipoProblema: string; 
   detallesEspecificos: string[];
-  campoEspecifico: 'nombre' | 'descripcion' | 'descripcion_foto' | 'ambos';
+  campoEspecifico: 'nombre' | 'descripcion' | 'descripcion_foto' | 'imagen' | 'ambos';
 } => {
   const detallesEspecificos: string[] = [];
   let mensajeUsuario = 'El contenido no cumple con nuestras políticas';
   let tipoProblema = 'general';
-  let campoEspecifico: 'nombre' | 'descripcion' | 'descripcion_foto' | 'ambos' = 'ambos';
+  let campoEspecifico: 'nombre' | 'descripcion' | 'descripcion_foto' | 'imagen' | 'ambos' = 'ambos';
 
-  console.log('🔍 Analizando motivo de rechazo para lugar:', resultadoModeracion);
-
-  if (!resultadoModeracion.esAprobado) {
+  // ✅ DETECCIÓN MEJORADA DE PROBLEMAS ESPECÍFICOS
+  if (resultadoModeracion.detalles?.texto && !resultadoModeracion.detalles.texto.esAprobado) {
     tipoProblema = 'texto';
+    const texto = resultadoModeracion.detalles.texto;
     
-    const motivoRechazo = resultadoModeracion.motivoRechazo || '';
-    const puntuacionGeneral = resultadoModeracion.puntuacionGeneral || 0;
-    
-    // ✅ ANÁLISIS ESPECÍFICO PARA LUGARES (actualizado para descripciones de fotos)
-    if (motivoRechazo.includes('ofensivo') || motivoRechazo.includes('ofensiva')) {
-      mensajeUsuario = 'El nombre, descripción o descripción de foto contienen lenguaje ofensivo o inapropiado';
-      detallesEspecificos.push('Se detectaron palabras ofensivas en el contenido');
-      
-      // Intentar determinar el campo específico
-      const textoAnalizado = resultadoModeracion.textoAnalizado || '';
-      
-      // Si el problema menciona específicamente el nombre
-      if (motivoRechazo.includes('nombre') || motivoRechazo.toLowerCase().includes('nombre')) {
-        campoEspecifico = 'nombre';
-        mensajeUsuario = 'El nombre contiene lenguaje ofensivo o inapropiado';
-      } else if (motivoRechazo.includes('descripción') || motivoRechazo.includes('descripcion')) {
-        if (motivoRechazo.includes('foto') || motivoRechazo.includes('imagen')) {
-          campoEspecifico = 'descripcion_foto';
-          mensajeUsuario = 'La descripción de la foto contiene lenguaje ofensivo o inapropiado';
-        } else {
-          campoEspecifico = 'descripcion';
-          mensajeUsuario = 'La descripción contiene lenguaje ofensivo o inapropiado';
-        }
+    if (texto.razon?.includes('ofensivo')) {
+      mensajeUsuario = 'El texto contiene lenguaje ofensivo o inapropiado';
+      detallesEspecificos.push('Se detectaron palabras ofensivas');
+      if (texto.palabrasOfensivas?.length > 0) {
+        detallesEspecificos.push(`Palabras problemáticas: ${texto.palabrasOfensivas.slice(0, 3).join(', ')}`);
       }
-      
-    } else if (motivoRechazo.includes('spam') || motivoRechazo.includes('comercial')) {
-      mensajeUsuario = 'El contenido contiene elementos comerciales no permitidos';
+    } else if (texto.razon?.includes('spam')) {
+      mensajeUsuario = 'El texto contiene contenido comercial no permitido';
       detallesEspecificos.push('Se detectó contenido promocional o spam');
-      
-      if (motivoRechazo.includes('foto') || motivoRechazo.includes('imagen')) {
-        campoEspecifico = 'descripcion_foto';
-        mensajeUsuario = 'La descripción de la foto contiene contenido comercial no permitido';
-      } else {
-        campoEspecifico = 'descripcion';
-        mensajeUsuario = 'La descripción contiene contenido comercial no permitido';
-      }
-      
-    } else if (motivoRechazo.includes('sentido') || motivoRechazo.includes('coherente')) {
-      mensajeUsuario = 'El contenido no tiene sentido o es muy corto';
-      detallesEspecificos.push('El texto debe ser coherente y tener sentido');
-      
-      if (motivoRechazo.includes('foto') || motivoRechazo.includes('imagen')) {
-        campoEspecifico = 'descripcion_foto';
-        mensajeUsuario = 'La descripción de la foto no tiene sentido o es muy corta';
-      } else {
-        campoEspecifico = 'descripcion';
-        mensajeUsuario = 'La descripción no tiene sentido o es muy corta';
-      }
-      
-    } else if (motivoRechazo.includes('URL') || motivoRechazo.includes('email') || motivoRechazo.includes('teléfono') || motivoRechazo.includes('enlace')) {
-      mensajeUsuario = 'El contenido contiene enlaces o información de contacto';
+    } else if (texto.razon?.includes('sin sentido')) {
+      mensajeUsuario = 'El texto no tiene sentido o es muy corto';
+      detallesEspecificos.push('El texto debe ser coherente y tener al menos algunas palabras con sentido');
+    } else if (texto.razon?.includes('URL') || texto.razon?.includes('email') || texto.razon?.includes('teléfono')) {
+      mensajeUsuario = 'El texto contiene enlaces o información de contacto';
       detallesEspecificos.push('No se permiten URLs, emails o números de teléfono');
-      
-      if (motivoRechazo.includes('foto') || motivoRechazo.includes('imagen')) {
-        campoEspecifico = 'descripcion_foto';
-        mensajeUsuario = 'La descripción de la foto contiene enlaces o información de contacto';
-      } else {
-        campoEspecifico = 'descripcion';
-        mensajeUsuario = 'La descripción contiene enlaces o información de contacto';
-      }
-    } else {
-      // Motivo genérico
-      detallesEspecificos.push(motivoRechazo);
     }
+  } else if (resultadoModeracion.detalles?.imagen && !resultadoModeracion.detalles.imagen.esAprobado) {
+    tipoProblema = 'imagen';
+    campoEspecifico = 'imagen';
+    mensajeUsuario = 'La imagen no cumple con las políticas de contenido';
+    detallesEspecificos.push(resultadoModeracion.motivoRechazo || 'Contenido inapropiado detectado en la imagen');
   }
 
-  // Agregar puntuación a los detalles si está disponible
-  if (resultadoModeracion.puntuacionGeneral) {
-    detallesEspecificos.push(`Puntuación de riesgo: ${(resultadoModeracion.puntuacionGeneral * 100).toFixed(1)}%`);
+  // ✅ ANÁLISIS DEL MOTIVO GENERAL SI NO HAY DETALLES ESPECÍFICOS
+  if (detallesEspecificos.length === 0 && resultadoModeracion.motivoRechazo) {
+    const motivo = resultadoModeracion.motivoRechazo.toLowerCase();
+    
+    if (motivo.includes('nombre')) {
+      campoEspecifico = 'nombre';
+      mensajeUsuario = 'El nombre del lugar no cumple con las políticas';
+    } else if (motivo.includes('descripción') || motivo.includes('descripcion')) {
+      campoEspecifico = 'descripcion';
+      mensajeUsuario = 'La descripción del lugar no cumple con las políticas';
+    } else if (motivo.includes('foto') || motivo.includes('imagen')) {
+      campoEspecifico = 'descripcion_foto';
+      mensajeUsuario = 'La descripción de la foto no cumple con las políticas';
+    }
+    
+    detallesEspecificos.push(resultadoModeracion.motivoRechazo);
   }
-
-  console.log('✅ Resultado del análisis para lugar:', { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico });
 
   return { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico };
 };
+
+// ✅ INTERFAZ PARA ESTADO DE EDICIÓN
+interface EstadoEdicion {
+  nombreModificado: boolean;
+  descripcionModificada: boolean;
+  ubicacionModificada: boolean;
+  categoriaModificada: boolean;
+  imagenModificada: boolean;
+  pdfModificado: boolean;
+  camposModificados: string[];
+}
 
 export const lugarController = {
   // Obtener todos los lugares (público) - SIN CAMBIOS
@@ -260,7 +245,7 @@ export const lugarController = {
   },
 
   /**
-   * ✅ NUEVO: Validar nombre y descripción de lugar antes de crear/actualizar
+   * ✅ NUEVO: Validar texto previo para lugares (igual que experiencias)
    */
   async validarTextoPrev(req: Request, res: Response) {
     try {
@@ -285,7 +270,7 @@ export const lugarController = {
 
       const moderacionService = new ModeracionService();
 
-      // ✅ Crear texto combinado para moderación (nombre + descripción)
+      // Crear texto combinado para moderación (nombre + descripción)
       const textoParaModerar = [nombre, descripcion].filter(Boolean).join(' ');
       
       if (!textoParaModerar.trim()) {
@@ -364,7 +349,7 @@ export const lugarController = {
       res.json({
         success: true,
         esAprobado: true,
-        mensaje: 'Contenado aprobado, puedes continuar con la creación/actualización del lugar',
+        mensaje: 'Contenido aprobado, puedes continuar con la creación/actualización del lugar',
         puntuacion: resultadoModeracion.puntuacionGeneral,
         campos_aprobados: {
           nombre: !!nombre?.trim(),
@@ -534,143 +519,245 @@ export const lugarController = {
     }
   },
 
-  // ... (el resto de los métodos existentes se mantienen igual)
 
   /**
-   * ✅ ACTUALIZADO: Crear lugar con moderación DE TEXTO - MEJORADO CON MÁS DETALLES
+   * ✅ CORREGIDO: Crear lugar con moderación DE TEXTO E IMAGEN (igual que experiencias)
    */
   async crearLugar(req: Request, res: Response) {
     try {
+      const file = req.file;
       const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
 
-      console.log('➕ Creando nuevo lugar con moderación de texto:', { nombre, categoria });
+      // ✅ VERIFICAR QUE LOS DATOS LLEGUEN CORRECTAMENTE
+      console.log('📦 Datos recibidos para crear lugar:', {
+        tieneArchivo: !!file,
+        nombre: nombre ? `"${nombre.substring(0, 30)}..."` : 'undefined',
+        descripcion: descripcion ? `"${descripcion.substring(0, 50)}..."` : 'undefined',
+        ubicacion: ubicacion || 'undefined',
+        categoria: categoria || 'undefined'
+      });
 
       // Validaciones básicas
-      if (!nombre || !descripcion || !ubicacion || !categoria) {
+      if (!nombre?.trim() || !descripcion?.trim() || !ubicacion?.trim() || !categoria?.trim()) {
+        // Limpiar archivo si existe
+        if (file) {
+          await fsPromises.unlink(file.path).catch(console.error);
+        }
         return res.status(400).json({
           success: false,
           error: 'Nombre, descripción, ubicación y categoría son requeridos'
         });
       }
 
-      // ✅ CORREGIDO: Moderación de NOMBRE + DESCRIPCIÓN
+      const hashNavegador = generarHashNavegador(req);
+      const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+
+      console.log('📍 Nuevo lugar desde:', {
+        hashNavegador: hashNavegador.substring(0, 10) + '...',
+        ip: ipUsuario,
+        nombre: nombre
+      });
+
       const moderacionService = new ModeracionService();
-      
-      // Crear texto combinado para moderación
+      const moderacionImagenService = new ModeracionImagenService();
+
+      // ✅ 1. PRIMERO MODERAR EL TEXTO (NOMBRE + DESCRIPCIÓN)
       const textoParaModerar = `${nombre} ${descripcion}`;
       
       console.log('🔍 Enviando texto para moderación:', textoParaModerar.substring(0, 100) + '...');
       
-      const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
+      const resultadoModeracionTexto = await moderacionService.moderarContenidoEnTiempoReal({
         texto: textoParaModerar,
-        ipUsuario: req.ip || 'unknown',
-        hashNavegador: 'admin-creacion-lugar'
+        ipUsuario,
+        hashNavegador
       });
 
-      console.log('📊 Resultado de moderación:', resultadoModeracion);
+// En lugarController.ts - Asegurar que los errores se envíen correctamente
 
-      // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico del log
-      if (!resultadoModeracion.esAprobado) {
-        console.log('❌ Contenido rechazado por moderación:', resultadoModeracion.motivoRechazo);
-        
-        // ✅ MEJORADO: Buscar log más reciente para obtener detalles
-        const logReciente = await pool.query(
-          `SELECT motivo, resultado_moderacion 
-           FROM logs_moderacion 
-           WHERE tipo_contenido = 'lugar'
-           ORDER BY creado_en DESC 
-           LIMIT 1`,
-          []
+// ✅ CORREGIR: En la función actualizarLugar
+if (!resultadoModeracionTexto.esAprobado) {
+  console.log('❌ Contenido de lugar rechazado por moderación:', resultadoModeracionTexto.motivoRechazo);
+  
+  // Limpiar archivo si existe
+  if (file) {
+    await fsPromises.unlink(file.path).catch(console.error);
+  }
+
+  // ✅ MEJORAR: Estructura de error más clara para el frontend
+  return res.status(400).json({
+    success: false,
+    error: 'CONTENIDO_RECHAZADO',
+    message: 'El contenido no cumple con las políticas de moderación',
+    motivo: resultadoModeracionTexto.motivoRechazo,
+    tipo: 'moderacion_texto',
+    detalles: {
+      puntuacion: resultadoModeracionTexto.puntuacionGeneral,
+      problemas: [resultadoModeracionTexto.motivoRechazo || 'Texto no aprobado por moderación'],
+      sugerencias: [
+        'Revisa que el texto sea coherente y tenga sentido',
+        'Evita contenido ofensivo o inapropiado',
+        'Asegúrate de que el texto sea descriptivo y claro'
+      ],
+      campoEspecifico: 'descripcion',
+      timestamp: new Date().toISOString()
+    }
+  });
+}
+
+      // ✅ 2. MODERAR LA IMAGEN SI SE PROPORCIONA
+      let imagenAprobada = true;
+      let resultadoModeracionImagen = null;
+      let rutaImagenFinal = foto_principal_url;
+
+      if (file) {
+        console.log('🖼️ Iniciando moderación de imagen para lugar...');
+        resultadoModeracionImagen = await moderacionImagenService.moderarImagen(
+          file.path,
+          ipUsuario,
+          hashNavegador
         );
 
-        let motivoDetallado = resultadoModeracion.motivoRechazo;
-        let detallesEspecificos: string[] = [];
-
-        if (logReciente.rows.length > 0) {
-          const log = logReciente.rows[0];
-          motivoDetallado = log.motivo;
+        if (!resultadoModeracionImagen.esAprobado) {
+          imagenAprobada = false;
+          console.log('❌ Imagen rechazada por moderación:', resultadoModeracionImagen.motivoRechazo);
           
-          try {
-            const resultado = JSON.parse(log.resultado_moderacion);
-            if (resultado.analisisTexto) {
-              const analisis = resultado.analisisTexto;
-              if (analisis.palabrasOfensivas?.length > 0) {
-                detallesEspecificos.push(`Palabras problemáticas: ${analisis.palabrasOfensivas.slice(0, 3).join(', ')}`);
-              }
+          // Eliminar archivo subido
+          await fsPromises.unlink(file.path).catch(console.error);
+          
+          return res.status(400).json({
+            success: false,
+            error: 'IMAGEN_RECHAZADA',
+            message: 'La imagen no cumple con las políticas de contenido',
+            motivo: resultadoModeracionImagen.motivoRechazo,
+            tipo: 'imagen',
+            detalles: {
+              puntuacion: resultadoModeracionImagen.puntuacionRiesgo,
+              problemas: [resultadoModeracionImagen.motivoRechazo || 'Contenido inapropiado detectado'],
+              sugerencias: generarSugerenciasLugar('imagen'),
+              timestamp: new Date().toISOString()
             }
-          } catch (error) {
-            console.error('Error parseando resultado moderación:', error);
-          }
+          });
         }
 
-        const { mensajeUsuario, tipoProblema, campoEspecifico } = analizarMotivoRechazoLugar(resultadoModeracion);
-        
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: mensajeUsuario,
-          motivo: motivoDetallado,
-          tipo: tipoProblema,
-          detalles: {
-            puntuacion: resultadoModeracion.puntuacionGeneral,
-            problemas: detallesEspecificos,
-            sugerencias: generarSugerenciasLugar(tipoProblema),
-            campoEspecifico: campoEspecifico,
-            timestamp: new Date().toISOString()
-          }
-        });
+        console.log('✅ Imagen aprobada por moderación para lugar');
+        // Construir URL de imagen
+        rutaImagenFinal = `/uploads/images/lugares/${file.filename}`;
       }
 
+      // ✅ 3. INSERTAR LUGAR APROBADO
       const result = await pool.query(
         `INSERT INTO lugares 
          (nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [nombre, descripcion, ubicacion, categoria, foto_principal_url || null, pdf_url || null]
+        [
+          nombre.trim(), 
+          descripcion.trim(), 
+          ubicacion.trim(), 
+          categoria.trim(), 
+          rutaImagenFinal || null, 
+          pdf_url || null
+        ]
       );
 
-      console.log('✅ Lugar creado y aprobado:', result.rows[0].id);
+      const lugar = result.rows[0];
 
+      // ✅ 4. SI HAY IMAGEN APROBADA, GUARDAR EN fotos_lugares
+      if (file && imagenAprobada) {
+        // Obtener dimensiones de la imagen
+        let anchoImagen: number | null = null;
+        let altoImagen: number | null = null;
+        
+        try {
+          const metadata = await sharp(file.path).metadata();
+          anchoImagen = metadata.width || null;
+          altoImagen = metadata.height || null;
+        } catch (sharpError) {
+          console.warn('⚠️ No se pudieron obtener dimensiones:', sharpError);
+        }
+
+        await pool.query(
+          `INSERT INTO fotos_lugares 
+           (lugar_id, url_foto, es_principal, descripcion, orden, 
+            ruta_almacenamiento, tamaño_archivo, tipo_archivo, ancho_imagen, alto_imagen)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            lugar.id,
+            rutaImagenFinal,
+            true,
+            'Imagen principal del lugar',
+            1,
+            file.path,
+            file.size,
+            file.mimetype,
+            anchoImagen,
+            altoImagen
+          ]
+        );
+      }
+
+      console.log('✅ Lugar creado y publicado:', {
+        id: lugar.id,
+        nombre: lugar.nombre,
+        moderacion_texto: 'aprobado',
+        moderacion_imagen: imagenAprobada ? 'aprobado' : 'sin imagen'
+      });
+
+      // Respuesta al usuario
       res.status(201).json({
         success: true,
-        mensaje: 'Lugar creado exitosamente',
-        lugar: result.rows[0],
+        mensaje: 'Lugar creado exitosamente.',
+        lugar: {
+          id: lugar.id,
+          nombre: lugar.nombre,
+          descripcion: lugar.descripcion,
+          ubicacion: lugar.ubicacion,
+          categoria: lugar.categoria,
+          foto_principal_url: lugar.foto_principal_url,
+          pdf_url: lugar.pdf_url,
+          creado_en: lugar.creado_en
+        },
         moderacion: {
-          esAprobado: true,
-          puntuacion: resultadoModeracion.puntuacionGeneral,
-          timestamp: new Date().toISOString()
+          texto: {
+            esAprobado: true,
+            puntuacion: resultadoModeracionTexto.puntuacionGeneral
+          },
+          imagen: file ? {
+            esAprobado: imagenAprobada,
+            puntuacion: resultadoModeracionImagen?.puntuacionRiesgo
+          } : null
         }
       });
+
     } catch (error) {
-      console.error('❌ Error creando lugar:', error);
-      
-      // Manejar errores de moderación específicos
-      if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: error.message
-        });
+      // Limpiar archivo en caso de error
+      if (req.file) {
+        await fsPromises.unlink(req.file.path).catch(console.error);
       }
       
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ Error creando lugar:', errorMessage);
       res.status(500).json({ 
         success: false,
-        error: 'Error interno del servidor al crear lugar',
-        detalle: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
+        error: 'Error al crear lugar' 
       });
     }
   },
 
-  // ✅ ACTUALIZADO: Actualizar lugar con moderación SOLO DE TEXTO
+  /**
+   * ✅ MEJORADO: Actualizar lugar con manejo completo de todos los estados de edición
+   */
   async actualizarLugar(req: Request, res: Response) {
+    const client = await pool.connect();
+    
     try {
       const { id } = req.params;
       const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
 
-      console.log('✏️ Actualizando lugar con moderación de texto:', id);
+      console.log('✏️ Actualizando lugar con análisis completo de cambios:', id);
 
-      // Obtener el lugar actual primero
-      const lugarActual = await pool.query(
+      // ✅ 1. OBTENER LUGAR ACTUAL Y ANALIZAR CAMBIOS
+      const lugarActual = await client.query(
         'SELECT * FROM lugares WHERE id = $1',
         [id]
       );
@@ -683,34 +770,96 @@ export const lugarController = {
       }
 
       const lugar = lugarActual.rows[0];
+      
+      // ✅ ANÁLISIS DETALLADO DE CAMBIOS
+      const estadoEdicion: EstadoEdicion = {
+        nombreModificado: nombre !== undefined && nombre !== lugar.nombre,
+        descripcionModificada: descripcion !== undefined && descripcion !== lugar.descripcion,
+        ubicacionModificada: ubicacion !== undefined && ubicacion !== lugar.ubicacion,
+        categoriaModificada: categoria !== undefined && categoria !== lugar.categoria,
+        imagenModificada: foto_principal_url !== undefined && foto_principal_url !== lugar.foto_principal_url,
+        pdfModificado: pdf_url !== undefined && pdf_url !== lugar.pdf_url,
+        camposModificados: []
+      };
 
-      // ✅ CORREGIDO: Moderación de NOMBRE + DESCRIPCIÓN si se modifican
-      const nombreModificado = nombre && nombre !== lugar.nombre;
-      const descripcionModificada = descripcion && descripcion !== lugar.descripcion;
+      // ✅ IDENTIFICAR CAMPOS MODIFICADOS
+      if (estadoEdicion.nombreModificado) estadoEdicion.camposModificados.push('nombre');
+      if (estadoEdicion.descripcionModificada) estadoEdicion.camposModificados.push('descripcion');
+      if (estadoEdicion.ubicacionModificada) estadoEdicion.camposModificados.push('ubicacion');
+      if (estadoEdicion.categoriaModificada) estadoEdicion.camposModificados.push('categoria');
+      if (estadoEdicion.imagenModificada) estadoEdicion.camposModificados.push('imagen');
+      if (estadoEdicion.pdfModificado) estadoEdicion.camposModificados.push('pdf');
 
-      if (nombreModificado || descripcionModificada) {
-        const moderacionService = new ModeracionService();
+      console.log('🔍 Estado de edición:', {
+        lugarId: id,
+        cambios: estadoEdicion.camposModificados,
+        detalles: {
+          nombre: estadoEdicion.nombreModificado ? 'MODIFICADO' : 'sin cambios',
+          descripcion: estadoEdicion.descripcionModificada ? 'MODIFICADO' : 'sin cambios',
+          ubicacion: estadoEdicion.ubicacionModificada ? 'MODIFICADO' : 'sin cambios',
+          categoria: estadoEdicion.categoriaModificada ? 'MODIFICADO' : 'sin cambios',
+          imagen: estadoEdicion.imagenModificada ? 'MODIFICADO' : 'sin cambios',
+          pdf: estadoEdicion.pdfModificado ? 'MODIFICADO' : 'sin cambios'
+        }
+      });
+
+      // ✅ 2. VALIDAR QUE HAYA AL MENOS UN CAMPO PARA ACTUALIZAR
+      if (estadoEdicion.camposModificados.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No se proporcionaron campos para actualizar',
+          detalles: {
+            campos_recibidos: { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url },
+            campos_actuales: {
+              nombre: lugar.nombre,
+              descripcion: lugar.descripcion,
+              ubicacion: lugar.ubicacion,
+              categoria: lugar.categoria,
+              foto_principal_url: lugar.foto_principal_url,
+              pdf_url: lugar.pdf_url
+            }
+          }
+        });
+      }
+
+      const hashNavegador = generarHashNavegador(req);
+      const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+      const moderacionService = new ModeracionService();
+
+      await client.query('BEGIN');
+
+      // ✅ 3. MODERACIÓN DE TEXTO SOLO SI SE MODIFICAN NOMBRE O DESCRIPCIÓN
+      if (estadoEdicion.nombreModificado || estadoEdicion.descripcionModificada) {
+        console.log('🔍 Cambios en texto detectados, aplicando moderación...');
         
-        // Usar valores nuevos o existentes
-        const nombreParaModerar = nombre || lugar.nombre;
-        const descripcionParaModerar = descripcion || lugar.descripcion;
+        // Usar valores nuevos o existentes para la moderación
+        const nombreParaModerar = nombre !== undefined ? nombre : lugar.nombre;
+        const descripcionParaModerar = descripcion !== undefined ? descripcion : lugar.descripcion;
         
         // Crear texto combinado para moderación
         const textoParaModerar = `${nombreParaModerar} ${descripcionParaModerar}`;
         
-        const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
-          texto: textoParaModerar, // ← Ahora incluye nombre + descripción
-          ipUsuario: req.ip || 'unknown',
-          hashNavegador: 'admin-actualizacion-lugar'
+        console.log('📝 Texto para moderación:', {
+          nombre: nombreParaModerar?.substring(0, 50) + '...',
+          descripcion: descripcionParaModerar?.substring(0, 100) + '...',
+          hash: hashNavegador.substring(0, 10) + '...'
         });
 
-        // ✅ SI ES RECHAZADO: Responder inmediatamente con motivo específico
+        const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
+          texto: textoParaModerar,
+          ipUsuario,
+          hashNavegador
+        });
+
+        // ✅ SI ES RECHAZADO: Rollback y responder con error detallado
         if (!resultadoModeracion.esAprobado) {
           console.log('❌ Contenido rechazado por moderación:', resultadoModeracion.motivoRechazo);
           
-          const { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico } = this.analizarMotivoRechazo(resultadoModeracion);
+          await client.query('ROLLBACK');
+
+          const { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico } = 
+            analizarMotivoRechazoLugar(resultadoModeracion);
           
-          // ✅ CORREGIDO: Ahora sí incluye campoEspecifico
           return res.status(400).json({
             success: false,
             error: 'CONTENIDO_RECHAZADO',
@@ -720,54 +869,282 @@ export const lugarController = {
             detalles: {
               puntuacion: resultadoModeracion.puntuacionGeneral,
               problemas: detallesEspecificos,
-              sugerencias: this.generarSugerencias(tipoProblema),
-              campoEspecifico: campoEspecifico, // ← ¡ESTO ES LO QUE FALTABA!
+              sugerencias: generarSugerenciasLugar(tipoProblema),
+              campoEspecifico: campoEspecifico,
+              campos_afectados: estadoEdicion.camposModificados.filter(campo => 
+                campo === 'nombre' || campo === 'descripcion'
+              ),
               timestamp: new Date().toISOString()
             }
           });
         }
+        
+        console.log('✅ Texto aprobado para actualización');
+      } else {
+        console.log('⏭️ No hay cambios en texto, omitiendo moderación');
       }
 
-      // Usar valores existentes si no se proporcionan nuevos
-      const nombreFinal = nombre || lugar.nombre;
-      const descripcionFinal = descripcion || lugar.descripcion;
-      const ubicacionFinal = ubicacion || lugar.ubicacion;
-      const categoriaFinal = categoria || lugar.categoria;
-      const fotoPrincipalFinal = foto_principal_url !== undefined ? foto_principal_url : lugar.foto_principal_url;
-      const pdfFinal = pdf_url !== undefined ? pdf_url : lugar.pdf_url;
+      // ✅ 4. CONSTRUIR QUERY DINÁMICA SOLO PARA CAMPOS MODIFICADOS
+      const camposActualizar: string[] = [];
+      const valores: any[] = [];
+      let contador = 1;
 
-      const result = await pool.query(
-        `UPDATE lugares 
-         SET nombre = $1, descripcion = $2, ubicacion = $3, categoria = $4, 
-             foto_principal_url = $5, pdf_url = $6, actualizado_en = NOW()
-         WHERE id = $7
-         RETURNING *`,
-        [nombreFinal, descripcionFinal, ubicacionFinal, categoriaFinal, 
-         fotoPrincipalFinal, pdfFinal, id]
-      );
+      // Solo incluir campos que realmente han cambiado
+      if (estadoEdicion.nombreModificado) {
+        camposActualizar.push(`nombre = $${contador}`);
+        valores.push(nombre);
+        contador++;
+      }
 
-      console.log('✅ Lugar actualizado:', id);
+      if (estadoEdicion.descripcionModificada) {
+        camposActualizar.push(`descripcion = $${contador}`);
+        valores.push(descripcion);
+        contador++;
+      }
 
+      if (estadoEdicion.ubicacionModificada) {
+        camposActualizar.push(`ubicacion = $${contador}`);
+        valores.push(ubicacion);
+        contador++;
+      }
+
+      if (estadoEdicion.categoriaModificada) {
+        camposActualizar.push(`categoria = $${contador}`);
+        valores.push(categoria);
+        contador++;
+      }
+
+      if (estadoEdicion.imagenModificada) {
+        camposActualizar.push(`foto_principal_url = $${contador}`);
+        valores.push(foto_principal_url);
+        contador++;
+      }
+
+      if (estadoEdicion.pdfModificado) {
+        camposActualizar.push(`pdf_url = $${contador}`);
+        valores.push(pdf_url);
+        contador++;
+      }
+
+      // Siempre actualizar la fecha de modificación
+      camposActualizar.push(`actualizado_en = NOW()`);
+
+      // ✅ 5. EJECUTAR ACTUALIZACIÓN
+      valores.push(id);
+      
+      const query = `
+        UPDATE lugares 
+        SET ${camposActualizar.join(', ')}
+        WHERE id = $${contador}
+        RETURNING *
+      `;
+
+      console.log('🛠️ Ejecutando actualización:', {
+        query: query.replace(/\s+/g, ' '),
+        valores: valores.slice(0, -1), // Excluir el ID para el log
+        totalCampos: camposActualizar.length - 1 // Excluir actualizado_en
+      });
+
+      const result = await client.query(query, valores);
+
+      if (result.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({
+          success: false,
+          error: 'No se pudo actualizar el lugar'
+        });
+      }
+
+      await client.query('COMMIT');
+
+      const lugarActualizado = result.rows[0];
+      
+      console.log('✅ Lugar actualizado exitosamente:', {
+        id: lugarActualizado.id,
+        cambios: estadoEdicion.camposModificados,
+        totalCamposModificados: estadoEdicion.camposModificados.length
+      });
+
+      // ✅ 6. RESPUESTA DETALLADA
       res.json({
         success: true,
         mensaje: 'Lugar actualizado exitosamente',
-        lugar: result.rows[0]
+        lugar: lugarActualizado,
+        cambios: {
+          total: estadoEdicion.camposModificados.length,
+          campos: estadoEdicion.camposModificados,
+          detalles: {
+            nombre: estadoEdicion.nombreModificado,
+            descripcion: estadoEdicion.descripcionModificada,
+            ubicacion: estadoEdicion.ubicacionModificada,
+            categoria: estadoEdicion.categoriaModificada,
+            imagen: estadoEdicion.imagenModificada,
+            pdf: estadoEdicion.pdfModificado
+          }
+        },
+        moderacion: {
+          texto_aplicada: estadoEdicion.nombreModificado || estadoEdicion.descripcionModificada,
+          resultado: 'aprobado'
+        },
+        timestamp: new Date().toISOString()
       });
+
     } catch (error) {
-      console.error('❌ Error actualizando lugar:', error);
+      await client.query('ROLLBACK').catch(console.error);
       
-      // Manejar errores de moderación específicos
-      if (error instanceof Error && error.message.includes('CONTENIDO_RECHAZADO')) {
-        return res.status(400).json({
-          success: false,
-          error: 'CONTENIDO_RECHAZADO',
-          message: error.message
-        });
-      }
+      console.error('❌ Error actualizando lugar:', error);
       
       res.status(500).json({ 
         success: false,
         error: 'Error al actualizar lugar',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    } finally {
+      client.release();
+    }
+  },
+
+  /**
+   * ✅ NUEVO: Endpoint para validar cambios antes de actualizar
+   */
+  async validarCambiosLugar(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { nombre, descripcion, ubicacion, categoria } = req.body;
+
+      console.log('🔍 Validando cambios previos para lugar:', id);
+
+      // ✅ 1. OBTENER LUGAR ACTUAL
+      const lugarActual = await pool.query(
+        'SELECT * FROM lugares WHERE id = $1',
+        [id]
+      );
+
+      if (lugarActual.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Lugar no encontrado'
+        });
+      }
+
+      const lugar = lugarActual.rows[0];
+      
+      // ✅ 2. ANALIZAR CAMBIOS PROPUESTOS
+      const cambiosPropuestos = {
+        nombre: nombre !== undefined && nombre !== lugar.nombre ? { 
+          actual: lugar.nombre, 
+          nuevo: nombre,
+          modificado: true 
+        } : { modificado: false },
+        
+        descripcion: descripcion !== undefined && descripcion !== lugar.descripcion ? { 
+          actual: lugar.descripcion, 
+          nuevo: descripcion,
+          modificado: true 
+        } : { modificado: false },
+        
+        ubicacion: ubicacion !== undefined && ubicacion !== lugar.ubicacion ? { 
+          actual: lugar.ubicacion, 
+          nuevo: ubicacion,
+          modificado: true 
+        } : { modificado: false },
+        
+        categoria: categoria !== undefined && categoria !== lugar.categoria ? { 
+          actual: lugar.categoria, 
+          nuevo: categoria,
+          modificado: true 
+        } : { modificado: false }
+      };
+
+      const camposAModerar = [];
+      if (cambiosPropuestos.nombre.modificado) camposAModerar.push('nombre');
+      if (cambiosPropuestos.descripcion.modificado) camposAModerar.push('descripcion');
+
+      console.log('📊 Análisis de cambios propuestos:', {
+        lugarId: id,
+        camposAModerar,
+        cambiosPropuestos
+      });
+
+      // ✅ 3. MODERACIÓN SOLO SI HAY CAMBIOS EN TEXTO
+      if (camposAModerar.length > 0) {
+        const hashNavegador = generarHashNavegador(req);
+        const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+        const moderacionService = new ModeracionService();
+
+        const nombreParaModerar = cambiosPropuestos.nombre.modificado ? nombre : lugar.nombre;
+        const descripcionParaModerar = cambiosPropuestos.descripcion.modificado ? descripcion : lugar.descripcion;
+        
+        const textoParaModerar = `${nombreParaModerar} ${descripcionParaModerar}`;
+
+        const resultadoModeracion = await moderacionService.moderarContenidoEnTiempoReal({
+          texto: textoParaModerar,
+          ipUsuario,
+          hashNavegador
+        });
+
+        if (!resultadoModeracion.esAprobado) {
+          console.log('❌ Validación previa fallida:', resultadoModeracion.motivoRechazo);
+          
+          const { mensajeUsuario, tipoProblema, detallesEspecificos, campoEspecifico } = 
+            analizarMotivoRechazoLugar(resultadoModeracion);
+
+          return res.status(400).json({
+            success: false,
+            error: 'VALIDACION_RECHAZADA',
+            message: mensajeUsuario,
+            motivo: resultadoModeracion.motivoRechazo,
+            tipo: tipoProblema,
+            detalles: {
+              puntuacion: resultadoModeracion.puntuacionGeneral,
+              problemas: detallesEspecificos,
+              sugerencias: generarSugerenciasLugar(tipoProblema),
+              campoEspecifico: campoEspecifico,
+              campos_afectados: camposAModerar,
+              timestamp: new Date().toISOString()
+            }
+          });
+        }
+
+        console.log('✅ Validación previa aprobada');
+        
+        return res.json({
+          success: true,
+          esAprobado: true,
+          mensaje: 'Cambios validados correctamente',
+          cambios: cambiosPropuestos,
+          moderacion: {
+            aplicada: true,
+            campos_moderados: camposAModerar,
+            puntuacion: resultadoModeracion.puntuacionGeneral,
+            resultado: 'aprobado'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // ✅ 4. SI NO HAY CAMBIOS EN TEXTO, SOLO INFORMAR
+      console.log('⏭️ No hay cambios que requieran moderación');
+      
+      res.json({
+        success: true,
+        esAprobado: true,
+        mensaje: 'Cambios validados (no requieren moderación)',
+        cambios: cambiosPropuestos,
+        moderacion: {
+          aplicada: false,
+          campos_moderados: [],
+          resultado: 'no_requerido'
+        },
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Error validando cambios:', error);
+      
+      res.status(500).json({
+        success: false,
+        error: 'Error al validar cambios',
         detalle: error instanceof Error ? error.message : 'Error desconocido'
       });
     }
@@ -833,393 +1210,396 @@ export const lugarController = {
     }
   },
 
- /**
- * ✅ ACTUALIZADO: Subir imagen principal CON moderación (igual que experiencias)
- */
-async subirImagenLugar(req: Request, res: Response) {
-  try {
-    const { id } = req.params;
-    
-    console.log('🖼️ Subiendo imagen principal para lugar con moderación:', id);
-
-    if (!req.file) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'No se proporcionó ninguna imagen' 
-      });
-    }
-
-    // ✅ NUEVO: Moderación de imagen (igual que en experiencias)
-    const hashNavegador = generarHashNavegador(req);
-    const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
-
-    const moderacionImagenService = new ModeracionImagenService();
-    
-    const resultadoModeracion = await moderacionImagenService.moderarImagen(
-      req.file.path,
-      ipUsuario,
-      hashNavegador
-    );
-
-    if (!resultadoModeracion.esAprobado) {
-      console.log('❌ Imagen rechazada por moderación:', resultadoModeracion.motivoRechazo);
+  /**
+   * ✅ CORREGIDO: Subir imagen principal CON moderación (igual que experiencias)
+   */
+  async subirImagenLugar(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
       
-      // ✅ CORREGIDO: Usar fsPromises.unlink
-      try {
-        await fsPromises.unlink(req.file.path);
-      } catch (error) {
-        console.error('Error eliminando archivo:', error);
+      console.log('🖼️ Subiendo imagen principal para lugar con moderación:', id);
+
+      if (!req.file) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'No se proporcionó ninguna imagen' 
+        });
       }
+
+      // ✅ MODERACIÓN DE IMAGEN (igual que en experiencias)
+      const hashNavegador = generarHashNavegador(req);
+      const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+
+      const moderacionImagenService = new ModeracionImagenService();
       
-      return res.status(400).json({
-        success: false,
-        error: 'IMAGEN_RECHAZADA',
-        message: 'La imagen no cumple con las políticas de contenido',
-        motivo: resultadoModeracion.motivoRechazo,
-        tipo: 'imagen',
-        detalles: {
-          puntuacion: resultadoModeracion.puntuacionRiesgo,
-          problemas: [resultadoModeracion.motivoRechazo || 'Contenido inapropiado detectado'],
-          sugerencias: [
-            'Asegúrate de que la imagen no contenga contenido violento o gráfico',
-            'No incluyas armas o elementos peligrosos',
-            'Usa imágenes apropiadas para todas las edades',
-            'Verifica que la imagen sea clara y de buena calidad'
-          ],
-          timestamp: new Date().toISOString()
-        }
-      });
-    }
-
-    console.log('✅ Imagen aprobada por moderación para lugar:', id);
-
-    // El resto del código permanece igual...
-    // Verificar que el lugar existe
-    const lugarResult = await pool.query(
-      'SELECT id, nombre FROM lugares WHERE id = $1',
-      [id]
-    );
-
-    if (lugarResult.rows.length === 0) {
-      // ✅ CORREGIDO: Usar fsPromises.unlink
-      if (req.file.path) {
-        try {
-          await fsPromises.unlink(req.file.path);
-        } catch (error) {
-          console.error('Error eliminando archivo:', error);
-        }
-      }
-      return res.status(404).json({ 
-        success: false,
-        error: 'Lugar no encontrado' 
-      });
-    }
-
-    const rutaImagen = `/uploads/images/lugares/${req.file.filename}`;
-
-    // Verificar si ya existe una imagen principal
-    const imagenPrincipalExistente = await pool.query(
-      'SELECT id, ruta_almacenamiento FROM fotos_lugares WHERE lugar_id = $1 AND es_principal = true',
-      [id]
-    );
-
-    let result;
-    
-    if (imagenPrincipalExistente.rows.length > 0) {
-      // Actualizar la imagen principal existente
-      const imagenId = imagenPrincipalExistente.rows[0].id;
-      
-      // Eliminar archivo anterior si existe
-      const imagenAnterior = await pool.query(
-        'SELECT ruta_almacenamiento FROM fotos_lugares WHERE id = $1',
-        [imagenId]
-      );
-      
-      if (imagenAnterior.rows[0]?.ruta_almacenamiento) {
-        try {
-          await fsPromises.access(imagenAnterior.rows[0].ruta_almacenamiento);
-          await fsPromises.unlink(imagenAnterior.rows[0].ruta_almacenamiento);
-        } catch (error) {
-          console.log('Archivo anterior no encontrado o no se pudo eliminar:', error);
-        }
-      }
-
-      result = await pool.query(
-        `UPDATE fotos_lugares 
-         SET url_foto = $1, ruta_almacenamiento = $2, tamaño_archivo = $3, 
-             tipo_archivo = $4, actualizado_en = NOW()
-         WHERE id = $5
-         RETURNING id`,
-        [rutaImagen, req.file.path, req.file.size, req.file.mimetype, imagenId]
-      );
-    } else {
-      // Insertar nueva imagen principal
-      result = await pool.query(
-        `INSERT INTO fotos_lugares (lugar_id, url_foto, es_principal, descripcion, orden, 
-         ruta_almacenamiento, tamaño_archivo, tipo_archivo)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING id`,
-        [
-          id,
-          rutaImagen,
-          true,
-          'Imagen principal del lugar',
-          1,
-          req.file.path,
-          req.file.size,
-          req.file.mimetype
-        ]
-      );
-    }
-
-    // Actualizar también la foto_principal_url en la tabla lugares
-    await pool.query(
-      'UPDATE lugares SET foto_principal_url = $1, actualizado_en = NOW() WHERE id = $2',
-      [rutaImagen, id]
-    );
-
-    console.log('✅ Imagen principal subida y aprobada para lugar:', id);
-
-    res.json({
-      success: true,
-      mensaje: 'Imagen subida exitosamente',
-      url_imagen: rutaImagen,
-      es_principal: true,
-      imagen_id: result.rows[0].id,
-      moderacion: {
-        esAprobado: true,
-        puntuacionRiesgo: resultadoModeracion.puntuacionRiesgo,
-        timestamp: new Date().toISOString()
-      },
-      archivo: {
-        nombre: req.file.filename,
-        tamaño: req.file.size,
-        tipo: req.file.mimetype
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Error subiendo imagen:', error);
-    
-    if (req.file?.path) {
-      try {
-        await fsPromises.unlink(req.file.path);
-      } catch (unlinkError) {
-        console.error('Error eliminando archivo:', unlinkError);
-      }
-    }
-    
-    res.status(500).json({ 
-      success: false,
-      error: 'Error al subir imagen',
-      detalle: error instanceof Error ? error.message : 'Error desconocido'
-    });
-  }
-},
-
-/**
- * ✅ ACTUALIZADO: Subir múltiples imágenes CON moderación (igual que experiencias)
- */
-async subirMultipleImagenesLugar(req: Request, res: Response) {
-  const client = await pool.connect();
-  
-  try {
-    const { id } = req.params;
-    
-    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'No se proporcionaron imágenes' 
-      });
-    }
-
-    console.log('📤 Subiendo múltiples imágenes para galería del lugar con moderación:', id);
-
-    await client.query('BEGIN');
-
-    // 1. Verificar que el lugar existe
-    const lugarResult = await client.query(
-      'SELECT id, nombre, foto_principal_url FROM lugares WHERE id = $1',
-      [id]
-    );
-
-    if (lugarResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      // ✅ CORREGIDO: Usar fsPromises.unlink para cada archivo
-      for (const file of req.files) {
-        if (file.path) {
-          try {
-            await fsPromises.unlink(file.path);
-          } catch (error) {
-            console.error('Error eliminando archivo:', error);
-          }
-        }
-      }
-      return res.status(404).json({ 
-        success: false,
-        error: 'Lugar no encontrado' 
-      });
-    }
-
-    const lugar = lugarResult.rows[0];
-    const hashNavegador = generarHashNavegador(req);
-    const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
-    const moderacionImagenService = new ModeracionImagenService();
-
-    // ✅ NUEVO: Moderar cada imagen (igual que en experiencias)
-    const imagenesAceptadas = [];
-    
-    for (const file of req.files) {
       const resultadoModeracion = await moderacionImagenService.moderarImagen(
-        file.path,
+        req.file.path,
         ipUsuario,
         hashNavegador
       );
 
       if (!resultadoModeracion.esAprobado) {
-        console.log('❌ Imagen rechazada en galería:', file.filename, resultadoModeracion.motivoRechazo);
-        // ✅ CORREGIDO: Usar fsPromises.unlink
+        console.log('❌ Imagen rechazada por moderación:', resultadoModeracion.motivoRechazo);
+        
+        // Eliminar archivo subido
         try {
-          await fsPromises.unlink(file.path);
+          await fsPromises.unlink(req.file.path);
         } catch (error) {
           console.error('Error eliminando archivo:', error);
         }
-      } else {
-        imagenesAceptadas.push(file);
-        console.log('✅ Imagen aprobada para galería:', file.filename);
+        
+        return res.status(400).json({
+          success: false,
+          error: 'IMAGEN_RECHAZADA',
+          message: 'La imagen no cumple con las políticas de contenido',
+          motivo: resultadoModeracion.motivoRechazo,
+          tipo: 'imagen',
+          detalles: {
+            puntuacion: resultadoModeracion.puntuacionRiesgo,
+            problemas: [resultadoModeracion.motivoRechazo || 'Contenido inapropiado detectado'],
+            sugerencias: generarSugerenciasLugar('imagen'),
+            timestamp: new Date().toISOString()
+          }
+        });
       }
-    }
 
-    if (imagenesAceptadas.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        error: 'Todas las imágenes fueron rechazadas por moderación',
-        detalles: {
-          total_enviadas: req.files.length,
-          total_rechazadas: req.files.length,
-          sugerencias: [
-            'Asegúrate de que las imágenes no contengan contenido violento o gráfico',
-            'No incluyas armas o elementos peligrosos',
-            'Usa imágenes apropiadas para todas las edades'
-          ]
+      console.log('✅ Imagen aprobada por moderación para lugar:', id);
+
+      // Verificar que el lugar existe
+      const lugarResult = await pool.query(
+        'SELECT id, nombre FROM lugares WHERE id = $1',
+        [id]
+      );
+
+      if (lugarResult.rows.length === 0) {
+        // Eliminar archivo si el lugar no existe
+        if (req.file.path) {
+          try {
+            await fsPromises.unlink(req.file.path);
+          } catch (error) {
+            console.error('Error eliminando archivo:', error);
+          }
         }
-      });
-    }
+        return res.status(404).json({ 
+          success: false,
+          error: 'Lugar no encontrado' 
+        });
+      }
 
-    console.log(`✅ ${imagenesAceptadas.length}/${req.files.length} imágenes aprobadas para galería`);
+      const rutaImagen = `/uploads/images/lugares/${req.file.filename}`;
 
-    // El resto del código permanece igual...
-    // 2. Obtener el máximo orden actual
-    const maxOrdenResult = await client.query(
-      'SELECT COALESCE(MAX(orden), 0) as max_orden FROM fotos_lugares WHERE lugar_id = $1',
-      [id]
-    );
-    
-    let orden = maxOrdenResult.rows[0].max_orden + 1;
-    const imagenesSubidas = [];
-
-    // 3. Insertar cada imagen aprobada como NO principal
-    for (const file of imagenesAceptadas) {
-      const rutaImagen = `/uploads/images/lugares/${file.filename}`;
-      
-      console.log('💾 Guardando imagen de galería aprobada:', {
-        nombre: file.filename,
-        orden: orden,
-        es_principal: false
-      });
-
-      // Obtener dimensiones
+      // Obtener dimensiones de la imagen
       let anchoImagen: number | null = null;
       let altoImagen: number | null = null;
       
       try {
-        const metadata = await sharp(file.path).metadata();
+        const metadata = await sharp(req.file.path).metadata();
         anchoImagen = metadata.width || null;
         altoImagen = metadata.height || null;
       } catch (sharpError) {
         console.warn('⚠️ No se pudieron obtener dimensiones:', sharpError);
       }
 
-      // Insertar imagen EXPLÍCITAMENTE como no principal
-      const result = await client.query(
-        `INSERT INTO fotos_lugares 
-         (lugar_id, url_foto, ruta_almacenamiento, descripcion, es_principal, orden,
-          ancho_imagen, alto_imagen, tamaño_archivo, tipo_archivo)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING id, url_foto, es_principal, orden`,
-        [
-          id,
-          rutaImagen,
-          file.path,
-          `Imagen ${orden} - ${lugar.nombre}`,
-          false,
-          orden,
-          anchoImagen,
-          altoImagen,
-          file.size,
-          file.mimetype
-        ]
+      // Verificar si ya existe una imagen principal
+      const imagenPrincipalExistente = await pool.query(
+        'SELECT id, ruta_almacenamiento FROM fotos_lugares WHERE lugar_id = $1 AND es_principal = true',
+        [id]
       );
 
-      const imagenInsertada = result.rows[0];
-      console.log('✅ Imagen de galería insertada:', {
-        id: imagenInsertada.id, 
-        es_principal: imagenInsertada.es_principal
+      let result;
+      
+      if (imagenPrincipalExistente.rows.length > 0) {
+        // Actualizar la imagen principal existente
+        const imagenId = imagenPrincipalExistente.rows[0].id;
+        
+        // Eliminar archivo anterior si existe
+        const imagenAnterior = await pool.query(
+          'SELECT ruta_almacenamiento FROM fotos_lugares WHERE id = $1',
+          [imagenId]
+        );
+        
+        if (imagenAnterior.rows[0]?.ruta_almacenamiento) {
+          try {
+            await fsPromises.access(imagenAnterior.rows[0].ruta_almacenamiento);
+            await fsPromises.unlink(imagenAnterior.rows[0].ruta_almacenamiento);
+          } catch (error) {
+            console.log('Archivo anterior no encontrado o no se pudo eliminar:', error);
+          }
+        }
+
+        result = await pool.query(
+          `UPDATE fotos_lugares 
+           SET url_foto = $1, ruta_almacenamiento = $2, tamaño_archivo = $3, 
+               tipo_archivo = $4, ancho_imagen = $5, alto_imagen = $6, actualizado_en = NOW()
+           WHERE id = $7
+           RETURNING id`,
+          [rutaImagen, req.file.path, req.file.size, req.file.mimetype, anchoImagen, altoImagen, imagenId]
+        );
+      } else {
+        // Insertar nueva imagen principal
+        result = await pool.query(
+          `INSERT INTO fotos_lugares (lugar_id, url_foto, es_principal, descripcion, orden, 
+           ruta_almacenamiento, tamaño_archivo, tipo_archivo, ancho_imagen, alto_imagen)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id`,
+          [
+            id,
+            rutaImagen,
+            true,
+            'Imagen principal del lugar',
+            1,
+            req.file.path,
+            req.file.size,
+            req.file.mimetype,
+            anchoImagen,
+            altoImagen
+          ]
+        );
+      }
+
+      // Actualizar también la foto_principal_url en la tabla lugares
+      await pool.query(
+        'UPDATE lugares SET foto_principal_url = $1, actualizado_en = NOW() WHERE id = $2',
+        [rutaImagen, id]
+      );
+
+      console.log('✅ Imagen principal subida y aprobada para lugar:', id);
+
+      res.json({
+        success: true,
+        mensaje: 'Imagen subida exitosamente',
+        url_imagen: rutaImagen,
+        es_principal: true,
+        imagen_id: result.rows[0].id,
+        moderacion: {
+          esAprobado: true,
+          puntuacionRiesgo: resultadoModeracion.puntuacionRiesgo,
+          timestamp: new Date().toISOString()
+        },
+        archivo: {
+          nombre: req.file.filename,
+          tamaño: req.file.size,
+          tipo: req.file.mimetype
+        }
       });
 
-      imagenesSubidas.push({
-        id: imagenInsertada.id,
-        url: imagenInsertada.url_foto,
-        es_principal: imagenInsertada.es_principal,
-        orden: imagenInsertada.orden,
-        nombre: file.filename
+    } catch (error) {
+      console.error('❌ Error subiendo imagen:', error);
+      
+      if (req.file?.path) {
+        try {
+          await fsPromises.unlink(req.file.path);
+        } catch (unlinkError) {
+          console.error('Error eliminando archivo:', unlinkError);
+        }
+      }
+      
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al subir imagen',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
       });
-
-      orden++;
     }
+  },
 
-    await client.query('COMMIT');
-    console.log('✅ Galería actualizada - Imágenes aprobadas agregadas:', imagenesSubidas.length);
-
-    res.json({
-      success: true,
-      mensaje: `${imagenesSubidas.length} imágenes agregadas a la galería`,
-      imagenes: imagenesSubidas,
-      total: imagenesSubidas.length,
-      estadisticas: {
-        total_enviadas: req.files.length,
-        total_aprobadas: imagenesAceptadas.length,
-        total_rechazadas: req.files.length - imagenesAceptadas.length
-      },
-      nota: 'Las imágenes se agregaron a la galería sin establecer como principal'
-    });
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Error subiendo imágenes a galería:', error);
+  /**
+   * ✅ CORREGIDO: Subir múltiples imágenes CON moderación (igual que experiencias)
+   */
+  async subirMultipleImagenesLugar(req: Request, res: Response) {
+    const client = await pool.connect();
     
-    if (req.files && Array.isArray(req.files)) {
+    try {
+      const { id } = req.params;
+      
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'No se proporcionaron imágenes' 
+        });
+      }
+
+      console.log('📤 Subiendo múltiples imágenes para galería del lugar con moderación:', id);
+
+      await client.query('BEGIN');
+
+      // 1. Verificar que el lugar existe
+      const lugarResult = await client.query(
+        'SELECT id, nombre, foto_principal_url FROM lugares WHERE id = $1',
+        [id]
+      );
+
+      if (lugarResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        // Eliminar archivos subidos
+        for (const file of req.files) {
+          if (file.path) {
+            try {
+              await fsPromises.unlink(file.path);
+            } catch (error) {
+              console.error('Error eliminando archivo:', error);
+            }
+          }
+        }
+        return res.status(404).json({ 
+          success: false,
+          error: 'Lugar no encontrado' 
+        });
+      }
+
+      const lugar = lugarResult.rows[0];
+      const hashNavegador = generarHashNavegador(req);
+      const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+      const moderacionImagenService = new ModeracionImagenService();
+
+      // ✅ MODERAR CADA IMAGEN (igual que en experiencias)
+      const imagenesAceptadas = [];
+      
       for (const file of req.files) {
-        if (file.path) {
-          try { 
-            await fsPromises.unlink(file.path); 
-          } catch (unlinkError) { 
-            console.error('Error eliminando archivo:', unlinkError);
+        const resultadoModeracion = await moderacionImagenService.moderarImagen(
+          file.path,
+          ipUsuario,
+          hashNavegador
+        );
+
+        if (!resultadoModeracion.esAprobado) {
+          console.log('❌ Imagen rechazada en galería:', file.filename, resultadoModeracion.motivoRechazo);
+          // Eliminar archivo rechazado
+          try {
+            await fsPromises.unlink(file.path);
+          } catch (error) {
+            console.error('Error eliminando archivo:', error);
+          }
+        } else {
+          imagenesAceptadas.push(file);
+          console.log('✅ Imagen aprobada para galería:', file.filename);
+        }
+      }
+
+      if (imagenesAceptadas.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          error: 'Todas las imágenes fueron rechazadas por moderación',
+          detalles: {
+            total_enviadas: req.files.length,
+            total_rechazadas: req.files.length,
+            sugerencias: generarSugerenciasLugar('imagen')
+          }
+        });
+      }
+
+      console.log(`✅ ${imagenesAceptadas.length}/${req.files.length} imágenes aprobadas para galería`);
+
+      // 2. Obtener el máximo orden actual
+      const maxOrdenResult = await client.query(
+        'SELECT COALESCE(MAX(orden), 0) as max_orden FROM fotos_lugares WHERE lugar_id = $1',
+        [id]
+      );
+      
+      let orden = maxOrdenResult.rows[0].max_orden + 1;
+      const imagenesSubidas = [];
+
+      // 3. Insertar cada imagen aprobada como NO principal
+      for (const file of imagenesAceptadas) {
+        const rutaImagen = `/uploads/images/lugares/${file.filename}`;
+        
+        console.log('💾 Guardando imagen de galería aprobada:', {
+          nombre: file.filename,
+          orden: orden,
+          es_principal: false
+        });
+
+        // Obtener dimensiones
+        let anchoImagen: number | null = null;
+        let altoImagen: number | null = null;
+        
+        try {
+          const metadata = await sharp(file.path).metadata();
+          anchoImagen = metadata.width || null;
+          altoImagen = metadata.height || null;
+        } catch (sharpError) {
+          console.warn('⚠️ No se pudieron obtener dimensiones:', sharpError);
+        }
+
+        // Insertar imagen EXPLÍCITAMENTE como no principal
+        const result = await client.query(
+          `INSERT INTO fotos_lugares 
+           (lugar_id, url_foto, ruta_almacenamiento, descripcion, es_principal, orden,
+            ancho_imagen, alto_imagen, tamaño_archivo, tipo_archivo)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id, url_foto, es_principal, orden`,
+          [
+            id,
+            rutaImagen,
+            file.path,
+            `Imagen ${orden} - ${lugar.nombre}`,
+            false,
+            orden,
+            anchoImagen,
+            altoImagen,
+            file.size,
+            file.mimetype
+          ]
+        );
+
+        const imagenInsertada = result.rows[0];
+        console.log('✅ Imagen de galería insertada:', {
+          id: imagenInsertada.id, 
+          es_principal: imagenInsertada.es_principal
+        });
+
+        imagenesSubidas.push({
+          id: imagenInsertada.id,
+          url: imagenInsertada.url_foto,
+          es_principal: imagenInsertada.es_principal,
+          orden: imagenInsertada.orden,
+          nombre: file.filename
+        });
+
+        orden++;
+      }
+
+      await client.query('COMMIT');
+      console.log('✅ Galería actualizada - Imágenes aprobadas agregadas:', imagenesSubidas.length);
+
+      res.json({
+        success: true,
+        mensaje: `${imagenesSubidas.length} imágenes agregadas a la galería`,
+        imagenes: imagenesSubidas,
+        total: imagenesSubidas.length,
+        estadisticas: {
+          total_enviadas: req.files.length,
+          total_aprobadas: imagenesAceptadas.length,
+          total_rechazadas: req.files.length - imagenesAceptadas.length
+        },
+        nota: 'Las imágenes se agregaron a la galería sin establecer como principal'
+      });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('❌ Error subiendo imágenes a galería:', error);
+      
+      if (req.files && Array.isArray(req.files)) {
+        for (const file of req.files) {
+          if (file.path) {
+            try { 
+              await fsPromises.unlink(file.path); 
+            } catch (unlinkError) { 
+              console.error('Error eliminando archivo:', unlinkError);
+            }
           }
         }
       }
+      
+      res.status(500).json({ 
+        success: false,
+        error: 'Error al agregar imágenes a la galería',
+        detalle: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    } finally {
+      client.release();
     }
-    
-    res.status(500).json({ 
-      success: false,
-      error: 'Error al agregar imágenes a la galería',
-      detalle: error instanceof Error ? error.message : 'Error desconocido'
-    });
-  } finally {
-    client.release();
-  }
-},
+  },
 
  /**
    * ✅ NUEVO: Endpoint específico para analizar descripciones de fotos - CORREGIDO
@@ -1649,10 +2029,12 @@ async subirMultipleImagenesLugar(req: Request, res: Response) {
   },
 
 
- /**
-   * ✅ ACTUALIZADO: Actualizar descripción de imagen CON moderación - CORREGIDO
+  /**
+   * ✅ MEJORADO: Actualizar descripción de imagen con mejor manejo de errores
    */
   async actualizarDescripcionImagen(req: Request, res: Response) {
+    const client = await pool.connect();
+    
     try {
       const { id, imagenId } = req.params;
       const { descripcion } = req.body;
@@ -1664,23 +2046,58 @@ async subirMultipleImagenesLugar(req: Request, res: Response) {
         });
       }
 
-      console.log('✏️ Actualizando descripción de imagen con moderación:', { imagenId, descripcion });
+      console.log('✏️ Actualizando descripción de imagen con moderación:', { 
+        lugarId: id, 
+        imagenId, 
+        descripcion: descripcion.substring(0, 50) + '...' 
+      });
 
-      // ✅ NUEVO: Moderación de la descripción de la imagen
+      await client.query('BEGIN');
+
+      // ✅ 1. VERIFICAR QUE LA IMAGEN PERTENECE AL LUGAR
+      const imagenResult = await client.query(
+        'SELECT * FROM fotos_lugares WHERE id = $1 AND lugar_id = $2',
+        [imagenId, id]
+      );
+
+      if (imagenResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ 
+          success: false,
+          error: 'Imagen no encontrada o no pertenece al lugar' 
+        });
+      }
+
+      const imagenActual = imagenResult.rows[0];
+      
+      // ✅ 2. VERIFICAR SI LA DESCRIPCIÓN REALMENTE CAMBIÓ
+      if (descripcion.trim() === imagenActual.descripcion) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          error: 'La descripción proporcionada es igual a la actual',
+          detalles: {
+            descripcion_actual: imagenActual.descripcion,
+            descripcion_nueva: descripcion.trim()
+          }
+        });
+      }
+
+      // ✅ 3. APLICAR MODERACIÓN A LA NUEVA DESCRIPCIÓN
       const hashNavegador = generarHashNavegador(req);
       const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
-
       const moderacionService = new ModeracionService();
       
-      // ✅ CORREGIDO: Solo 3 argumentos
       const resultadoModeracion = await moderacionService.moderarTexto(
         descripcion.trim(),
         ipUsuario,
         hashNavegador
       );
 
-      // ✅ SI ES RECHAZADO: Responder con error
+      // ✅ SI ES RECHAZADO: Rollback y responder con error
       if (!resultadoModeracion.esAprobado) {
+        await client.query('ROLLBACK');
+        
         console.log('❌ Descripción de imagen rechazada por moderación:', resultadoModeracion.motivoRechazo);
         
         const { mensajeUsuario, tipoProblema, detallesEspecificos } = analizarMotivoRechazoLugar(resultadoModeracion);
@@ -1701,41 +2118,43 @@ async subirMultipleImagenesLugar(req: Request, res: Response) {
         });
       }
 
-      // Verificar que la imagen pertenece al lugar
-      const imagenResult = await pool.query(
-        'SELECT * FROM fotos_lugares WHERE id = $1 AND lugar_id = $2',
-        [imagenId, id]
-      );
-
-      if (imagenResult.rows.length === 0) {
-        return res.status(404).json({ 
-          success: false,
-          error: 'Imagen no encontrada' 
-        });
-      }
-
-      // Actualizar descripción
-      await pool.query(
+      // ✅ 4. ACTUALIZAR DESCRIPCIÓN APROBADA
+      await client.query(
         'UPDATE fotos_lugares SET descripcion = $1, actualizado_en = NOW() WHERE id = $2',
         [descripcion.trim(), imagenId]
       );
 
-      console.log('✅ Descripción de imagen actualizada y aprobada:', imagenId);
+      await client.query('COMMIT');
+
+      console.log('✅ Descripción de imagen actualizada y aprobada:', { 
+        imagenId, 
+        lugarId: id 
+      });
 
       res.json({ 
         success: true,
         mensaje: 'Descripción actualizada exitosamente',
         imagen: {
           id: imagenId,
-          descripcion: descripcion.trim()
+          descripcion: descripcion.trim(),
+          lugar_id: id,
+          es_principal: imagenActual.es_principal
         },
         moderacion: {
           esAprobado: true,
           puntuacion: resultadoModeracion.puntuacionGeneral,
           timestamp: new Date().toISOString()
+        },
+        cambios: {
+          descripcion_anterior: imagenActual.descripcion,
+          descripcion_nueva: descripcion.trim(),
+          modificado: true
         }
       });
+
     } catch (error) {
+      await client.query('ROLLBACK').catch(console.error);
+      
       console.error('❌ Error actualizando descripción:', error);
       
       // Manejar errores de moderación específicos
@@ -1752,6 +2171,8 @@ async subirMultipleImagenesLugar(req: Request, res: Response) {
         error: 'Error al actualizar descripción',
         detalle: error instanceof Error ? error.message : 'Error desconocido'
       });
+    } finally {
+      client.release();
     }
   },
 

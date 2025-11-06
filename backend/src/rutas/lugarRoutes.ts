@@ -1,4 +1,4 @@
-// rutas/lugarRoutes.ts - VERSIÓN COMPLETA CON TODAS LAS RUTAS DE MODERACIÓN
+// rutas/lugarRoutes.ts - VERSIÓN COMPLETADA
 import { Router } from 'express';
 import { lugarController } from '../controladores/lugarController';
 import { autenticarAdmin } from '../middleware/autenticacion';
@@ -14,34 +14,32 @@ router.get('/:id', lugarController.obtenerLugarPorId);
 router.get('/:id/galeria', lugarController.obtenerGaleriaLugar);
 
 // ==================== RUTAS DE MODERACIÓN (PÚBLICAS/PROTEGIDAS) ====================
-// ✅ EXISTENTES: Moderación general para lugares
 router.post('/moderacion/validar-texto', lugarController.validarTextoPrev);
 router.get('/moderacion/motivos-rechazo', lugarController.obtenerMotivosRechazo);
 router.post('/moderacion/analizar-texto', lugarController.analizarTexto);
-
-// ✅ NUEVAS: Rutas específicas para moderación de descripciones de fotos
-router.post('/moderacion/validar-descripcion-foto', 
-  // autenticarAdmin, // Opcional: proteger si es necesario
-  lugarController.validarDescripcionFotoPrev
-);
-
-router.post('/moderacion/analizar-descripcion-foto', 
-  // autenticarAdmin, // Opcional: proteger si es necesario
-  lugarController.analizarDescripcionFoto
-);
+router.post('/moderacion/validar-descripcion-foto', lugarController.validarDescripcionFotoPrev);
+router.post('/moderacion/analizar-descripcion-foto', lugarController.analizarDescripcionFoto);
 
 // ==================== RUTAS PROTEGIDAS (ADMIN ONLY) ====================
-// Crear lugar (admin)
+
+// ✅ CORREGIDO: Ruta para validación previa de cambios
+router.post('/:id/validar-cambios',
+  autenticarAdmin,
+  lugarController.validarCambiosLugar  // ← Esta función debe existir en el controlador
+);
+
+// Crear lugar CON soporte para imagen
 router.post('/', 
   autenticarAdmin, 
+  uploadImage.single('imagen'),
   validacion.validarCrearLugar, 
   lugarController.crearLugar
 );
 
-// Actualizar lugar (admin)
+// ✅ CORREGIDO: Usar validación específica para actualización
 router.put('/:id', 
   autenticarAdmin, 
-  validacion.validarCrearLugar, 
+  validacion.validarActualizarLugar,  // ← Nueva validación
   lugarController.actualizarLugar
 );
 
@@ -86,7 +84,7 @@ router.put('/:id/galeria/:imagenId/principal',
   lugarController.establecerImagenPrincipal
 );
 
-// ✅ ACTUALIZADA: Actualizar descripción de imagen CON moderación
+// Actualizar descripción de imagen CON moderación
 router.put('/:id/galeria/:imagenId/descripcion', 
   autenticarAdmin, 
   lugarController.actualizarDescripcionImagen
@@ -98,6 +96,7 @@ router.delete('/:id/imagen-principal',
   lugarController.eliminarImagenPrincipal
 );
 
+// Eliminar PDF
 router.delete('/:id/pdf',
   autenticarAdmin,
   lugarController.eliminarPDFLugar

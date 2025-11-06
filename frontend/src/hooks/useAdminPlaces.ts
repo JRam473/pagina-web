@@ -1,4 +1,4 @@
-// hooks/useAdminPlaces.ts - VERSIÓN COMPLETA CON MANEJO MEJORADO DE ERRORES DE MODERACIÓN
+// hooks/useAdminPlaces.ts - VERSIÓN COMPLETAMENTE CORREGIDA
 import { useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/lib/axios';
@@ -59,7 +59,7 @@ interface PlaceFormData {
   pdf_url?: string;
 }
 
-// ✅ INTERFACE MEJORADA PARA ERRORES DE MODERACIÓN (INCLUYE IMÁGENES)
+// ✅ INTERFACE CORREGIDA PARA ERRORES DE MODERACIÓN
 interface ApiError {
   response?: {
     data?: {
@@ -68,34 +68,81 @@ interface ApiError {
       motivo?: string;
       tipo?: string;
       detalles?: {
+        puntuacion?: number;
         problemas?: string[];
         sugerencias?: string[];
-        puntuacion?: number;
-        puntuacionNombre?: number;
-        puntuacionDescripcion?: number;
-        campoEspecifico?: 'nombre' | 'descripcion' | 'ambos' | 'imagen';
+        campoEspecifico?: 'nombre' | 'descripcion' | 'descripcion_foto' | 'imagen' | 'ambos';
         timestamp?: string;
+        analisisCompleto?: Record<string, unknown>;
       };
     };
-    status?: number;
   };
   message?: string;
 }
 
-// Interface para errores de moderación (expandida para imágenes)
+// ✅ INTERFACE CORREGIDA PARA ERRORES DE MODERACIÓN
 export interface ModeracionError {
   message: string;
-  tipo?: 'texto' | 'imagen' | 'general';
   motivo?: string;
+  tipo?: string;
+  detalles?: {
+    puntuacion?: number;
+    problemas?: string[];
+    sugerencias?: string[];
+    campoEspecifico?: 'nombre' | 'descripcion' | 'descripcion_foto' | 'imagen' | 'ambos';
+    timestamp?: string;
+  };
+}
+
+// ✅ INTERFACE PARA ESTADO DE CAMBIOS
+interface EstadoCambios {
+  nombreModificado: boolean;
+  descripcionModificada: boolean;
+  ubicacionModificada: boolean;
+  categoriaModificada: boolean;
+  camposModificados: string[];
+  requiereModeracion: boolean;
+}
+
+// ✅ INTERFACE CORREGIDA PARA VALIDACIÓN DE CAMBIOS
+interface ValidacionCambios {
+  success: boolean;
+  esAprobado: boolean;
+  mensaje: string;
+  motivo?: string;
+  cambios: {
+    nombre: { modificado: boolean; actual?: string; nuevo?: string };
+    descripcion: { modificado: boolean; actual?: string; nuevo?: string };
+    ubicacion: { modificado: boolean; actual?: string; nuevo?: string };
+    categoria: { modificado: boolean; actual?: string; nuevo?: string };
+  };
+  moderacion?: {
+    aplicada: boolean;
+    campos_moderados: string[];
+    puntuacion?: number;
+    resultado: 'aprobado' | 'rechazado' | 'no_requerido';
+  };
   detalles?: {
     problemas?: string[];
     sugerencias?: string[];
     puntuacion?: number;
-    puntuacionNombre?: number;
-    puntuacionDescripcion?: number;
-    campoEspecifico?: 'nombre' | 'descripcion' | 'ambos' | 'imagen';
-    timestamp?: string;
   };
+}
+
+// ✅ INTERFACE CORREGIDA PARA MOTIVOS DE RECHAZO
+interface MotivoRechazo {
+  motivo: string;
+  accion: string;
+  tipo_contenido: string;
+  creado_en: string;
+  resultado_moderacion: string;
+}
+
+interface MotivosRechazoResponse {
+  success: boolean;
+  motivos: MotivoRechazo[];
+  total: number;
+  tipo_contenido: string;
 }
 
 export const useAdminPlaces = () => {
@@ -104,94 +151,58 @@ export const useAdminPlaces = () => {
   const [error, setError] = useState<string | ModeracionError | null>(null);
   const { toast } = useToast();
 
-  // ✅ FUNCIÓN MEJORADA: Manejar errores de forma tipada (incluye imágenes)
+  // ✅ CORREGIDO: Manejar errores igual que en experiencias
   const handleError = (err: unknown): string | ModeracionError => {
     const error = err as ApiError;
     
-    console.log('🔍 [handleError] Analizando error:', {
-      status: error.response?.status,
-      data: error.response?.data,
-      message: error.message
-    });
-
-    // ✅ ERRORES DE MODERACIÓN DE IMÁGENES
-    if (error.response?.data?.error === 'IMAGEN_RECHAZADA') {
-      console.log('🚫 [handleError] Error de moderación de imagen detectado');
-      return {
-        message: error.response.data.message || 'Imagen rechazada por moderación',
-        tipo: 'imagen',
-        motivo: error.response.data.motivo,
-        detalles: error.response.data.detalles
-      };
-    }
-    
-    // ✅ ERRORES DE MODERACIÓN DE TEXTO
-    if (error.response?.data?.error === 'CONTENIDO_RECHAZADO') {
-      console.log('🚫 [handleError] Error de moderación de texto detectado');
+    // Si es error de moderación con detalles específicos
+    if (error?.response?.data?.error && 
+        (error.response.data.error === 'CONTENIDO_RECHAZADO' || 
+         error.response.data.error === 'IMAGEN_RECHAZADA' ||
+         error.response.data.error === 'DESCRIPCION_RECHAZADA' ||
+         error.response.data.error === 'TEXTO_RECHAZADO' ||
+         error.response.data.error === 'VALIDACION_RECHAZADA')) {
+      
       return {
         message: error.response.data.message || 'Contenido rechazado por moderación',
-        tipo: 'texto',
         motivo: error.response.data.motivo,
-        detalles: error.response.data.detalles
-      };
-    }
-
-    // ✅ ERRORES DE DESCRIPCIÓN
-    if (error.response?.data?.error === 'DESCRIPCION_RECHAZADA') {
-      console.log('🚫 [handleError] Error de moderación de descripción detectado');
-      return {
-        message: error.response.data.message || 'Descripción rechazada por moderación',
-        tipo: 'texto',
-        motivo: error.response.data.motivo,
-        detalles: error.response.data.detalles
-      };
-    }
-
-    // ✅ ERRORES DE TEXTO GENERAL
-    if (error.response?.data?.error === 'TEXTO_RECHAZADO') {
-      console.log('🚫 [handleError] Error de texto rechazado detectado');
-      return {
-        message: error.response.data.message || 'Texto rechazado por moderación',
-        tipo: 'texto',
-        motivo: error.response.data.motivo,
+        tipo: error.response.data.tipo,
         detalles: error.response.data.detalles
       };
     }
     
-    // ✅ ERRORES DE RED O SERVIDOR
-    if (error.response?.status === 500) {
-      return 'Error interno del servidor. Por favor, intenta más tarde.';
-    }
-    
-    if (error.response?.status === 404) {
-      return 'Recurso no encontrado.';
-    }
-    
-    if (error.response?.status === 403) {
-      return 'No tienes permisos para realizar esta acción.';
-    }
-    
-    if (error.response?.status === 401) {
-      return 'No autorizado. Por favor, inicia sesión nuevamente.';
-    }
-
-    // ✅ ERRORES DE RED
-    if (error.message?.includes('Network Error') || error.message?.includes('Failed to fetch')) {
-      return 'Error de conexión. Verifica tu internet e intenta nuevamente.';
-    }
-
-    // ✅ ERRORES DE TIMEOUT
-    if (error.message?.includes('timeout')) {
-      return 'La operación tardó demasiado tiempo. Intenta nuevamente.';
-    }
-
     return error?.response?.data?.error || error?.message || 'Error desconocido';
   };
 
+  // ✅ CORREGIDO: Mostrar toast de rechazo con detalles (eliminado parámetro no usado)
+  const mostrarToastRechazo = useCallback((resultado: ModeracionError) => {
+    if (resultado.motivo) {
+      const problemas = resultado.detalles?.problemas;
+      const tieneProblemas = problemas && problemas.length > 0;
+      
+      const title = '🚫 Contenido no aprobado';
+      let description = resultado.motivo;
+      
+      if (tieneProblemas) {
+        description += `\n\nProblemas detectados:\n• ${problemas.join('\n• ')}`;
+      }
+
+      if (resultado.detalles?.sugerencias) {
+        description += `\n\nSugerencias:\n• ${resultado.detalles.sugerencias.join('\n• ')}`;
+      }
+
+      toast({
+        title,
+        description,
+        variant: 'destructive',
+        duration: 10000,
+      });
+    }
+  }, [toast]);
+
   const { 
     validarDescripcionFoto, 
-    analizarDescripcionFoto,
-    cargando: cargandoModeracion 
+    analizarDescripcionFoto 
   } = useModeracionDescripciones();
 
   // Función para mapear datos de la API al formato del frontend
@@ -208,7 +219,7 @@ export const useAdminPlaces = () => {
     total_experiences: apiPlace.total_experiencias ? Number(apiPlace.total_experiencias) : 0,
     created_at: apiPlace.creado_en,
     updated_at: apiPlace.actualizado_en,
-    gallery_images: [] // ✅ Inicializado como array vacío
+    gallery_images: []
   });
 
   // Función para mapear datos del frontend a la API
@@ -220,6 +231,109 @@ export const useAdminPlaces = () => {
     foto_principal_url: placeData.image_url,
     pdf_url: placeData.pdf_url
   });
+
+  // ✅ CORREGIDO: Analizar cambios entre datos actuales y nuevos
+  const analizarCambios = useCallback((
+    lugarActual: Place, 
+    nuevosDatos: Partial<PlaceFormData>
+  ): EstadoCambios => {
+    const cambios: EstadoCambios = {
+      nombreModificado: nuevosDatos.name !== undefined && nuevosDatos.name !== lugarActual.name,
+      descripcionModificada: nuevosDatos.description !== undefined && nuevosDatos.description !== lugarActual.description,
+      ubicacionModificada: nuevosDatos.location !== undefined && nuevosDatos.location !== lugarActual.location,
+      categoriaModificada: nuevosDatos.category !== undefined && nuevosDatos.category !== lugarActual.category,
+      camposModificados: [],
+      requiereModeracion: false
+    };
+
+    // Identificar campos modificados
+    if (cambios.nombreModificado) cambios.camposModificados.push('nombre');
+    if (cambios.descripcionModificada) cambios.camposModificados.push('descripcion');
+    if (cambios.ubicacionModificada) cambios.camposModificados.push('ubicacion');
+    if (cambios.categoriaModificada) cambios.camposModificados.push('categoria');
+
+    // Determinar si requiere moderación
+    cambios.requiereModeracion = cambios.nombreModificado || cambios.descripcionModificada;
+
+    return cambios;
+  }, []);
+
+  // ✅ CORREGIDO: Validar cambios previos antes de actualizar
+  const validarCambiosLugar = useCallback(async (
+    placeId: string, 
+    nuevosDatos: Partial<PlaceFormData>
+  ): Promise<ValidacionCambios> => {
+    try {
+      console.log('🔍 Validando cambios previos para lugar:', placeId);
+
+      // Mapear datos al formato de la API
+      const apiData = mapPlaceToApiData(nuevosDatos);
+
+      const response = await api.post<ValidacionCambios>(
+        `/api/lugares/${placeId}/validar-cambios`,
+        apiData
+      );
+
+      console.log('✅ Validación de cambios:', response.data);
+
+      return response.data;
+
+    } catch (err: unknown) {
+      const errorResult = handleError(err);
+      console.error('❌ Error validando cambios:', errorResult);
+      
+      // Si es error de moderación, devolver estructura específica
+      if (typeof errorResult === 'object' && 'detalles' in errorResult) {
+        return {
+          success: false,
+          esAprobado: false,
+          mensaje: errorResult.message,
+          motivo: errorResult.motivo || 'Error de validación',
+          cambios: {
+            nombre: { modificado: false },
+            descripcion: { modificado: false },
+            ubicacion: { modificado: false },
+            categoria: { modificado: false }
+          },
+          moderacion: {
+            aplicada: true,
+            campos_moderados: ['nombre', 'descripcion'],
+            resultado: 'rechazado'
+          },
+          detalles: {
+            problemas: errorResult.detalles?.problemas || ['Contenido no aprobado'],
+            sugerencias: errorResult.detalles?.sugerencias || [
+              'Revisa el contenido antes de publicarlo',
+              'Asegúrate de que cumpla con las políticas de la comunidad'
+            ]
+          }
+        };
+      }
+
+      const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
+      throw new Error(errorMessage);
+    }
+  }, []);
+
+  // ✅ CORREGIDO: Obtener motivos de rechazo específicos
+  const obtenerMotivosRechazo = useCallback(async (hashNavegador?: string): Promise<MotivoRechazo[]> => {
+    try {
+      const params: Record<string, string> = {};
+      if (hashNavegador) {
+        params.hash_navegador = hashNavegador;
+      }
+
+      const response = await api.get<MotivosRechazoResponse>(
+        '/api/lugares/moderacion/motivos-rechazo', 
+        { params }
+      );
+      
+      return response.data.motivos || [];
+    } catch (error) {
+      console.error('Error obteniendo motivos de rechazo:', error);
+      return [];
+    }
+  }, []);
 
   /**
    * Obtener todos los lugares
@@ -248,7 +362,7 @@ export const useAdminPlaces = () => {
   /**
    * Crear un nuevo lugar - ACTUALIZADA CON MANEJO MEJORADO DE ERRORES
    */
-  const createPlace = useCallback(async (placeData: PlaceFormData) => {
+  const createPlace = useCallback(async (placeData: PlaceFormData, imageFile?: File) => {
     try {
       setLoading(true);
       setError(null);
@@ -270,13 +384,40 @@ export const useAdminPlaces = () => {
         throw new Error('La categoría del lugar es requerida');
       }
 
-      // Mapear datos al formato de la API
-      const apiData = mapPlaceToApiData(placeData);
+      // Preparar FormData si hay imagen
+      let apiData;
+      if (imageFile) {
+        apiData = new FormData();
+        apiData.append('nombre', placeData.name);
+        apiData.append('descripcion', placeData.description);
+        apiData.append('ubicacion', placeData.location);
+        apiData.append('categoria', placeData.category);
+        apiData.append('imagen', imageFile);
+        
+        if (placeData.image_url) {
+          apiData.append('foto_principal_url', placeData.image_url);
+        }
+        if (placeData.pdf_url) {
+          apiData.append('pdf_url', placeData.pdf_url);
+        }
+      } else {
+        // Solo datos básicos
+        apiData = mapPlaceToApiData(placeData);
+      }
+
+      const config = imageFile ? {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 30000
+      } : {};
       
       const response = await api.post<{ 
         mensaje: string; 
-        lugar: ApiPlace 
-      }>('/api/lugares', apiData);
+        lugar: ApiPlace;
+        moderacion?: {
+          texto: { esAprobado: boolean; puntuacion?: number };
+          imagen?: { esAprobado: boolean; puntuacion?: number };
+        };
+      }>('/api/lugares', apiData, config);
       
       if (!response.data.lugar) {
         throw new Error('No se recibió el lugar creado del servidor');
@@ -296,36 +437,111 @@ export const useAdminPlaces = () => {
     } catch (err: unknown) {
       const errorResult = handleError(err);
       
-      // ✅ CORREGIDO: Guardar el objeto de error directamente, no como string
-      if (typeof errorResult === 'object' && 'tipo' in errorResult) {
-        setError(errorResult); // ← Ahora guardamos el objeto directamente
+      // ✅ CORREGIDO: Manejar correctamente el objeto de error
+      if (typeof errorResult === 'object' && 'detalles' in errorResult) {
+        setError(errorResult);
+        
+        toast({
+          title: '🚫 Contenido rechazado',
+          description: errorResult.message,
+          variant: 'destructive',
+          duration: 6000,
+        });
       } else {
-        setError(typeof errorResult === 'string' ? errorResult : errorResult.message);
+        const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
+        setError(errorMessage);
+        
+        toast({
+          title: '❌ Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
       }
       
-      // ✅ NO mostrar toast aquí - se maneja en el componente principal
-      // El toast se mostrará automáticamente en el useEffect del componente
-      
-      throw errorResult; // ← Lanzar el objeto completo
+      throw errorResult;
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
   /**
-   * Actualizar un lugar existente - ACTUALIZADA CON MANEJO MEJORADO DE ERRORES
+   * ✅ CORREGIDO: Actualizar lugar con manejo de errores como experiencias
    */
-  const updatePlace = useCallback(async (placeId: string, placeData: Partial<PlaceFormData>) => {
+  const updatePlace = useCallback(async (
+    placeId: string, 
+    placeData: Partial<PlaceFormData>,
+    opciones: { 
+      validarPreviamente?: boolean;
+      skipValidacion?: boolean;
+    } = {}
+  ) => {
     try {
       setLoading(true);
       setError(null);
 
-      // Mapear datos al formato de la API
+      const { validarPreviamente = true, skipValidacion = false } = opciones;
+
+      // ✅ 1. BUSCAR LUGAR ACTUAL PARA ANÁLISIS
+      const lugarActual = places.find(p => p.id === placeId);
+      if (!lugarActual) {
+        throw new Error('Lugar no encontrado en el estado local');
+      }
+
+      // ✅ 2. ANALIZAR CAMBIOS
+      const analisisCambios = analizarCambios(lugarActual, placeData);
+
+      // ✅ 3. VALIDACIÓN PREVIA OPCIONAL
+      if (validarPreviamente && !skipValidacion && analisisCambios.requiereModeracion) {
+        console.log('🔍 Ejecutando validación previa...');
+        
+        const validacion = await validarCambiosLugar(placeId, placeData);
+        
+        if (!validacion.esAprobado) {
+          // Crear error de moderación
+          const errorModeracion: ModeracionError = {
+            message: validacion.mensaje,
+            motivo: validacion.motivo || 'El contenido no cumple con las políticas de moderación',
+            detalles: {
+              problemas: validacion.detalles?.problemas || ['Contenido no aprobado'],
+              sugerencias: validacion.detalles?.sugerencias || [
+                'Revisa el contenido antes de publicarlo',
+                'Asegúrate de que cumpla con las políticas de la comunidad'
+              ],
+              campoEspecifico: analisisCambios.nombreModificado && analisisCambios.descripcionModificada 
+                ? 'ambos' 
+                : analisisCambios.nombreModificado 
+                  ? 'nombre' 
+                  : 'descripcion'
+            }
+          };
+          
+          // ✅ USAR EL NUEVO MÉTODO PARA MOSTRAR TOAST
+          mostrarToastRechazo(errorModeracion);
+          
+          throw errorModeracion;
+        }
+        
+        console.log('✅ Validación previa aprobada');
+      }
+
+      // ✅ 4. EJECUTAR ACTUALIZACIÓN
       const apiData = mapPlaceToApiData(placeData);
 
       const response = await api.put<{ 
         mensaje: string; 
-        lugar: ApiPlace 
+        lugar: ApiPlace;
+        cambios: {
+          total: number;
+          campos: string[];
+          detalles: {
+            nombre: boolean;
+            descripcion: boolean;
+            ubicacion: boolean;
+            categoria: boolean;
+            imagen: boolean;
+            pdf: boolean;
+          };
+        };
       }>(`/api/lugares/${placeId}`, apiData);
       
       if (!response.data.lugar) {
@@ -334,36 +550,100 @@ export const useAdminPlaces = () => {
       
       const updatedPlace = mapApiPlaceToPlace(response.data.lugar);
       
-      // Actualizar la lista de lugares
+      // ✅ 5. ACTUALIZAR ESTADO LOCAL
       setPlaces(prevPlaces => 
         prevPlaces.map(place => 
           place.id === placeId ? updatedPlace : place
         )
       );
-      
+
+      // ✅ 6. MOSTRAR MENSAJE CONTEXTUAL
+      const mensajeExito = analisisCambios.camposModificados.length === 0 
+        ? 'Lugar actualizado (sin cambios detectados)' 
+        : `Lugar actualizado (${analisisCambios.camposModificados.join(', ')})`;
+
       toast({
         title: '✅ Lugar actualizado',
-        description: 'El lugar se ha actualizado exitosamente',
+        description: mensajeExito,
       });
-      
-      return updatedPlace;
+
+      return {
+        lugar: updatedPlace,
+        cambios: analisisCambios,
+        respuesta: response.data
+      };
+
     } catch (err: unknown) {
       const errorResult = handleError(err);
       
-      // ✅ MEJORADO: Manejar errores de moderación con detalles
-      if (typeof errorResult === 'object' && 'tipo' in errorResult) {
-        setError(errorResult);
+      // ✅ CORREGIDO: Manejar diferentes tipos de error como experiencias
+      if (typeof errorResult === 'object' && 'detalles' in errorResult) {
+        // Ya se mostró el toast en validación previa, no mostrar otro
+        if (!opciones.validarPreviamente) {
+          mostrarToastRechazo(errorResult);
+        }
       } else {
-        setError(typeof errorResult === 'string' ? errorResult : errorResult.message);
+        const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
+        toast({
+          title: '❌ Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
       }
       
-      // ✅ NO mostrar toast aquí - se maneja en el componente principal
-      
-      throw errorResult; // ← Lanzar el objeto completo
+      throw errorResult;
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [places, analizarCambios, validarCambiosLugar, toast, mostrarToastRechazo]);
+
+  /**
+   * ✅ NUEVO: Actualización rápida sin validación (para campos no críticos)
+   */
+  const updatePlaceFast = useCallback(async (
+    placeId: string, 
+    placeData: Partial<PlaceFormData>
+  ) => {
+    return updatePlace(placeId, placeData, { 
+      validarPreviamente: false,
+      skipValidacion: true 
+    });
+  }, [updatePlace]);
+
+  /**
+   * ✅ NUEVO: Actualizar solo ubicación y categoría (sin moderación)
+   */
+  const updatePlaceMetadata = useCallback(async (
+    placeId: string,
+    updates: { location?: string; category?: string }
+  ) => {
+    // Filtrar solo ubicación y categoría
+    const datosFiltrados: Partial<PlaceFormData> = {};
+    if (updates.location !== undefined) datosFiltrados.location = updates.location;
+    if (updates.category !== undefined) datosFiltrados.category = updates.category;
+
+    return updatePlace(placeId, datosFiltrados, {
+      validarPreviamente: false,
+      skipValidacion: true
+    });
+  }, [updatePlace]);
+
+  /**
+   * ✅ NUEVO: Actualizar solo texto (con validación completa)
+   */
+  const updatePlaceText = useCallback(async (
+    placeId: string,
+    updates: { name?: string; description?: string }
+  ) => {
+    const datosFiltrados: Partial<PlaceFormData> = {};
+    if (updates.name !== undefined) datosFiltrados.name = updates.name;
+    if (updates.description !== undefined) datosFiltrados.description = updates.description;
+
+    return updatePlace(placeId, datosFiltrados, {
+      validarPreviamente: true,
+      skipValidacion: false
+    });
+  }, [updatePlace]);
 
   /**
    * Eliminar un lugar
@@ -388,7 +668,11 @@ export const useAdminPlaces = () => {
       const errorMessage = handleError(err);
       setError(typeof errorMessage === 'string' ? errorMessage : errorMessage.message);
       
-      // ✅ NO mostrar toast aquí - se maneja en el componente principal
+      toast({
+        title: '❌ Error',
+        description: typeof errorMessage === 'string' ? errorMessage : errorMessage.message,
+        variant: 'destructive',
+      });
       
       throw new Error(typeof errorMessage === 'string' ? errorMessage : errorMessage.message);
     } finally {
@@ -397,15 +681,11 @@ export const useAdminPlaces = () => {
   }, [toast]);
 
   /**
-   * ✅ ACTUALIZADO: Subir imagen de un lugar CON manejo mejorado de errores de moderación
+   * Subir imagen de un lugar
    */
   const uploadPlaceImage = useCallback(async (placeId: string, imageFile: File) => {
     try {
-      console.log('🖼️ [UPLOAD] Subiendo imagen para lugar:', placeId, {
-        fileName: imageFile.name,
-        fileSize: imageFile.size,
-        fileType: imageFile.type
-      });
+      console.log('🖼️ [UPLOAD] Subiendo imagen para lugar:', placeId);
       
       const formData = new FormData();
       formData.append('imagen', imageFile);
@@ -413,10 +693,17 @@ export const useAdminPlaces = () => {
       const response = await api.post<{ 
         mensaje: string;
         url_imagen: string;
+        es_principal: boolean;
+        imagen_id: string;
         moderacion?: {
           esAprobado: boolean;
-          puntuacionRiesgo: number;
+          puntuacionRiesgo?: number;
           timestamp: string;
+        };
+        archivo: {
+          nombre: string;
+          tamaño: number;
+          tipo: string;
         };
       }>(`/api/lugares/${placeId}/imagen`, formData, {
         headers: {
@@ -425,33 +712,62 @@ export const useAdminPlaces = () => {
         timeout: 30000,
       });
 
-      console.log('✅ [UPLOAD] Imagen subida correctamente:', {
-        url: response.data.url_imagen,
-        moderacion: response.data.moderacion
-      });
+      console.log('✅ [UPLOAD] Imagen subida y aprobada correctamente');
 
       // Actualizar el estado local
       setPlaces(prevPlaces => 
         prevPlaces.map(place => 
           place.id === placeId 
-            ? { ...place, image_url: response.data.url_imagen }
+            ? { 
+                ...place, 
+                image_url: response.data.url_imagen,
+                gallery_images: [
+                  ...(place.gallery_images || []),
+                  {
+                    id: response.data.imagen_id,
+                    url_foto: response.data.url_imagen,
+                    descripcion: 'Imagen principal del lugar',
+                    es_principal: true,
+                    orden: 1,
+                    creado_en: new Date().toISOString()
+                  }
+                ]
+              }
             : place
         )
       );
+
+      toast({
+        title: '✅ Imagen aprobada',
+        description: 'La imagen ha sido subida y aprobada por moderación',
+      });
 
       return response.data;
     } catch (err: unknown) {
       const errorResult = handleError(err);
       console.error('❌ [UPLOAD] Error subiendo imagen:', errorResult);
       
-      // ✅ PROPAGAR EL ERROR COMPLETO PARA QUE SE MUESTRE EN EL TOAST
+      // ✅ MEJORADO: Manejar errores de moderación de imágenes
+      if (typeof errorResult === 'object' && 'detalles' in errorResult) {
+        toast({
+          title: '🚫 Imagen rechazada',
+          description: errorResult.message,
+          variant: 'destructive',
+          duration: 6000,
+        });
+      } else {
+        const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
+        toast({
+          title: '❌ Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
+      
       throw errorResult;
     }
-  }, []);
+  }, [toast]);
 
-  /**
-   * Subir PDF para un lugar
-   */
   const uploadPlacePDF = useCallback(async (placeId: string, pdfFile: File) => {
     try {
       console.log('📄 [UPLOAD] Subiendo PDF para lugar:', placeId);
@@ -489,18 +805,16 @@ export const useAdminPlaces = () => {
   }, []);
 
   /**
-   * ✅ ACTUALIZADO: Subir múltiples imágenes a la galería CON manejo mejorado de errores
+   * Subir múltiples imágenes a la galería de un lugar - CORREGIDA
    */
   const uploadMultipleImages = useCallback(async (placeId: string, imageFiles: File[]) => {
     try {
       console.log('🔄 [uploadMultipleImages] Subiendo imágenes a galería:', {
         placeId,
-        cantidad: imageFiles.length,
-        archivos: imageFiles.map(f => ({ name: f.name, size: f.size, type: f.type }))
+        cantidad: imageFiles.length
       });
 
       const formData = new FormData();
-      
       imageFiles.forEach((file: File) => {
         formData.append('imagenes', file);
       });
@@ -527,23 +841,17 @@ export const useAdminPlaces = () => {
         timeout: 30000,
       });
 
-      console.log('✅ [uploadMultipleImages] Imágenes agregadas a galería:', {
-        total: response.data.imagenes.length,
-        estadisticas: response.data.estadisticas
-      });
+      console.log('✅ [uploadMultipleImages] Imágenes procesadas:', response.data);
 
-      // ✅ MOSTRAR TOAST CON ESTADÍSTICAS SI ESTÁN DISPONIBLES
-      let description = `${imageFiles.length} imágenes agregadas a la galería`;
-      if (response.data.estadisticas) {
-        const stats = response.data.estadisticas;
-        if (stats.total_rechazadas > 0) {
-          description = `${stats.total_aprobadas} imágenes aprobadas, ${stats.total_rechazadas} rechazadas por moderación`;
-        }
-      }
+      // Mostrar estadísticas si están disponibles
+      const mensaje = response.data.estadisticas 
+        ? `${response.data.estadisticas.total_aprobadas} de ${response.data.estadisticas.total_enviadas} imágenes aprobadas`
+        : `${imageFiles.length} imágenes procesadas`;
 
       toast({
-        title: '✅ Galería actualizada',
-        description: description,
+        title: response.data.estadisticas?.total_rechazadas ? '⚠️ Algunas imágenes rechazadas' : '✅ Galería actualizada',
+        description: mensaje,
+        variant: response.data.estadisticas?.total_rechazadas ? 'destructive' : 'default',
       });
 
       return response.data;
@@ -551,13 +859,28 @@ export const useAdminPlaces = () => {
       const errorResult = handleError(err);
       console.error('❌ [uploadMultipleImages] Error:', errorResult);
       
-      // ✅ PROPAGAR EL ERROR COMPLETO
+      if (typeof errorResult === 'object' && 'detalles' in errorResult) {
+        toast({
+          title: '🚫 Imágenes rechazadas',
+          description: errorResult.message,
+          variant: 'destructive',
+          duration: 6000,
+        });
+      } else {
+        const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
+        toast({
+          title: '❌ Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
+      
       throw errorResult;
     }
   }, [toast]);
 
   /**
-   * ✅ ACTUALIZADO: Reemplazar imagen principal CON manejo mejorado de errores
+   * Reemplazar imagen principal
    */
   const replaceMainImage = useCallback(async (placeId: string, imageFile: File) => {
     try {
@@ -575,11 +898,6 @@ export const useAdminPlaces = () => {
         imagen_id: string;
         es_principal: boolean;
         archivo: { nombre: string; tamaño: number; tipo: string };
-        moderacion?: {
-          esAprobado: boolean;
-          puntuacionRiesgo: number;
-          timestamp: string;
-        };
       }>(`/api/lugares/${placeId}/imagen-principal`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -612,11 +930,16 @@ export const useAdminPlaces = () => {
 
       return response.data;
     } catch (err: unknown) {
-      const errorResult = handleError(err);
-      console.error('❌ [replaceMainImage] Error:', errorResult);
+      const errorMessage = handleError(err);
+      console.error('❌ [replaceMainImage] Error:', errorMessage);
       
-      // ✅ PROPAGAR EL ERROR COMPLETO
-      throw errorResult;
+      toast({
+        title: '❌ Error',
+        description: 'Error al reemplazar imagen principal',
+        variant: 'destructive',
+      });
+      
+      throw new Error(typeof errorMessage === 'string' ? errorMessage : errorMessage.message);
     }
   }, [toast]);
 
@@ -714,109 +1037,115 @@ export const useAdminPlaces = () => {
     }
   }, [fetchPlaces, toast]);
 
-  /**
-   * ✅ CORREGIDO: Actualizar descripción de imagen CON moderación - SIN placeId como primer parámetro
-   */
-  const updateImageDescription = useCallback(async (imageId: string, descripcion: string) => {
-    try {
-      setLoading(true);
+/**
+ * ✅ CORREGIDO: Actualizar descripción de imagen CON moderación
+ */
+const updateImageDescription = useCallback(async (imageId: string, descripcion: string) => {
+  try {
+    setLoading(true);
 
-      console.log('✏️ Actualizando descripción con moderación:', { 
-        imageId, 
-        descripcion: descripcion.substring(0, 30) + '...' 
-      });
+    console.log('✏️ Actualizando descripción con moderación:', { 
+      imageId, 
+      descripcion: descripcion.substring(0, 30) + '...' 
+    });
 
-      // ✅ PRIMERO: Validar la descripción con el servicio de moderación
-      const resultadoValidacion = await validarDescripcionFoto(descripcion);
-      
-      if (!resultadoValidacion.esAprobado) {
-        // Crear error de moderación con detalles
-        const errorModeracion: ModeracionError = {
-          message: resultadoValidacion.mensaje,
-          tipo: 'texto',
-          detalles: {
-            problemas: resultadoValidacion.detalles?.problemas,
-            sugerencias: resultadoValidacion.detalles?.sugerencias,
-            puntuacion: resultadoValidacion.puntuacion,
-            campoEspecifico: 'descripcion_foto'
-          }
-        };
-        
-        setError(errorModeracion);
-        
-        // ✅ NO mostrar toast aquí - se maneja en el componente principal
-        
-        throw errorModeracion;
-      }
-
-      // ✅ SI ES APROBADA: Proceder con la actualización
-      // Necesitamos encontrar el placeId al que pertenece la imagen
-      let placeIdEncontrado = '';
-      
-      // Buscar en los lugares actuales para encontrar a qué lugar pertenece la imagen
-      for (const place of places) {
-        if (place.gallery_images?.some(img => img.id === imageId)) {
-          placeIdEncontrado = place.id;
-          break;
+    // ✅ PRIMERO: Validar la descripción con el servicio de moderación
+    const resultadoValidacion = await validarDescripcionFoto(descripcion);
+    
+    if (!resultadoValidacion.esAprobado) {
+      // Crear error de moderación con detalles
+      const errorModeracion: ModeracionError = {
+        message: resultadoValidacion.mensaje,
+        detalles: {
+          problemas: resultadoValidacion.detalles?.problemas,
+          sugerencias: resultadoValidacion.detalles?.sugerencias,
+          puntuacion: resultadoValidacion.puntuacion,
+          campoEspecifico: 'descripcion_foto'
         }
-      }
-
-      if (!placeIdEncontrado) {
-        throw new Error('No se pudo encontrar el lugar al que pertenece la imagen');
-      }
-
-      const response = await api.put<{ 
-        mensaje: string;
-        imagen: { id: string; descripcion: string };
-        moderacion: {
-          esAprobado: boolean;
-          puntuacion: number;
-          timestamp: string;
-        };
-      }>(`/api/lugares/${placeIdEncontrado}/galeria/${imageId}/descripcion`, {
-        descripcion
-      });
-
-      // Actualizar el estado local
-      setPlaces(prevPlaces => 
-        prevPlaces.map(place => 
-          place.id === placeIdEncontrado 
-            ? {
-                ...place,
-                gallery_images: place.gallery_images?.map((img: GalleryImage) =>
-                  img.id === imageId ? { ...img, descripcion } : img
-                ) || []
-              }
-            : place
-        )
-      );
-
+      };
+      
+      setError(errorModeracion);
+      
       toast({
-        title: '✅ Descripción actualizada',
-        description: 'La descripción se ha actualizado correctamente',
+        title: '🚫 Descripción rechazada',
+        description: resultadoValidacion.mensaje,
+        variant: 'destructive',
+        duration: 6000,
       });
-
-      return response.data;
-
-    } catch (err: any) {
-      console.error('❌ Error actualizando descripción:', err);
       
-      // Si ya es un error de moderación, propagarlo sin cambios
-      if (err.tipo) {
-        setError(err);
-        throw err;
-      }
-      
-      const errorResult = handleError(err);
-      setError(typeof errorResult === 'string' ? errorResult : errorResult.message);
-      
-      // ✅ NO mostrar toast aquí - se maneja en el componente principal
-      
-      throw errorResult;
-    } finally {
-      setLoading(false);
+      throw errorModeracion;
     }
-  }, [toast, validarDescripcionFoto, places]);
+
+    // ✅ SI ES APROBADA: Proceder con la actualización
+    // Necesitamos encontrar el placeId al que pertenece la imagen
+    let placeIdEncontrado = '';
+    
+    // Buscar en los lugares actuales para encontrar a qué lugar pertenece la imagen
+    for (const place of places) {
+      if (place.gallery_images?.some(img => img.id === imageId)) {
+        placeIdEncontrado = place.id;
+        break;
+      }
+    }
+
+    if (!placeIdEncontrado) {
+      throw new Error('No se pudo encontrar el lugar al que pertenece la imagen');
+    }
+
+    const response = await api.put<{ 
+      mensaje: string;
+      imagen: { id: string; descripcion: string };
+      moderacion: {
+        esAprobado: boolean;
+        puntuacion: number;
+        timestamp: string;
+      };
+    }>(`/api/lugares/${placeIdEncontrado}/galeria/${imageId}/descripcion`, {
+      descripcion
+    });
+
+    // Actualizar el estado local
+    setPlaces(prevPlaces => 
+      prevPlaces.map(place => 
+        place.id === placeIdEncontrado 
+          ? {
+              ...place,
+              gallery_images: place.gallery_images?.map((img: GalleryImage) =>
+                img.id === imageId ? { ...img, descripcion } : img
+              ) || []
+            }
+          : place
+      )
+    );
+
+    toast({
+      title: '✅ Descripción actualizada',
+      description: 'La descripción se ha actualizado correctamente',
+    });
+
+    return response.data;
+
+  } catch (err: any) {
+    console.error('❌ Error actualizando descripción:', err);
+    
+    // Si ya es un error de moderación, no mostrar toast adicional
+    if (err.detalles) {
+      throw err;
+    }
+    
+    const errorMessage = err.response?.data?.error || err.message || 'Error al actualizar descripción';
+    
+    toast({
+      title: '❌ Error',
+      description: errorMessage,
+      variant: 'destructive',
+    });
+    
+    throw new Error(errorMessage);
+  } finally {
+    setLoading(false);
+  }
+}, [toast, validarDescripcionFoto, places]);
 
   /**
    * ✅ NUEVA: Función para pre-validar descripción antes de guardar
@@ -923,12 +1252,12 @@ export const useAdminPlaces = () => {
     } catch (err: unknown) {
       const errorResult = handleError(err);
       
-      if (typeof errorResult === 'object' && 'tipo' in errorResult) {
-        setError(errorResult);
+      if (typeof errorResult === 'object' && errorResult.detalles) {
+        setError(JSON.stringify(errorResult));
       } else {
         setError(typeof errorResult === 'string' ? errorResult : errorResult.message);
       }
-      throw errorResult;
+      throw new Error(typeof errorResult === 'string' ? errorResult : errorResult.message);
     } finally {
       setLoading(false);
     }
@@ -967,8 +1296,8 @@ export const useAdminPlaces = () => {
 
       return response.data;
     } catch (err: unknown) {
-      const errorResult = handleError(err);
-      throw errorResult;
+      const errorMessage = handleError(err);
+      throw new Error(typeof errorMessage === 'string' ? errorMessage : errorMessage.message);
     }
   }, []);
 
@@ -1064,8 +1393,8 @@ export const useAdminPlaces = () => {
           place.id === placeId 
             ? { ...place, pdf_url: '' }
             : place
-        )
-      );
+      )
+    );
 
       return response.data;
     } catch (err: unknown) {
@@ -1082,10 +1411,13 @@ export const useAdminPlaces = () => {
 
   return {
     places,
-    loading: loading || cargandoModeracion,
+    loading,
     error,
     createPlace,
-    updatePlace,
+    updatePlace,           // ← Actualización completa con validación
+    updatePlaceFast,       // ← Nueva: Actualización rápida sin validación
+    updatePlaceMetadata,   // ← Nueva: Solo ubicación/categoría
+    updatePlaceText,       // ← Nueva: Solo nombre/descripción (con validación)
     deletePlace,
     uploadPlaceImage,
     uploadMultipleImages,
@@ -1097,6 +1429,7 @@ export const useAdminPlaces = () => {
     refetch: fetchPlaces,
     updateImageDescription,
     deleteMainImage,
+    obtenerMotivosRechazo,
     createPlaceBasic,
     uploadImageForPlace,
     uploadPDFForPlace,
@@ -1105,5 +1438,7 @@ export const useAdminPlaces = () => {
     deletePlacePDF,
     clearError,
     prevalidarDescripcion,
+    validarCambiosLugar,   // ← Nueva: Validación independiente
+    analizarCambios,       // ← Nueva: Análisis de cambios
   };
 };

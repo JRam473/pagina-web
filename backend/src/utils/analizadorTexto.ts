@@ -529,7 +529,7 @@ export class AnalizadorTexto {
       });
 
       // ✅ COMBINAR: Análisis de toxicidad + coherencia
-      const esToxico = (perspectiveResult.TOXICITY || 0) >= 0.7;
+      const esToxico = (perspectiveResult.TOXICITY || 0) >= 0.5;
       const esCoherente = analisisCoherencia.tieneSentido;
       
       const esAprobado = !esToxico && esCoherente;

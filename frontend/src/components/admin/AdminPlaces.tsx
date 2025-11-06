@@ -38,7 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAdminPlaces, type Place, type ModeracionError } from '@/hooks/useAdminPlaces';
+import { useAdminPlaces, type Place } from '@/hooks/useAdminPlaces';
 import { useCategories } from '@/hooks/useCategories';
 import { CategoryDropdown } from '@/components/admin/CategoryDropdown';
 import { CategoryFilter } from '@/components/admin/CategoryFilter';
@@ -251,34 +251,17 @@ interface FileState {
 }
 
 // ✅ FUNCIÓN PARA PARSEAR ERRORES DE MODERACIÓN
-const parseModeracionError = (error: string | ModeracionError | null): ModeracionError | null => {
-  if (!error) return null;
-  
-  if (typeof error === 'object' && error.detalles && error.message) {
-    return error as ModeracionError;
-  }
-  
-  if (typeof error === 'string') {
-    try {
-      const parsed = JSON.parse(error);
-      if (parsed.detalles && parsed.message) {
-        return parsed as ModeracionError;
-      }
-    } catch {
-      return null;
-    }
-  }
-  
-  return null;
-};
 
 export const AdminPlaces = () => {
   const {
     places,
     loading,
-    error,
     createPlace,
-    updatePlace,
+    updatePlace,           // ✅ ACTUALIZADO: Ahora acepta opciones
+    updatePlaceFast,       // ✅ NUEVO: Para actualizaciones rápidas
+    updatePlaceMetadata,   // ✅ NUEVO: Solo ubicación/categoría
+    validarCambiosLugar,   // ✅ NUEVO: Validación previa
+    analizarCambios,       // ✅ NUEVO: Análisis de cambios
     deletePlace,
     deletePlaceImage,
     deletePlacePDF,
@@ -336,33 +319,7 @@ export const AdminPlaces = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // ✅ EFECTO PARA MOSTRAR TOASTS DE ERRORES
-  useEffect(() => {
-    if (error) {
-      const errorModeracion = parseModeracionError(error);
-      
-      if (errorModeracion) {
-        // Mostrar toast para errores de moderación
-        toast({
-          title: '🚫 Contenido rechazado',
-          description: errorModeracion.message,
-          variant: 'destructive',
-          duration: 8000,
-        });
-      } else {
-        // Mostrar toast para errores generales
-        const errorMessage = typeof error === 'string' ? error : error.message;
-        toast({
-          title: '❌ Error',
-          description: errorMessage,
-          variant: 'destructive',
-        });
-      }
-      
-      // Limpiar el error después de mostrar el toast
-      clearError();
-    }
-  }, [error, toast, clearError]);
+
 
   // ✅ EFECTO PARA MOSTRAR TOASTS DE MODERACIÓN DE IMÁGENES
   useEffect(() => {
@@ -407,67 +364,104 @@ export const AdminPlaces = () => {
     setFormData(prev => ({ ...prev, location: location.address }));
   };
 
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
+// ✅ CORREGIDO: Validación mejorada para modo edición
+const validateForm = (): boolean => {
+  const errors: Record<string, string> = {};
+  
+  if (!editingPlace) {
+    // ✅ VALIDACIÓN PARA NUEVO LUGAR (completa)
+    if (!formData.name?.trim()) errors.name = 'El nombre es requerido';
+    if (!formData.description?.trim()) errors.description = 'La descripción es requerida';
+    if (!formData.category) errors.category = 'La categoría es requerida';
+    if (!formData.location?.trim()) errors.location = 'La ubicación es requerida';
+    if (!files.image) errors.image = 'La imagen es requerida para crear un nuevo lugar';
+  } else {
+    // ✅ VALIDACIÓN MEJORADA PARA EDICIÓN - solo validar campos modificados
+    const cambios = analizarCambios(editingPlace, formData);
     
-    if (!editingPlace) {
-      if (!formData.name?.trim()) errors.name = 'El nombre es requerido';
-      if (!formData.description?.trim()) errors.description = 'La descripción es requerida';
-      if (!formData.category) errors.category = 'La categoría es requerida';
-      if (!formData.location?.trim()) errors.location = 'La ubicación es requerida';
-      if (!files.image) errors.image = 'La imagen es requerida para crear un nuevo lugar';
-    } else {
-      const estaModificandoNombre = formData.name && formData.name !== editingPlace.name;
-      const estaModificandoDescripcion = formData.description && formData.description !== editingPlace.description;
-      const estaModificandoCategoria = formData.category && formData.category !== editingPlace.category;
-      const estaModificandoUbicacion = formData.location && formData.location !== editingPlace.location;
-      
-      if (estaModificandoNombre && !formData.name.trim()) {
+    console.log('🔍 Validando en modo edición:', {
+      cambios: cambios.camposModificados,
+      tieneArchivos: !!files.image || !!files.pdf
+    });
+
+    // Solo validar nombre si se está modificando y está vacío
+    if (cambios.nombreModificado) {
+      if (!formData.name?.trim()) {
         errors.name = 'El nombre no puede estar vacío';
       }
-      
-      if (estaModificandoDescripcion && !formData.description.trim()) {
+    }
+    
+    // Solo validar descripción si se está modificando y está vacía
+    if (cambios.descripcionModificada) {
+      if (!formData.description?.trim()) {
         errors.description = 'La descripción no puede estar vacía';
       }
-      
-      if (estaModificandoCategoria && !formData.category) {
+    }
+    
+    // Solo validar categoría si se está modificando y está vacía
+    if (cambios.categoriaModificada) {
+      if (!formData.category) {
         errors.category = 'La categoría es requerida';
       }
-      
-      if (estaModificandoUbicacion && !formData.location.trim()) {
+    }
+    
+    // Solo validar ubicación si se está modificando y está vacía
+    if (cambios.ubicacionModificada) {
+      if (!formData.location?.trim()) {
         errors.location = 'La ubicación no puede estar vacía';
       }
     }
-    
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
 
-  // ✅ FUNCIÓN SIMPLIFICADA: Solo errores de formulario básicos
-  const getFieldError = (field: 'name' | 'description' | 'category' | 'location' | 'image'): string | undefined => {
-    return formErrors[field];
-  };
-
-  // Función helper para detectar si hay cambios en los datos del formulario
-  const hasFormChanges = useCallback((): boolean => {
-    if (!editingPlace) {
-      return !!(formData.name?.trim() || 
-                formData.description?.trim() || 
-                formData.category || 
-                formData.location?.trim() ||
-                files.image || 
-                files.pdf);
+    // ✅ NUEVO: Validar imagen solo si se está reemplazando
+    if (files.image) {
+      // Validaciones de imagen (tipo, tamaño) pero no requerida
+      if (!files.image.type.startsWith('image/')) {
+        errors.image = 'El archivo debe ser una imagen';
+      } else if (files.image.size > 5 * 1024 * 1024) {
+        errors.image = 'La imagen no debe superar los 5MB';
+      }
     }
+  }
+  
+  setFormErrors(errors);
+  
+  console.log('📋 Resultado validación:', {
+    errores: Object.keys(errors),
+    modo: editingPlace ? 'edición' : 'creación'
+  });
+  
+  return Object.keys(errors).length === 0;
+};
+
+// ✅ MEJORADO: Función getFieldError actualizada
+const getFieldError = (field: 'name' | 'description' | 'category' | 'location' | 'image'): string | undefined => {
+  // En modo edición, solo mostrar errores para campos que se están modificando
+  if (editingPlace) {
+    const cambios = analizarCambios(editingPlace, formData);
     
-    return (
-      (formData.name && formData.name !== editingPlace.name) ||
-      (formData.description && formData.description !== editingPlace.description) ||
-      (formData.category && formData.category !== editingPlace.category) ||
-      (formData.location && formData.location !== editingPlace.location) ||
-      files.image !== null ||
-      files.pdf !== null
-    );
-  }, [editingPlace, formData, files]);
+    switch (field) {
+      case 'name':
+        if (!cambios.nombreModificado) return undefined;
+        break;
+      case 'description':
+        if (!cambios.descripcionModificada) return undefined;
+        break;
+      case 'category':
+        if (!cambios.categoriaModificada) return undefined;
+        break;
+      case 'location':
+        if (!cambios.ubicacionModificada) return undefined;
+        break;
+      case 'image':
+        // Para imagen, solo validar si se está subiendo una nueva
+        if (!files.image) return undefined;
+        break;
+    }
+  }
+  
+  return formErrors[field];
+};
+
 
   const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
     if (type === 'image' && file) {
@@ -557,6 +551,28 @@ export const AdminPlaces = () => {
     }
   };
 
+    /**
+   * ✅ MEJORADO: Detectar cambios de forma inteligente
+   */
+const hasFormChanges = useCallback((): boolean => {
+  if (!editingPlace) {
+    return !!(formData.name?.trim() || 
+              formData.description?.trim() || 
+              formData.category || 
+              formData.location?.trim() ||
+              files.image || 
+              files.pdf);
+  }
+  
+  // ✅ USAR LA FUNCIÓN DEL HOOK PARA ANÁLISIS PRECISO
+  const cambios = analizarCambios(editingPlace, formData);
+  return cambios.camposModificados.length > 0 || !!files.image || !!files.pdf;
+}, [editingPlace, formData, files, analizarCambios]);
+
+
+ /**
+   * ✅ MEJORADO: Manejar envío con estrategias inteligentes Y manejo de errores de moderación
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -570,81 +586,23 @@ export const AdminPlaces = () => {
       return;
     }
 
-    console.log('🎯 [SUBMIT] Iniciando proceso...');
+    console.log('🎯 [SUBMIT] Iniciando proceso inteligente...');
     
     setIsSubmitting(true);
     setIsProcessing(true);
     
     try {
-      // ✅ CASO 1: SOLO SUBIR ARCHIVOS (sin modificar datos del lugar)
-      const soloSubirArchivos = editingPlace && 
-        (!formData.name || formData.name === editingPlace.name) &&
-        (!formData.description || formData.description === editingPlace.description) &&
-        (!formData.category || formData.category === editingPlace.category) &&
-        (!formData.location || formData.location === editingPlace.location);
-
-      if (soloSubirArchivos) {
-        console.log('📤 [SUBMIT] Solo subiendo archivos sin modificar datos del lugar');
-        
-        const uploadResults = {
-          image: { success: false, error: '' },
-          pdf: { success: false, error: '' }
-        };
-
-        // Subir imagen si existe
-        if (files.image) {
-          try {
-            console.log('🖼️ [UPLOAD] Subiendo imagen...');
-            await uploadPlaceImage(editingPlace.id, files.image);
-            uploadResults.image.success = true;
-            console.log('✅ [UPLOAD] Imagen subida correctamente');
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-            uploadResults.image.error = errorMessage;
-            console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
-          }
-        }
-
-        // Subir PDF si existe
-        if (files.pdf) {
-          try {
-            console.log('📄 [UPLOAD] Subiendo PDF...');
-            await uploadPlacePDF(editingPlace.id, files.pdf);
-            uploadResults.pdf.success = true;
-            console.log('✅ [UPLOAD] PDF subido correctamente');
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-            uploadResults.pdf.error = errorMessage;
-            console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
-          }
-        }
-
-        // ✅ MOSTRAR TOAST CON RESULTADO
-        const archivosSubidos = [];
-        if (uploadResults.image.success) archivosSubidos.push('imagen');
-        if (uploadResults.pdf.success) archivosSubidos.push('PDF');
-
-        if (archivosSubidos.length > 0) {
-          toast({
-            title: '✅ Archivos subidos',
-            description: `${archivosSubidos.join(' y ')} actualizado(s) correctamente`,
-          });
-        }
-
-      } 
-      // ✅ CASO 2: CREAR NUEVO LUGAR (con validación completa)
-      else if (!editingPlace) {
+      // ✅ CASO 1: CREAR NUEVO LUGAR
+      if (!editingPlace) {
         console.log('🆕 [SUBMIT] Creando nuevo lugar...');
         
         if (!validateForm()) {
           console.log('❌ [VALIDATION] Validación fallida para nuevo lugar');
-          // Los errores de validación se muestran en el formulario
           setIsSubmitting(false);
           setIsProcessing(false);
           return;
         }
 
-        // Para crear nuevo lugar, primero creamos el lugar sin archivos
         const placeData: PlaceFormData = {
           name: formData.name.trim(),
           description: formData.description.trim(),
@@ -653,149 +611,247 @@ export const AdminPlaces = () => {
         };
 
         console.log('📤 [CREATE] Creando lugar con datos básicos...');
-        const savedPlace = await createPlace(placeData);
+        const savedPlace = await createPlace(placeData, files.image || undefined);
         
         if (!savedPlace?.id) {
           throw new Error('No se pudo obtener el ID del lugar creado');
         }
 
-        console.log('🔄 [UPLOAD] Preparando subida de archivos para nuevo lugar:', savedPlace.id);
-
-        // Subir archivos para el nuevo lugar
-        const uploadResults = {
-          image: { success: false, error: '' },
-          pdf: { success: false, error: '' }
-        };
-
-        if (files.image) {
-          try {
-            console.log('🖼️ [UPLOAD] Subiendo imagen para nuevo lugar...');
-            await uploadPlaceImage(savedPlace.id, files.image);
-            uploadResults.image.success = true;
-            console.log('✅ [UPLOAD] Imagen subida correctamente');
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-            uploadResults.image.error = errorMessage;
-            console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
-          }
-        }
-
+        // ✅ SUBIR PDF SI EXISTE
         if (files.pdf) {
           try {
             console.log('📄 [UPLOAD] Subiendo PDF para nuevo lugar...');
             await uploadPlacePDF(savedPlace.id, files.pdf);
-            uploadResults.pdf.success = true;
             console.log('✅ [UPLOAD] PDF subido correctamente');
           } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-            uploadResults.pdf.error = errorMessage;
-            console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
+            console.error('❌ [UPLOAD] Error subiendo PDF:', err);
+            // El error se maneja automáticamente en el hook
           }
         }
 
-        // ✅ TOAST DE ÉXITO GENERAL
         toast({
           title: '✅ Lugar creado',
           description: 'El lugar se ha creado exitosamente',
         });
 
-      }
-      // ✅ CASO 3: EDITAR LUGAR (modificando datos)
+      } 
+      // ✅ CASO 2: EDITAR LUGAR EXISTENTE
       else {
         console.log('✏️ [SUBMIT] Editando lugar existente...');
         
-        if (!validateForm()) {
-          console.log('❌ [VALIDATION] Validación fallida para edición');
-          setIsSubmitting(false);
-          setIsProcessing(false);
-          return;
-        }
+        // ✅ ANÁLISIS INTELIGENTE DE CAMBIOS
+        const analisis = analizarCambios(editingPlace, formData);
+        console.log('🔍 Análisis de cambios:', analisis);
 
-        // Para editar, solo enviamos los campos que realmente cambiaron
-        const placeData: Partial<PlaceFormData> = {};
-        
-        if (formData.name && formData.name !== editingPlace.name) {
-          placeData.name = formData.name.trim();
-        }
-        if (formData.description && formData.description !== editingPlace.description) {
-          placeData.description = formData.description.trim();
-        }
-        if (formData.category && formData.category !== editingPlace.category) {
-          placeData.category = formData.category;
-        }
-        if (formData.location && formData.location !== editingPlace.location) {
-          placeData.location = formData.location.trim();
-        }
-
-        // Solo actualizamos si hay cambios en los datos
-        if (Object.keys(placeData).length > 0) {
-          console.log('📤 [UPDATE] Actualizando lugar con datos:', placeData);
-          await updatePlace(editingPlace.id, placeData);
-          console.log('✅ [UPDATE] Lugar actualizado');
-        } else {
-          console.log('ℹ️ [UPDATE] No hay cambios en los datos del lugar');
-        }
-
-        // Subir archivos para el lugar editado
-        const uploadResults = {
-          image: { success: false, error: '' },
-          pdf: { success: false, error: '' }
-        };
-
-        if (files.image) {
-          try {
-            console.log('🖼️ [UPLOAD] Subiendo imagen para lugar editado...');
-            await uploadPlaceImage(editingPlace.id, files.image);
-            uploadResults.image.success = true;
-            console.log('✅ [UPLOAD] Imagen subida correctamente');
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-            uploadResults.image.error = errorMessage;
-            console.error('❌ [UPLOAD] Error subiendo imagen:', errorMessage);
+        // ✅ ESTRATEGIA 1: SOLO SUBIR ARCHIVOS (sin cambios en datos)
+        if (analisis.camposModificados.length === 0 && (files.image || files.pdf)) {
+          console.log('📤 [STRATEGY] Solo subiendo archivos...');
+          
+          const uploadPromises = [];
+          
+          if (files.image) {
+            uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
           }
-        }
-
-        if (files.pdf) {
-          try {
-            console.log('📄 [UPLOAD] Subiendo PDF para lugar editado...');
-            await uploadPlacePDF(editingPlace.id, files.pdf);
-            uploadResults.pdf.success = true;
-            console.log('✅ [UPLOAD] PDF subido correctamente');
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
-            uploadResults.pdf.error = errorMessage;
-            console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
+          
+          if (files.pdf) {
+            uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
           }
+          
+          await Promise.allSettled(uploadPromises);
+          
+          toast({
+            title: '✅ Archivos actualizados',
+            description: 'Los archivos se han actualizado correctamente',
+          });
         }
+        // ✅ ESTRATEGIA 2: SOLO METADATOS (ubicación/categoría)
+        else if (!analisis.requiereModeracion && analisis.camposModificados.length > 0) {
+          console.log('📝 [STRATEGY] Actualizando solo metadatos...');
+          
+          const datosActualizacion: Partial<PlaceFormData> = {};
+          if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
+          if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
+          
+          await updatePlaceMetadata(editingPlace.id, {
+            location: datosActualizacion.location,
+            category: datosActualizacion.category
+          });
 
-        // ✅ TOAST DE ÉXITO
-        toast({
-          title: '✅ Lugar actualizado',
-          description: 'El lugar se ha actualizado exitosamente',
-        });
+          // ✅ SUBIR ARCHIVOS EN PARALELO SI EXISTEN
+          const uploadPromises = [];
+          if (files.image) {
+            uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
+          }
+          if (files.pdf) {
+            uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+          }
+          
+          if (uploadPromises.length > 0) {
+            await Promise.allSettled(uploadPromises);
+          }
+
+          toast({
+            title: '✅ Lugar actualizado',
+            description: 'La información se ha actualizado correctamente',
+          });
+        }
+        // ✅ ESTRATEGIA 3: CAMBIOS EN TEXTO (requiere moderación)
+        else if (analisis.requiereModeracion) {
+          console.log('🔍 [STRATEGY] Cambios en texto - aplicando moderación...');
+          
+          // ✅ VALIDACIÓN PREVIA OPCIONAL
+          try {
+            const validacion = await validarCambiosLugar(editingPlace.id, formData);
+            
+            if (!validacion.esAprobado) {
+              // ❌ CORREGIDO: Mostrar toast específico para validación fallida
+              console.log('❌ [VALIDATION] Validación previa fallida:', validacion.motivo);
+              
+              toast({
+                title: '🚫 Contenido rechazado',
+                description: validacion.motivo || 'El contenido no cumple con las políticas de moderación',
+                variant: 'destructive',
+                duration: 10000,
+              });
+              
+              setIsSubmitting(false);
+              setIsProcessing(false);
+              return;
+            }
+          } catch (err: any) {
+            // ❌ CORREGIDO: Manejar error de validación previa
+            console.log('⚠️ Validación previa fallida, continuando...', err);
+            
+            // Mostrar toast si es un error de moderación
+            if (err?.motivo || err?.detalles) {
+              toast({
+                title: '🚫 Contenido rechazado',
+                description: err.motivo || err.message || 'El contenido no cumple con las políticas',
+                variant: 'destructive',
+                duration: 10000,
+              });
+              
+              setIsSubmitting(false);
+              setIsProcessing(false);
+              return;
+            }
+          }
+
+          // ✅ ACTUALIZACIÓN CON MODERACIÓN
+          const datosActualizacion: Partial<PlaceFormData> = {};
+          if (analisis.nombreModificado) datosActualizacion.name = formData.name;
+          if (analisis.descripcionModificada) datosActualizacion.description = formData.description;
+          if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
+          if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
+
+          await updatePlace(editingPlace.id, datosActualizacion, {
+            validarPreviamente: false // Ya validamos arriba
+          });
+
+          // ✅ SUBIR ARCHIVOS EN PARALELO
+          const uploadPromises = [];
+          if (files.image) {
+            uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
+          }
+          if (files.pdf) {
+            uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+          }
+          
+          if (uploadPromises.length > 0) {
+            await Promise.allSettled(uploadPromises);
+          }
+
+          toast({
+            title: '✅ Lugar actualizado',
+            description: 'El lugar se ha actualizado exitosamente',
+          });
+        }
+        // ✅ ESTRATEGIA 4: ACTUALIZACIÓN RÁPIDA (sin validación)
+        else {
+          console.log('⚡ [STRATEGY] Actualización rápida...');
+          
+          const datosActualizacion: Partial<PlaceFormData> = {};
+          if (analisis.nombreModificado) datosActualizacion.name = formData.name;
+          if (analisis.descripcionModificada) datosActualizacion.description = formData.description;
+          if (analisis.ubicacionModificada) datosActualizacion.location = formData.location;
+          if (analisis.categoriaModificada) datosActualizacion.category = formData.category;
+
+          await updatePlaceFast(editingPlace.id, datosActualizacion);
+
+          // ✅ SUBIR ARCHIVOS
+          const uploadPromises = [];
+          if (files.image) {
+            uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
+          }
+          if (files.pdf) {
+            uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+          }
+          
+          if (uploadPromises.length > 0) {
+            await Promise.allSettled(uploadPromises);
+          }
+
+          toast({
+            title: '✅ Lugar actualizado',
+            description: 'Los cambios se han guardado correctamente',
+          });
+        }
       }
 
-      console.log('🏁 [COMPLETED] Proceso terminado, cerrando...');
-      await new Promise(resolve => setTimeout(resolve, 500));
+      console.log('🏁 [COMPLETED] Proceso terminado exitosamente');
       
+      // ✅ LIMPIEZA Y CIERRE
+      await new Promise(resolve => setTimeout(resolve, 500));
       setIsDialogOpen(false);
       resetForm();
-      
       await refetch();
-      console.log('🔄 [REFETCH] Lista actualizada');
 
-    } catch (err) {
-      console.error('❌ [ERROR] Error crítico:', err);
+    } catch (err: any) {
+      console.error('❌ [ERROR DETALLADO] Error en handleSubmit:', {
+        error: err,
+        message: err?.message,
+        motivo: err?.motivo,
+        detalles: err?.detalles,
+        tipo: err?.tipo,
+        stack: err?.stack
+      });
       
-      // ✅ LOS ERRORES SE MANEJAN AUTOMÁTICAMENTE EN EL useEffect CON EL HOOK useAdminPlaces
-      // No es necesario hacer nada aquí, el toast se mostrará automáticamente
-      
+      // ✅ CORREGIDO: Manejo específico de errores de moderación
+      if (err?.motivo || err?.detalles) {
+        console.log('🎯 ES ERROR DE MODERACIÓN - Mostrando toast...');
+        
+        // Construir mensaje detallado
+        let descripcion = err.motivo || err.message || 'El contenido no cumple con las políticas de moderación';
+        
+        // Agregar detalles específicos si existen
+        if (err.detalles?.problemas && Array.isArray(err.detalles.problemas)) {
+          descripcion += `\n\nProblemas detectados:\n• ${err.detalles.problemas.join('\n• ')}`;
+        }
+        
+        if (err.detalles?.sugerencias && Array.isArray(err.detalles.sugerencias)) {
+          descripcion += `\n\nSugerencias:\n• ${err.detalles.sugerencias.join('\n• ')}`;
+        }
+
+        toast({
+          title: '🚫 Contenido rechazado',
+          description: descripcion,
+          variant: 'destructive',
+          duration: 10000,
+        });
+      } else {
+        console.log('⚠️ ES ERROR GENÉRICO');
+        // Error genérico
+        const errorMessage = err?.message || 'Error al procesar la solicitud';
+        toast({
+          title: '❌ Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
     } finally {
       setIsSubmitting(false);
       setIsProcessing(false);
     }
-    
-    return false;
   };
 
   const handleEdit = (place: Place) => {
@@ -812,6 +868,9 @@ export const AdminPlaces = () => {
     setIsDialogOpen(true);
   };
 
+  /**
+   * ✅ MEJORADO: Manejar eliminación de imagen
+   */
   const handleDeleteImage = async () => {
     if (!editingPlace || !editingPlace.image_url) {
       toast({
@@ -828,41 +887,40 @@ export const AdminPlaces = () => {
       
       // Actualizar el estado local
       setFormData(prev => ({ ...prev, image_url: '' }));
-      
-      // ✅ ELIMINADO: Toast de éxito - ahora se maneja desde el hook
-      
       await refetch();
+      
     } catch (err) {
       console.error('❌ Error eliminando imagen:', err);
-      // ✅ ELIMINADO: Toast de error - ahora se maneja desde el hook
+      // Error manejado automáticamente por el hook
     }
   };
 
-  const handleDeletePDF = async () => {
-    if (!editingPlace || !editingPlace.pdf_url) {
-      toast({
-        title: 'ℹ️ Información',
-        description: 'No hay PDF para eliminar',
-        variant: 'default',
-      });
-      return;
-    }
+/**
+ * ✅ CORREGIDO: Manejar eliminación de PDF con error usado
+ */
+const handleDeletePDF = async () => {
+  if (!editingPlace || !editingPlace.pdf_url) {
+    toast({
+      title: 'ℹ️ Información',
+      description: 'No hay PDF para eliminar',
+      variant: 'default',
+    });
+    return;
+  }
 
-    try {
-      console.log('🗑️ Eliminando PDF del lugar:', editingPlace.id);
-      await deletePlacePDF(editingPlace.id);
-      
-      // Actualizar el estado local
-      setFormData(prev => ({ ...prev, pdf_url: '' }));
-      
-      // ✅ ELIMINADO: Toast de éxito - ahora se maneja desde el hook
-      
-      await refetch();
-    } catch (err) {
-      console.error('❌ Error eliminando PDF:', err);
-      // ✅ ELIMINADO: Toast de error - ahora se maneja desde el hook
-    }
-  };
+  try {
+    console.log('🗑️ Eliminando PDF del lugar:', editingPlace.id);
+    await deletePlacePDF(editingPlace.id);
+    
+    // Actualizar el estado local
+    setFormData(prev => ({ ...prev, pdf_url: '' }));
+    await refetch();
+    
+  } catch (error) { // ← Cambiado de 'err' a 'error' para ser consistente
+    console.error('❌ Error eliminando PDF:', error);
+    // Error manejado automáticamente por el hook
+  }
+};
 
   const handleDelete = async () => {
     if (!editingPlace || isDeleting) {
@@ -1366,28 +1424,28 @@ export const AdminPlaces = () => {
                         Cancelar
                       </Button>
 
-                      <Button 
-                        title='Guardar Lugar'
-                        type="submit"
-                        disabled={isSubmitting || isProcessing || (editingPlace && !hasFormChanges())}
-                        className="bg-blue-600 text-white hover:bg-blue-700 min-w-24 border-blue-600"
-                      >
-                        {isProcessing ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            {files.image ? 'Analizando seguridad...' : 'Procesando...'}
-                          </>
-                        ) : isSubmitting ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            {editingPlace ? 'Actualizando...' : 'Creando...'}
-                          </>
-                        ) : editingPlace ? (
-                          hasFormChanges() ? 'Actualizar' : 'Sin cambios'
-                        ) : (
-                          'Crear'
-                        )}
-                      </Button>
+<Button 
+  title='Guardar Lugar'
+  type="submit"
+  disabled={Boolean(isSubmitting || isProcessing || (editingPlace && !hasFormChanges()))}
+  className="bg-blue-600 text-white hover:bg-blue-700 min-w-24 border-blue-600"
+>
+  {isProcessing ? (
+    <>
+      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+      {files.image ? 'Analizando seguridad...' : 'Procesando...'}
+    </>
+  ) : isSubmitting ? (
+    <>
+      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+      {editingPlace ? 'Actualizando...' : 'Creando...'}
+    </>
+  ) : editingPlace ? (
+    hasFormChanges() ? 'Guardar Cambios' : 'Sin cambios'
+  ) : (
+    'Crear Lugar'
+  )}
+</Button>
                     </div>
                   </div>
                 </form>
