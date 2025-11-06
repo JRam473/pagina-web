@@ -25,7 +25,8 @@ export class ModeracionService {
     let analisisTexto: AnalisisTexto | undefined;
 
     if (data.texto) {
-      analisisTexto = this.analizadorTexto.analizarTexto(data.texto);
+      // ✅ CORREGIDO: Agregar await aquí
+      analisisTexto = await this.analizadorTexto.analizarTexto(data.texto);
     }
 
     // Evaluar resultado general
@@ -75,7 +76,8 @@ export class ModeracionService {
   }> {
     console.log('🔍 Validando solo texto...');
 
-    const analisisTexto = this.analizadorTexto.analizarTexto(texto);
+    // ✅ CORREGIDO: Agregar await aquí
+    const analisisTexto = await this.analizadorTexto.analizarTexto(texto);
     const esAprobado = this.evaluarAprobacionGeneral(analisisTexto);
     const motivoRechazo = this.generarMotivoRechazo(analisisTexto);
     const puntuacionGeneral = this.calcularPuntuacionGeneral(analisisTexto);
@@ -118,22 +120,17 @@ export class ModeracionService {
       }
       
       // ✅ CORREGIDO: Verificar spam usando el análisis de detalles
-      if (texto.detalles?.intencion === 'spam' || texto.tieneSpam) {
+      if (texto.detalles?.intencion === 'spam') {
         motivos.push('Contenido comercial o spam detectado');
       }
       
       // ✅ CORREGIDO: Verificar URLs usando el análisis de detalles
-      if (texto.detalles?.tienePatronesSpam || texto.tieneUrls) {
+      if (texto.detalles?.tienePatronesSpam) {
         motivos.push('Enlaces o URLs no permitidos');
       }
       
-      // ✅ CORREGIDO: Verificar contacto usando el análisis de detalles
-      if (texto.tieneContacto) {
-        motivos.push('Información de contacto no permitida');
-      }
-      
       // ✅ CORREGIDO: Verificar coherencia usando el análisis de calidad
-      if (!texto.detalles?.calidadTexto?.tieneSentido || !texto.esCohorente) {
+      if (!texto.detalles?.calidadTexto?.tieneSentido) {
         motivos.push('Texto poco coherente o muy corto');
       }
       
@@ -159,16 +156,13 @@ export class ModeracionService {
 
     if (analisisTexto && !analisisTexto.esAprobado) {
       // ✅ CORREGIDO: Usar propiedades que existen
-      if (analisisTexto.detalles?.intencion === 'spam' || analisisTexto.tieneSpam) {
+      if (analisisTexto.detalles?.intencion === 'spam') {
         problemas.push('spam');
       }
-      if (analisisTexto.detalles?.tienePatronesSpam || analisisTexto.tieneUrls) {
+      if (analisisTexto.detalles?.tienePatronesSpam) {
         problemas.push('urls');
       }
-      if (analisisTexto.tieneContacto) {
-        problemas.push('contacto');
-      }
-      if (!analisisTexto.detalles?.calidadTexto?.tieneSentido || !analisisTexto.esCohorente) {
+      if (!analisisTexto.detalles?.calidadTexto?.tieneSentido) {
         problemas.push('incoherente');
       }
       if (palabrasOfensivas.length > 0) {
@@ -301,7 +295,7 @@ export class ModeracionService {
       }
       
       // ✅ CORREGIDO: Usar propiedades que existen
-      if (analisisTexto?.detalles?.intencion === 'spam' || analisisTexto?.tieneSpam) {
+      if (analisisTexto?.detalles?.intencion === 'spam') {
         sugerencias.push('Elimina referencias comerciales o promocionales');
       }
     } else {
@@ -325,15 +319,15 @@ export class ModeracionService {
     }
 
     // ✅ CORREGIDO: Usar propiedades que existen
-    if (analisisTexto.detalles?.intencion === 'spam' || analisisTexto.tieneSpam) {
+    if (analisisTexto.detalles?.intencion === 'spam') {
       return 'spam';
     }
 
-    if (analisisTexto.detalles?.tienePatronesSpam || analisisTexto.tieneUrls || analisisTexto.tieneContacto) {
+    if (analisisTexto.detalles?.tienePatronesSpam) {
       return 'informacion_contacto';
     }
 
-    if (!analisisTexto.detalles?.calidadTexto?.tieneSentido || !analisisTexto.esCohorente) {
+    if (!analisisTexto.detalles?.calidadTexto?.tieneSentido) {
       return 'texto_incoherente';
     }
 
