@@ -4,10 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "dev": "nodemon src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "install-all-deps": "npm install && pip install -r scripts/requirements_optimizado.txt",
+    "start-with-models": "concurrently \"npm run model-server\" \"npm run start\"",
+    "model-server": "cd scripts && python modelo_server.py",
+    "railway-build": "npm run build",
+    "railway-start": "npm run start-with-models"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",

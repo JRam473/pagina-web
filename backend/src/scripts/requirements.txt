@@ -7,11 +7,12 @@ torchvision>=0.15.0
 # Procesamiento de imágenes
 Pillow>=10.0.0
 numpy>=1.24.0
-opencv-python-headless>=4.7.0
+opencv-python-headless>=4.7.0  # ✅ AGREGAR ESTE
 
 # Servidor web
 Flask>=2.3.0
 gunicorn>=21.0.0
+Werkzeug>=2.3.0  # ✅ RECOMENDADO
 
 # Utilidades
 requests>=2.28.0

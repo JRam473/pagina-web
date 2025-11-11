@@ -1,3 +1,4 @@
+-- backend/src/scripts/init-db.sql
 -- Database: tahiticc
 CREATE DATABASE tahiticc
     WITH
