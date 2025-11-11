@@ -1,4 +1,4 @@
-// backend/src/utils/analizadorTexto.ts - VERSIÓN CON ANÁLISIS DE COHERENCIA
+// backend/src/utils/analizadorTexto.ts - VERSIÓN CON ANÁLISIS DE COHERENCIA MEJORADO
 import { AnalisisTexto } from '../types/moderacion';
 import axios from 'axios';
 
@@ -34,6 +34,7 @@ interface DetallesAnalisisMejorado {
   tienePatronesSpam?: boolean;
   perspectiveScores?: { [key: string]: number };
   cacheUsado?: boolean;
+  contexto?: string;
 }
 
 export class AnalizadorTexto {
@@ -78,8 +79,19 @@ export class AnalizadorTexto {
     'wow', 'woow', 'increible', 'padre', 'chido', 'chévere'
   ]);
 
-
-
+  // Palabras académicas para detección de PDFs escolares
+  private palabrasAcademicas: Set<string> = new Set([
+    'tecnologico', 'nacional', 'mexico', 'evaluacion', 'examen', 'pregunta',
+    'respuesta', 'calificacion', 'profesor', 'alumno', 'tarea', 'proyecto',
+    'investigacion', 'universidad', 'escuela', 'instituto', 'educacion',
+    'aprendizaje', 'conocimiento', 'estudio', 'matematicas', 'ciencias',
+    'historia', 'español', 'literatura', 'geografia', 'fisica', 'quimica',
+    'biologia', 'filosofia', 'trabajo', 'practica', 'laboratorio', 'semestre',
+    'carrera', 'licenciatura', 'maestria', 'doctorado', 'investigador', 'materia',
+    'curso', 'clase', 'leccion', 'tema', 'capitulo', 'seccion', 'parrafo', 'texto',
+    'documento', 'archivo', 'pdf', 'formato', 'digital', 'escaneado', 'imagen',
+    'fotografia', 'dibujo', 'grafico', 'tabla', 'figura', 'diagrama'
+  ]);
 
   /**
    * ANALIZAR TEXTO CON PERSPECTIVE API - ATRIBUTOS COMPATIBLES
@@ -236,7 +248,6 @@ export class AnalizadorTexto {
       'INSULT': 'insulto',
       'PROFANITY': 'lenguaje profano',
       'THREAT': 'amenaza'
-      // ❌ REMOVIDO: SEXUALLY_EXPLICIT y FLIRTATION
     };
 
     return traducciones[categoria] || categoria;
@@ -253,7 +264,6 @@ export class AnalizadorTexto {
       INSULT: 0,
       PROFANITY: 0,
       THREAT: 0
-      // ❌ REMOVIDO: SEXUALLY_EXPLICIT y FLIRTATION
     };
   }
 
@@ -282,7 +292,6 @@ export class AnalizadorTexto {
   private usarFallbackLocal(texto: string): AnalisisTexto {
     console.log('🔄 Usando análisis local (fallback)');
     
-    // ✅ MEJORADO: Detección más robusta de contenido ofensivo
     const deteccion = this.detectarContenidoOfensivoLocal(texto);
     const esAprobado = !deteccion.esOfensivo;
     const puntuacion = esAprobado ? 0.8 : 0.3;
@@ -341,15 +350,12 @@ export class AnalizadorTexto {
 
     const todasOfensivas = [...encontradasExtremas, ...encontradasModeradas];
     
-    // Determinar intención basada en el contenido
     let intencion = 'inocente';
     if (encontradasExtremas.length > 0) intencion = 'ofensivo';
     else if (encontradasModeradas.length > 0) intencion = 'sospechoso';
 
-    // Calcular si es ofensivo
     const esOfensivo = encontradasExtremas.length > 0 || encontradasModeradas.length > 1;
 
-    // Generar razón
     let razon = 'Contenido aprobado';
     if (esOfensivo) {
       if (encontradasExtremas.length > 0) {
@@ -368,15 +374,13 @@ export class AnalizadorTexto {
   }
 
   /**
-   * ✅ NUEVO: VERIFICAR COHERENCIA DEL TEXTO
+   * VERIFICAR COHERENCIA DEL TEXTO
    */
   private esTextoCoherente(texto: string): boolean {
     const palabras = texto.trim().split(/\s+/);
     
-    // Textos muy cortos pueden ser coherentes
     if (palabras.length <= 3) return true;
     
-    // Verificar que tenga una estructura básica
     const tieneVerbos = /(\b(es|son|era|fueron|tiene|tienen|hace|hacen|puede|pueden|debe|deben|quiero|quiere|dice|dicen)\b)/i.test(texto);
     const longitudAdecuada = texto.length >= 10 && texto.length <= 500;
     const diversidadPalabras = new Set(palabras).size / palabras.length > 0.6;
@@ -385,7 +389,7 @@ export class AnalizadorTexto {
   }
 
   /**
-   * ✅ NUEVO: CALCULAR PORCENTAJE DE PALABRAS VÁLIDAS
+   * CALCULAR PORCENTAJE DE PALABRAS VÁLIDAS
    */
   private calcularPorcentajeValido(texto: string): number {
     const palabras = texto.trim().split(/\s+/);
@@ -405,7 +409,7 @@ export class AnalizadorTexto {
     const palabrasOfensivas = [
       'puta', 'puto', 'mierda', 'cabron', 'imbecil', 'estupido', 'maricon',
       'verga', 'polla', 'coño', 'chocha', 'fuck', 'shit', 'bitch', 'asshole',
-      'basura' // ✅ AGREGADO: Para detectar "eres una basura"
+      'basura'
     ];
 
     const textoLimpio = texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -434,7 +438,6 @@ export class AnalizadorTexto {
       };
     }
     
-    // Limpiar entrada expirada
     if (cached) {
       this.cache.delete(textoHash);
     }
@@ -448,7 +451,6 @@ export class AnalizadorTexto {
   private guardarEnCache(texto: string, resultado: AnalisisTexto): void {
     const textoHash = this.generarHash(texto);
     
-    // Limitar tamaño del cache
     if (this.cache.size >= this.MAX_CACHE_SIZE) {
       const firstKey = this.cache.keys().next().value;
       if (firstKey) this.cache.delete(firstKey);
@@ -498,25 +500,28 @@ export class AnalizadorTexto {
     };
   }
 
- /**
-   * ANALIZAR TEXTO CON PERSPECTIVE API + ANÁLISIS DE COHERENCIA
+  /**
+   * ✅ MODIFICADO: ANALIZAR TEXTO CON CONTEXTO PDF/GENERAL
    */
-  async analizarTexto(texto: string): Promise<AnalisisTexto> {
+  async analizarTexto(texto: string, contexto: 'pdf' | 'general' = 'general'): Promise<AnalisisTexto> {
     if (!texto?.trim()) {
       return this.crearRespuestaError('Texto vacío o muy corto');
     }
 
-    console.log(`\n📝 Analizando texto: "${texto.substring(0, 50)}..."`);
+    console.log(`\n📝 Analizando texto (${contexto}): "${texto.substring(0, 50)}..."`);
 
-    // Verificar cache primero
-    const cachedResult = this.obtenerDeCache(texto);
+    // Verificar cache primero (con contexto)
+    const cacheKey = `${contexto}:${texto}`;
+    const cachedResult = this.obtenerDeCache(cacheKey);
     if (cachedResult) {
       console.log('💾 Resultado obtenido de cache');
       return cachedResult;
     }
 
-    // ✅ PRIMERO: Análisis de coherencia local (siempre se ejecuta)
-    const analisisCoherencia = this.analizarCoherenciaTexto(texto);
+    // ✅ SELECCIONAR ANÁLISIS SEGÚN CONTEXTO
+    const analisisCoherencia = contexto === 'pdf' 
+      ? this.analizarCoherenciaTextoPDF(texto)
+      : this.analizarCoherenciaTexto(texto);
     
     try {
       const perspectiveResult = await this.analizarConPerspective(texto);
@@ -528,21 +533,38 @@ export class AnalizadorTexto {
         )
       });
 
-      // ✅ COMBINAR: Análisis de toxicidad + coherencia
+      // ✅ COMBINAR: Análisis de toxicidad + coherencia (con contexto)
       const esToxico = (perspectiveResult.TOXICITY || 0) >= 0.5;
       const esCoherente = analisisCoherencia.tieneSentido;
       
-      const esAprobado = !esToxico && esCoherente;
-      const puntuacion = this.calcularPuntuacionCombinada(perspectiveResult, analisisCoherencia);
-      const razon = this.generarRazonCombinada(perspectiveResult, analisisCoherencia);
-      const intencion = this.determinarIntencionCombinada(perspectiveResult, analisisCoherencia);
+      // ✅ CRITERIOS DIFERENTES SEGÚN CONTEXTO
+      const esAprobado = contexto === 'pdf' 
+        ? !esToxico // Para PDFs, solo verificar toxicidad
+        : !esToxico && esCoherente; // Para general, verificar ambos
+      
+      const puntuacion = this.calcularPuntuacionCombinada(
+        perspectiveResult, 
+        analisisCoherencia,
+        contexto
+      );
+      
+      const razon = this.generarRazonCombinada(
+        perspectiveResult, 
+        analisisCoherencia,
+        contexto
+      );
+      
+      const intencion = this.determinarIntencionCombinada(
+        perspectiveResult, 
+        analisisCoherencia
+      );
 
-      console.log(`📊 RESULTADO: Aprobado=${esAprobado}, Puntuación=${puntuacion}`);
+      console.log(`📊 RESULTADO (${contexto}): Aprobado=${esAprobado}, Puntuación=${puntuacion}`);
       console.log(`🔍 Coherencia: ${esCoherente ? '✅ CON SENTIDO' : '❌ SIN SENTIDO'}`);
       console.log(`🔍 Toxicidad: ${esToxico ? '🚨 TÓXICO' : '✅ LIMPIO'}`);
 
       const detalles: DetallesAnalisisMejorado = {
-        metodo: 'google-perspective-api + analisis-coherencia',
+        metodo: `google-perspective-api + analisis-coherencia-${contexto}`,
         intencion,
         calidadTexto: {
           tieneSentido: analisisCoherencia.tieneSentido,
@@ -552,7 +574,8 @@ export class AnalizadorTexto {
         },
         longitud: texto.length,
         tienePatronesSpam: false,
-        perspectiveScores: perspectiveResult
+        perspectiveScores: perspectiveResult,
+        contexto: contexto
       };
 
       const resultado: AnalisisTexto = {
@@ -563,21 +586,106 @@ export class AnalizadorTexto {
         detalles: detalles as AnalisisTexto['detalles']
       };
 
-      // Guardar en cache
-      this.guardarEnCache(texto, resultado);
+      // Guardar en cache con contexto
+      this.guardarEnCache(cacheKey, resultado);
 
       return resultado;
 
     } catch (error: any) {
       console.error('❌ Error en Perspective API:', error.message);
       
-      // ✅ FALLBACK: Usar solo análisis de coherencia local
-      return this.usarFallbackConCoherencia(texto, analisisCoherencia);
+      // ✅ FALLBACK CON CONTEXTO
+      return this.usarFallbackConCoherencia(texto, analisisCoherencia, contexto);
     }
   }
 
   /**
-   * ✅ NUEVO: ANÁLISIS AVANZADO DE COHERENCIA
+   * ✅ NUEVO: ANÁLISIS DE COHERENCIA ESPECIAL PARA PDFs
+   */
+  private analizarCoherenciaTextoPDF(texto: string): {
+    tieneSentido: boolean;
+    porcentajeValido: number;
+    razon: string;
+    confianza: number;
+    problemas: string[];
+  } {
+    const textoLimpio = texto.trim();
+    const palabras = textoLimpio.split(/\s+/).filter(p => p.length > 0);
+    
+    if (palabras.length === 0) {
+      return {
+        tieneSentido: false,
+        porcentajeValido: 0,
+        razon: 'Texto vacío',
+        confianza: 1.0,
+        problemas: ['vacio']
+      };
+    }
+
+    // ✅ PARA PDFs: Umbrales más permisivos
+    const porcentajeValido = this.calcularPorcentajeValido(texto);
+    const tieneEstructura = this.tieneEstructuraGramaticalPDF(texto);
+    const diversidadLexica = new Set(palabras).size / palabras.length;
+
+    // ✅ CRITERIOS MÁS PERMISIVOS PARA PDFs
+    const problemas: string[] = [];
+    let puntuacionCoherencia = 1.0;
+    let razon = 'Texto coherente (PDF)';
+
+    // Penalizaciones más suaves para PDFs
+    if (porcentajeValido < 0.2) { // Antes era 0.3
+      puntuacionCoherencia -= 0.4; // Antes era 0.6
+      problemas.push('pocas_palabras_validas');
+    } else if (porcentajeValido < 0.4) { // Antes era 0.6
+      puntuacionCoherencia -= 0.2; // Antes era 0.3
+      problemas.push('calidad_media');
+    }
+
+    if (!tieneEstructura) {
+      puntuacionCoherencia -= 0.2; // Antes era 0.4
+      problemas.push('sin_estructura');
+    }
+
+    if (diversidadLexica < 0.2 && palabras.length > 10) { // Antes era 0.3
+      puntuacionCoherencia -= 0.2; // Antes era 0.3
+      problemas.push('poca_diversidad');
+    }
+
+    // ✅ UMBRAL MÁS BAJO PARA PDFs: 0.4 vs 0.6
+    const tieneSentido = puntuacionCoherencia >= 0.4 && porcentajeValido >= 0.2;
+
+    if (!tieneSentido) {
+      if (porcentajeValido < 0.1) { // Antes era 0.2
+        razon = 'Texto PDF con muy pocas palabras válidas';
+      } else if (!tieneEstructura) {
+        razon = 'Texto PDF sin estructura gramatical clara (común en documentos escaneados)';
+      } else if (diversidadLexica < 0.2) {
+        razon = 'Texto PDF repetitivo (común en documentos académicos)';
+      } else {
+        razon = 'Texto PDF de calidad aceptable';
+      }
+    }
+
+    console.log(`🧠 Análisis coherencia PDF: ${tieneSentido ? '✅' : '❌'}`, {
+      palabras: palabras.length,
+      validas: Math.round(porcentajeValido * 100) + '%',
+      estructura: tieneEstructura,
+      diversidad: Math.round(diversidadLexica * 100) + '%',
+      puntuacion: Math.round(puntuacionCoherencia * 100) + '%',
+      problemas: problemas.join(', ')
+    });
+
+    return {
+      tieneSentido,
+      porcentajeValido,
+      razon,
+      confianza: puntuacionCoherencia,
+      problemas
+    };
+  }
+
+  /**
+   * ANÁLISIS AVANZADO DE COHERENCIA (PARA CONTENIDO GENERAL)
    */
   private analizarCoherenciaTexto(texto: string): {
     tieneSentido: boolean;
@@ -599,7 +707,6 @@ export class AnalizadorTexto {
       };
     }
 
-    // 1. Análisis de longitud
     if (textoLimpio.length < 5) {
       return {
         tieneSentido: false,
@@ -610,7 +717,6 @@ export class AnalizadorTexto {
       };
     }
 
-    // 2. Detección de texto aleatorio/teclado
     if (this.esTextoAleatorio(textoLimpio)) {
       return {
         tieneSentido: false,
@@ -621,7 +727,6 @@ export class AnalizadorTexto {
       };
     }
 
-    // 3. Detección de caracteres repetidos
     if (this.tieneCaracteresRepetidos(textoLimpio)) {
       return {
         tieneSentido: false,
@@ -632,24 +737,19 @@ export class AnalizadorTexto {
       };
     }
 
-    // 4. Análisis de palabras válidas
     const palabrasValidas = palabras.filter(palabra => 
       this.esPalabraValida(palabra)
     );
     const porcentajeValido = palabras.length > 0 ? palabrasValidas.length / palabras.length : 0;
 
-    // 5. Análisis de estructura gramatical
     const tieneEstructura = this.tieneEstructuraGramatical(textoLimpio);
-    
-    // 6. Análisis de diversidad léxica
     const diversidadLexica = new Set(palabras).size / palabras.length;
 
-    // 7. Calcular puntuación de coherencia
     const problemas: string[] = [];
     let puntuacionCoherencia = 1.0;
     let razon = 'Texto coherente';
 
-    // Penalizaciones
+    // Penalizaciones normales para contenido general
     if (porcentajeValido < 0.3) {
       puntuacionCoherencia -= 0.6;
       problemas.push('pocas_palabras_validas');
@@ -668,7 +768,6 @@ export class AnalizadorTexto {
       problemas.push('poca_diversidad');
     }
 
-    // Determinar si tiene sentido
     const tieneSentido = puntuacionCoherencia >= 0.6 && porcentajeValido >= 0.3;
 
     if (!tieneSentido) {
@@ -703,107 +802,45 @@ export class AnalizadorTexto {
   }
 
   /**
-   * ✅ DETECTAR TEXTO ALEATORIO (como "jkvjdsbvdsh dsjkldshvc")
+   * ✅ NUEVO: ESTRUCTURA GRAMATICAL MÁS PERMISIVA PARA PDFs
    */
-  private esTextoAleatorio(texto: string): boolean {
-    const textoLimpio = texto.toLowerCase().replace(/\s+/g, '');
+  private tieneEstructuraGramaticalPDF(texto: string): boolean {
+    const palabras = texto.trim().split(/\s+/);
     
-    // Patrones de teclado (filas del teclado)
-    const patronesTeclado = [
-      /^[qwertyuiop]+$/,      // Fila superior
-      /^[asdfghjkl]+$/,       // Fila central  
-      /^[zxcvbnm]+$/,         // Fila inferior
-      /^[poiuytrewq]+$/,      // Fila superior invertida
-      /^[lkjhgfdsa]+$/,       // Fila central invertida
-      /^[mnbvcxz]+$/,         // Fila inferior invertida
-    ];
-
-    // Verificar patrones de teclado
-    for (const patron of patronesTeclado) {
-      if (patron.test(textoLimpio)) {
-        console.log(`🔍 Patrón de teclado detectado: ${patron}`);
-        return true;
-      }
-    }
-
-    // Verificar secuencias sin vocales (muy sospechoso)
-    const sinVocales = textoLimpio.replace(/[aeiouáéíóú]/gi, '');
-    const ratioSinVocales = sinVocales.length / textoLimpio.length;
+    // ✅ PARA PDFs: Textos más largos sin estructura son aceptables
+    if (palabras.length < 5) return true;
     
-    if (ratioSinVocales > 0.8 && textoLimpio.length > 8) {
-      console.log(`🔍 Muchas consonantes seguidas: ${ratioSinVocales.toFixed(2)}`);
+    // Verificar palabras académicas comunes en PDFs
+    const tieneAcademicas = palabras.some(palabra => 
+      this.palabrasAcademicas.has(palabra.toLowerCase())
+    );
+
+    // ✅ PARA PDFs: Si tiene palabras académicas, es probablemente legítimo
+    if (tieneAcademicas) {
       return true;
     }
 
-    // Verificar repetición de patrones cortos
-    const patronesRepetitivos = [
-      /(.)\1{4,}/,           // Mismo carácter 5+ veces
-      /(..)\1{3,}/,          // 2 caracteres repetidos 4+ veces
-      /(...)\1{3,}/,         // 3 caracteres repetidos 4+ veces
-    ];
+    // Estructura básica más permisiva
+    const palabrasFuncionales = new Set([
+      'el', 'la', 'los', 'las', 'un', 'una', 'de', 'en', 'con', 'por', 
+      'para', 'y', 'o', 'pero', 'porque', 'si', 'no'
+    ]);
+    
+    const tieneFuncionales = palabras.some(palabra => 
+      palabrasFuncionales.has(palabra.toLowerCase())
+    );
 
-    for (const patron of patronesRepetitivos) {
-      if (patron.test(textoLimpio)) {
-        console.log(`🔍 Patrón repetitivo detectado: ${patron}`);
-        return true;
-      }
-    }
-
-    return false;
+    return tieneFuncionales || palabras.length <= 8;
   }
 
   /**
-   * ✅ DETECTAR CARACTERES REPETIDOS
-   */
-  private tieneCaracteresRepetidos(texto: string): boolean {
-    const textoLimpio = texto.toLowerCase().replace(/\s+/g, '');
-    
-    // Carácter repetido muchas veces
-    if (/(.)\1{5,}/.test(textoLimpio)) {
-      return true;
-    }
-
-    // Muy poca diversidad de caracteres
-    const caracteresUnicos = new Set(textoLimpio);
-    const ratioDiversidad = caracteresUnicos.size / textoLimpio.length;
-    
-    return ratioDiversidad < 0.3 && textoLimpio.length > 10;
-  }
-
-  /**
-   * ✅ VERIFICAR SI UNA PALABRA ES VÁLIDA
-   */
-  private esPalabraValida(palabra: string): boolean {
-    const palabraLimpia = palabra.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    // Palabras muy cortas pueden ser válidas si son comunes
-    if (palabraLimpia.length <= 2) {
-      const palabrasCortasValidas = new Set(['si', 'no', 'ya', 'a', 'y', 'o', 'de', 'en', 'el', 'la', 'un', 'una']);
-      return palabrasCortasValidas.has(palabraLimpia);
-    }
-
-    // Verificar en diccionario
-    if (this.diccionarioEspanol.has(palabraLimpia)) {
-      return true;
-    }
-
-    // Verificar patrones de palabras válidas
-    const tieneVocales = /[aeiouáéíóú]/i.test(palabraLimpia);
-    const tieneConsonantes = /[bcdfghjklmnpqrstvwxyz]/i.test(palabraLimpia);
-    const estructuraValida = /^[a-záéíóúñ]+$/i.test(palabraLimpia);
-    
-    return tieneVocales && tieneConsonantes && estructuraValida;
-  }
-
-  /**
-   * ✅ VERIFICAR ESTRUCTURA GRAMATICAL BÁSICA
+   * VERIFICAR ESTRUCTURA GRAMATICAL BÁSICA (PARA GENERAL)
    */
   private tieneEstructuraGramatical(texto: string): boolean {
     const palabras = texto.trim().split(/\s+/);
     
-    if (palabras.length < 3) return true; // Textos cortos pueden no tener estructura clara
+    if (palabras.length < 3) return true;
     
-    // Verificar presencia de palabras funcionales (artículos, preposiciones, etc.)
     const palabrasFuncionales = new Set([
       'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'en', 'con', 'por', 
       'para', 'sin', 'sobre', 'bajo', 'y', 'o', 'pero', 'porque', 'aunque', 'si', 'no'
@@ -813,7 +850,6 @@ export class AnalizadorTexto {
       palabrasFuncionales.has(palabra.toLowerCase())
     );
 
-    // Verificar presencia de verbos comunes
     const verbosComunes = new Set([
       'es', 'son', 'era', 'fueron', 'está', 'están', 'estaba', 'estaban', 'tengo', 
       'tiene', 'tenía', 'tenían', 'puedo', 'puede', 'podía', 'podían', 'quiero', 
@@ -829,45 +865,130 @@ export class AnalizadorTexto {
   }
 
   /**
-   * ✅ CALCULAR PUNTUACIÓN COMBINADA (Toxicidad + Coherencia)
+   * DETECTAR TEXTO ALEATORIO
+   */
+  private esTextoAleatorio(texto: string): boolean {
+    const textoLimpio = texto.toLowerCase().replace(/\s+/g, '');
+    
+    const patronesTeclado = [
+      /^[qwertyuiop]+$/,      /^[asdfghjkl]+$/,      /^[zxcvbnm]+$/,
+      /^[poiuytrewq]+$/,      /^[lkjhgfdsa]+$/,      /^[mnbvcxz]+$/,
+    ];
+
+    for (const patron of patronesTeclado) {
+      if (patron.test(textoLimpio)) {
+        console.log(`🔍 Patrón de teclado detectado: ${patron}`);
+        return true;
+      }
+    }
+
+    const sinVocales = textoLimpio.replace(/[aeiouáéíóú]/gi, '');
+    const ratioSinVocales = sinVocales.length / textoLimpio.length;
+    
+    if (ratioSinVocales > 0.8 && textoLimpio.length > 8) {
+      console.log(`🔍 Muchas consonantes seguidas: ${ratioSinVocales.toFixed(2)}`);
+      return true;
+    }
+
+    const patronesRepetitivos = [
+      /(.)\1{4,}/, /(..)\1{3,}/, /(...)\1{3,}/,
+    ];
+
+    for (const patron of patronesRepetitivos) {
+      if (patron.test(textoLimpio)) {
+        console.log(`🔍 Patrón repetitivo detectado: ${patron}`);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * DETECTAR CARACTERES REPETIDOS
+   */
+  private tieneCaracteresRepetidos(texto: string): boolean {
+    const textoLimpio = texto.toLowerCase().replace(/\s+/g, '');
+    
+    if (/(.)\1{5,}/.test(textoLimpio)) {
+      return true;
+    }
+
+    const caracteresUnicos = new Set(textoLimpio);
+    const ratioDiversidad = caracteresUnicos.size / textoLimpio.length;
+    
+    return ratioDiversidad < 0.3 && textoLimpio.length > 10;
+  }
+
+  /**
+   * VERIFICAR SI UNA PALABRA ES VÁLIDA
+   */
+  private esPalabraValida(palabra: string): boolean {
+    const palabraLimpia = palabra.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    if (palabraLimpia.length <= 2) {
+      const palabrasCortasValidas = new Set(['si', 'no', 'ya', 'a', 'y', 'o', 'de', 'en', 'el', 'la', 'un', 'una']);
+      return palabrasCortasValidas.has(palabraLimpia);
+    }
+
+    if (this.diccionarioEspanol.has(palabraLimpia)) {
+      return true;
+    }
+
+    const tieneVocales = /[aeiouáéíóú]/i.test(palabraLimpia);
+    const tieneConsonantes = /[bcdfghjklmnpqrstvwxyz]/i.test(palabraLimpia);
+    const estructuraValida = /^[a-záéíóúñ]+$/i.test(palabraLimpia);
+    
+    return tieneVocales && tieneConsonantes && estructuraValida;
+  }
+
+  /**
+   * ✅ MODIFICADO: CALCULAR PUNTUACIÓN COMBINADA CON CONTEXTO
    */
   private calcularPuntuacionCombinada(
     perspectiveScores: { [key: string]: number },
-    coherencia: { confianza: number; tieneSentido: boolean }
+    coherencia: { confianza: number; tieneSentido: boolean },
+    contexto: 'pdf' | 'general'
   ): number {
     const toxicidad = perspectiveScores.TOXICITY || 0;
     const severidad = perspectiveScores.SEVERE_TOXICITY || 0;
     const insulto = perspectiveScores.INSULT || 0;
     const amenaza = perspectiveScores.THREAT || 0;
 
-    // Puntuación de toxicidad (inversa)
     const maxToxicidad = Math.max(toxicidad, severidad, insulto, amenaza);
     const puntuacionToxicidad = Math.max(0.1, 1.0 - maxToxicidad);
 
-    // Puntuación de coherencia
-    const puntuacionCoherencia = coherencia.tieneSentido ? coherencia.confianza : 0.2;
-
-    // Combinar ambas puntuaciones (50% toxicidad, 50% coherencia)
-    const puntuacionFinal = (puntuacionToxicidad * 0.5) + (puntuacionCoherencia * 0.5);
-
-    return Math.round(puntuacionFinal * 100) / 100;
+    // ✅ PESOS DIFERENTES SEGÚN CONTEXTO
+    if (contexto === 'pdf') {
+      // Para PDFs: 80% toxicidad, 20% coherencia
+      const puntuacionCoherencia = coherencia.tieneSentido ? coherencia.confianza : 0.5;
+      return (puntuacionToxicidad * 0.8) + (puntuacionCoherencia * 0.2);
+    } else {
+      // Para general: 50% toxicidad, 50% coherencia
+      const puntuacionCoherencia = coherencia.tieneSentido ? coherencia.confianza : 0.2;
+      return (puntuacionToxicidad * 0.5) + (puntuacionCoherencia * 0.5);
+    }
   }
 
   /**
-   * ✅ GENERAR RAZÓN COMBINADA
+   * ✅ MODIFICADO: GENERAR RAZÓN COMBINADA CON CONTEXTO
    */
   private generarRazonCombinada(
     perspectiveScores: { [key: string]: number },
-    coherencia: { razon: string; tieneSentido: boolean }
+    coherencia: { razon: string; tieneSentido: boolean },
+    contexto: 'pdf' | 'general'
   ): string {
     const categoriasToxicas = Object.entries(perspectiveScores)
       .filter(([category, score]) => (score || 0) > 0.7)
       .map(([category]) => this.traducirCategoria(category));
 
-    if (categoriasToxicas.length > 0 && !coherencia.tieneSentido) {
-      return `Contenido tóxico y sin sentido: ${categoriasToxicas.join(', ')} + ${coherencia.razon}`;
-    } else if (categoriasToxicas.length > 0) {
+    if (categoriasToxicas.length > 0) {
       return `Contenido no aprobado: ${categoriasToxicas.join(', ')}`;
+    }
+    
+    if (contexto === 'pdf') {
+      // ✅ PARA PDFs: No rechazar por falta de coherencia
+      return 'Contenido PDF aprobado (solo verificado toxicidad)';
     } else if (!coherencia.tieneSentido) {
       return `Contenido no aprobado: ${coherencia.razon}`;
     } else {
@@ -876,7 +997,7 @@ export class AnalizadorTexto {
   }
 
   /**
-   * ✅ DETERMINAR INTENCIÓN COMBINADA
+   * DETERMINAR INTENCIÓN COMBINADA
    */
   private determinarIntencionCombinada(
     perspectiveScores: { [key: string]: number },
@@ -886,7 +1007,6 @@ export class AnalizadorTexto {
     const severidad = perspectiveScores.SEVERE_TOXICITY || 0;
     const amenaza = perspectiveScores.THREAT || 0;
 
-    // Priorizar toxicidad
     if (amenaza > 0.8 || severidad > 0.8) {
       return 'peligroso';
     } else if (toxicidad > 0.7) {
@@ -901,22 +1021,30 @@ export class AnalizadorTexto {
   }
 
   /**
-   * ✅ FALLBACK MEJORADO CON COHERENCIA
+   * ✅ MODIFICADO: FALLBACK MEJORADO CON CONTEXTO
    */
-  private usarFallbackConCoherencia(texto: string, coherencia: any): AnalisisTexto {
-    console.log('🔄 Usando análisis local mejorado (fallback)');
+  private usarFallbackConCoherencia(
+    texto: string, 
+    coherencia: any, 
+    contexto: 'pdf' | 'general'
+  ): AnalisisTexto {
+    console.log(`🔄 Usando análisis local mejorado (fallback - ${contexto})`);
     
-    // Combinar análisis de coherencia con detección básica de ofensividad
     const deteccionOfensiva = this.detectarContenidoOfensivoLocal(texto);
-    const esAprobado = coherencia.tieneSentido && !deteccionOfensiva.esOfensivo;
+    
+    // ✅ CRITERIOS DIFERENTES SEGÚN CONTEXTO
+    const esAprobado = contexto === 'pdf'
+      ? !deteccionOfensiva.esOfensivo // Solo toxicidad para PDFs
+      : !deteccionOfensiva.esOfensivo && coherencia.tieneSentido; // Ambos para general
 
     const puntuacion = this.calcularPuntuacionCombinada(
       { TOXICITY: deteccionOfensiva.esOfensivo ? 0.8 : 0.1 },
-      coherencia
+      coherencia,
+      contexto
     );
 
     const detalles: DetallesAnalisisMejorado = {
-      metodo: 'fallback-local-con-coherencia',
+      metodo: `fallback-local-con-coherencia-${contexto}`,
       intencion: deteccionOfensiva.intencion,
       calidadTexto: {
         tieneSentido: coherencia.tieneSentido,
@@ -925,15 +1053,19 @@ export class AnalizadorTexto {
         confianza: coherencia.confianza
       },
       longitud: texto.length,
-      tienePatronesSpam: false
+      tienePatronesSpam: false,
+      contexto: contexto
     };
 
     return {
       esAprobado,
       puntuacion,
       palabrasOfensivas: deteccionOfensiva.palabrasOfensivas,
-      razon: esAprobado ? 'Contenido aprobado (análisis local)' : 
-             `${deteccionOfensiva.esOfensivo ? deteccionOfensiva.razon + '; ' : ''}${coherencia.razon}`,
+      razon: esAprobado 
+        ? `Contenido aprobado (análisis local - ${contexto})`
+        : `${deteccionOfensiva.esOfensivo ? deteccionOfensiva.razon + '; ' : ''}${
+            contexto === 'general' ? coherencia.razon : 'Contenido PDF rechazado por toxicidad'
+          }`,
       detalles: detalles as AnalisisTexto['detalles']
     };
   }

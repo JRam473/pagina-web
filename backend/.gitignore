@@ -13,9 +13,27 @@ build/
 .env.local
 .env.production
 
-# Cache
-.vite/
-*.tgz
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Google credentials (IMPORTANTE!)
+google-credentials/
+*.json
+*.p12
+*.key
+
+# Uploads locales
+uploads/
+*.log
 
 # IDE
 .vscode/
