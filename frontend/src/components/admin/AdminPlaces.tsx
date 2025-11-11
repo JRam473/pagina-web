@@ -68,6 +68,7 @@ import { FormErrorBoundary } from './FormErrorBoundary';
 import { AdminErrorBoundary } from './AdminErrorBoundary';
 import { useModeracionImagen } from '@/hooks/useModeracionImagen';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/lib/axios';
 
 // Función para construir la URL completa de la imagen
 const buildImageUrl = (imagePath: string | null | undefined): string => {
@@ -266,7 +267,7 @@ export const AdminPlaces = () => {
     deletePlaceImage,
     deletePlacePDF,
     uploadPlaceImage,
-    uploadPlacePDF,
+    uploadPlacePDFConModeracion,
     refetch,
     clearError
   } = useAdminPlaces();
@@ -463,93 +464,144 @@ const getFieldError = (field: 'name' | 'description' | 'category' | 'location' |
 };
 
 
-  const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
-    if (type === 'image' && file) {
-      // Verificar tipo de archivo
-      if (!file.type.startsWith('image/')) {
-        setFormErrors(prev => ({ 
-          ...prev, 
-          image: 'El archivo debe ser una imagen' 
-        }));
-        return;
-      }
-
-      // Verificar tamaño (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        setFormErrors(prev => ({ 
-          ...prev, 
-          image: 'La imagen no debe superar los 5MB' 
-        }));
-        return;
-      }
-
-      try {
-        setIsProcessing(true);
-        
-        // Si el modelo no está inicializado, permitir subir sin análisis
-        if (!modelo && !cargandoModelo) {
-          console.warn('⚠️ Modelo de moderación no disponible');
-          setFiles(prev => ({ ...prev, [type]: file }));
-          setFormErrors(prev => ({ ...prev, [type]: '' }));
-          setIsProcessing(false);
-          return;
-        }
-
-        // Si el modelo está cargando, esperar un momento
-        if (cargandoModelo) {
-          console.log('🔄 Esperando a que cargue el modelo...');
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        }
-
-        // Analizar imagen con el modelo NSFW
-        const resultado = await analizarImagen(file);
-        
-        if (!resultado.esAprobado) {
-          // ✅ MOSTRAR TOAST EN LUGAR DE ERROR EN FORMULARIO
-          toast({
-            title: '🚫 Imagen rechazada',
-            description: `La imagen contiene contenido inapropiado: ${resultado.razon}`,
-            variant: 'destructive',
-            duration: 6000,
-          });
-          setFormErrors(prev => ({ ...prev, [type]: '' }));
-          setIsProcessing(false);
-          return;
-        }
-
-        // Si la imagen es apropiada, establecer el archivo
-        setFiles(prev => ({ ...prev, [type]: file }));
-        setFormErrors(prev => ({ ...prev, [type]: '' }));
-
-        // ✅ MOSTRAR TOAST DE ÉXITO
-        toast({
-          title: '✅ Imagen aprobada',
-          description: 'La imagen ha pasado el filtro de seguridad',
-          variant: 'default',
-        });
-
-      } catch (error) {
-        console.error('Error analizando imagen:', error);
-        // En caso de error, permitir subir la imagen con advertencia
-        setFiles(prev => ({ ...prev, [type]: file }));
-        setFormErrors(prev => ({ ...prev, [type]: '' }));
-        
-        toast({
-          title: '⚠️ Advertencia de seguridad',
-          description: 'No se pudo analizar la imagen completamente. Se subirá sin verificación.',
-          variant: 'warning',
-        });
-      } finally {
-        setIsProcessing(false);
-      }
-    } else {
-      // Para PDFs o cuando se elimina un archivo
-      setFiles(prev => ({ ...prev, [type]: file }));
-      if (file) {
-        setFormErrors(prev => ({ ...prev, [type]: '' }));
-      }
+const handleFileChange = async (type: 'image' | 'pdf', file: File | null) => {
+  if (type === 'image' && file) {
+    // Verificar tipo de archivo
+    if (!file.type.startsWith('image/')) {
+      setFormErrors(prev => ({ 
+        ...prev, 
+        image: 'El archivo debe ser una imagen' 
+      }));
+      return;
     }
-  };
+
+    // Verificar tamaño (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setFormErrors(prev => ({ 
+        ...prev, 
+        image: 'La imagen no debe superar los 5MB' 
+      }));
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      
+      // Si el modelo no está inicializado, permitir subir sin análisis
+      if (!modelo && !cargandoModelo) {
+        console.warn('⚠️ Modelo de moderación no disponible');
+        setFiles(prev => ({ ...prev, [type]: file }));
+        setFormErrors(prev => ({ ...prev, [type]: '' }));
+        setIsProcessing(false);
+        return;
+      }
+
+      // Si el modelo está cargando, esperar un momento
+      if (cargandoModelo) {
+        console.log('🔄 Esperando a que cargue el modelo...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+
+      // Analizar imagen con el modelo NSFW
+      const resultado = await analizarImagen(file);
+      
+      if (!resultado.esAprobado) {
+        // ✅ MOSTRAR TOAST EN LUGAR DE ERROR EN FORMULARIO
+        toast({
+          title: '🚫 Imagen rechazada',
+          description: `La imagen contiene contenido inapropiado: ${resultado.razon}`,
+          variant: 'destructive',
+          duration: 6000,
+        });
+        setFormErrors(prev => ({ ...prev, [type]: '' }));
+        setIsProcessing(false);
+        return;
+      }
+
+      // Si la imagen es apropiada, establecer el archivo
+      setFiles(prev => ({ ...prev, [type]: file }));
+      setFormErrors(prev => ({ ...prev, [type]: '' }));
+
+      // ✅ MOSTRAR TOAST DE ÉXITO
+      toast({
+        title: '✅ Imagen aprobada',
+        description: 'La imagen ha pasado el filtro de seguridad',
+        variant: 'default',
+      });
+
+    } catch (error) {
+      console.error('Error analizando imagen:', error);
+      // En caso de error, permitir subir la imagen con advertencia
+      setFiles(prev => ({ ...prev, [type]: file }));
+      setFormErrors(prev => ({ ...prev, [type]: '' }));
+      
+      toast({
+        title: '⚠️ Advertencia de seguridad',
+        description: 'No se pudo analizar la imagen completamente. Se subirá sin verificación.',
+        variant: 'warning',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  } 
+  // ✅ NUEVO: Manejo de PDFs con preparación para moderación
+  else if (type === 'pdf' && file) {
+    // Verificar tipo de archivo
+    if (file.type !== 'application/pdf') {
+      setFormErrors(prev => ({ 
+        ...prev, 
+        pdf: 'El archivo debe ser un PDF' 
+      }));
+      return;
+    }
+
+    // Verificar tamaño (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setFormErrors(prev => ({ 
+        ...prev, 
+        pdf: 'El PDF no debe superar los 10MB' 
+      }));
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      
+      // ✅ MOSTRAR ESTADO DE PREPARACIÓN
+      toast({
+        title: '📄 PDF listo para análisis',
+        description: 'El PDF será analizado al guardar los cambios',
+        variant: 'default',
+        duration: 3000,
+      });
+
+      // ✅ ESTABLECER ARCHIVO TEMPORALMENTE
+      // La moderación real se hará al enviar el formulario
+      setFiles(prev => ({ ...prev, [type]: file }));
+      setFormErrors(prev => ({ ...prev, [type]: '' }));
+
+      console.log('✅ PDF preparado para moderación:', file.name);
+      
+    } catch (error) {
+      console.error('Error preparando PDF:', error);
+      setFormErrors(prev => ({ ...prev, [type]: 'Error al preparar el PDF' }));
+      
+      toast({
+        title: '❌ Error con PDF',
+        description: 'No se pudo preparar el PDF para análisis',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  } else {
+    // Cuando se elimina un archivo
+    setFiles(prev => ({ ...prev, [type]: null }));
+    if (file) {
+      setFormErrors(prev => ({ ...prev, [type]: '' }));
+    }
+  }
+};
 
     /**
    * ✅ MEJORADO: Detectar cambios de forma inteligente
@@ -571,7 +623,7 @@ const hasFormChanges = useCallback((): boolean => {
 
 
 /**
- * ✅ CORREGIDO: Manejar envío con manejo correcto de errores de moderación
+ * ✅ CORREGIDO: Manejar envío con manejo correcto de errores de moderación (PDF INTEGRADO EN CREACIÓN)
  */
 const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -592,7 +644,7 @@ const handleSubmit = async (e: React.FormEvent) => {
   setIsProcessing(true);
   
   try {
-    // ✅ CASO 1: CREAR NUEVO LUGAR
+    // ✅ CASO 1: CREAR NUEVO LUGAR (CON PDF INTEGRADO)
     if (!editingPlace) {
       console.log('🆕 [SUBMIT] Creando nuevo lugar...');
       
@@ -603,36 +655,140 @@ const handleSubmit = async (e: React.FormEvent) => {
         return;
       }
 
+      // ✅ PRIMERO: PROCESAR PDF SI EXISTE (ANTES DE CREAR EL LUGAR)
+      let pdfUrlFinal = '';
+      if (files.pdf) {
+        try {
+          console.log('📄 [UPLOAD] Procesando PDF para nuevo lugar...');
+          
+          const formData = new FormData();
+          formData.append('pdf', files.pdf);
+
+          const pdfResponse = await api.post<{ 
+            success: boolean;
+            url_pdf: string;
+            moderacion?: {
+              esAprobado: boolean;
+              puntuacion?: number;
+              metadata?: Record<string, unknown>;
+            };
+          }>('/api/lugares/pdf-temporal', formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+            timeout: 45000,
+          });
+
+          if (!pdfResponse.data.success || !pdfResponse.data.moderacion?.esAprobado) {
+            throw new Error('PDF no aprobado por moderación');
+          }
+
+          pdfUrlFinal = pdfResponse.data.url_pdf;
+          console.log('✅ [UPLOAD] PDF aprobado para creación:', pdfUrlFinal);
+
+        } catch (err: any) {
+          console.error('❌ [UPLOAD] PDF rechazado en creación:', err);
+          
+          // ✅ MEJORADO: Capturar detalles específicos del error de moderación
+          if (err.response?.data) {
+            const errorData = err.response.data;
+            console.log('📦 [PDF ERROR] Datos completos del error:', errorData);
+            
+            // ✅ CONSTRUIR MENSAJE DETALLADO DEL RECHAZO
+            const tituloError = '🚫 PDF rechazado';
+            let descripcionError = errorData.message || 'El contenido del PDF no cumple con las políticas';
+            
+            // ✅ AGREGAR DETALLES ESPECÍFICOS SI ESTÁN DISPONIBLES
+            if (errorData.detalles?.problemas && errorData.detalles.problemas.length > 0) {
+              descripcionError += `\n\nProblemas detectados:\n• ${errorData.detalles.problemas.join('\n• ')}`;
+            }
+            
+            if (errorData.detalles?.sugerencias && errorData.detalles.sugerencias.length > 0) {
+              descripcionError += `\n\nSugerencias:\n• ${errorData.detalles.sugerencias.join('\n• ')}`;
+            }
+            
+            if (errorData.detalles?.puntuacion) {
+              descripcionError += `\n\nNivel de riesgo: ${(errorData.detalles.puntuacion * 100).toFixed(1)}%`;
+            }
+
+            // ✅ MOSTRAR TOAST DETALLADO
+            toast({
+              title: tituloError,
+              description: descripcionError,
+              variant: 'destructive',
+              duration: 10000,
+            });
+            
+          } else if (err?.motivo || err?.detalles) {
+            // ✅ ERROR DE MODERACIÓN CON ESTRUCTURA PERSONALIZADA
+            const tituloError = '🚫 PDF rechazado';
+            let descripcionError = err.motivo || err.message || 'El contenido del PDF no cumple con las políticas';
+            
+            if (err.detalles?.problemas && err.detalles.problemas.length > 0) {
+              descripcionError += `\n\nProblemas detectados:\n• ${err.detalles.problemas.join('\n• ')}`;
+            }
+            
+            if (err.detalles?.sugerencias && err.detalles.sugerencias.length > 0) {
+              descripcionError += `\n\nSugerencias:\n• ${err.detalles.sugerencias.join('\n• ')}`;
+            }
+
+            toast({
+              title: tituloError,
+              description: descripcionError,
+              variant: 'destructive',
+              duration: 10000,
+            });
+          } else if (err?.message) {
+            // ✅ ERROR GENÉRICO CON MÁS INFORMACIÓN
+            toast({
+              title: '❌ Error con PDF',
+              description: err.message || 'No se pudo procesar el archivo PDF',
+              variant: 'destructive',
+            });
+          } else {
+            // ✅ ERROR DESCONOCIDO
+            toast({
+              title: '❌ Error con PDF',
+              description: 'No se pudo procesar el archivo PDF',
+              variant: 'destructive',
+            });
+          }
+          
+          // ✅ DETENER LA CREACIÓN SI EL PDF ES RECHAZADO
+          setIsSubmitting(false);
+          setIsProcessing(false);
+          return;
+        }
+      }
+
+      // ✅ CREAR LUGAR CON PDF APROBADO (SI EXISTE)
       const placeData: PlaceFormData = {
         name: formData.name.trim(),
         description: formData.description.trim(),
         category: formData.category,
         location: formData.location.trim(),
+        pdf_url: pdfUrlFinal // ✅ INCLUIR PDF APROBADO EN LA CREACIÓN
       };
 
-      console.log('📤 [CREATE] Creando lugar con datos básicos...');
+      console.log('📤 [CREATE] Creando lugar con datos básicos...', {
+        tienePDF: !!pdfUrlFinal,
+        pdfUrl: pdfUrlFinal
+      });
+
       const savedPlace = await createPlace(placeData, files.image || undefined);
       
       if (!savedPlace?.id) {
         throw new Error('No se pudo obtener el ID del lugar creado');
       }
 
-      // ✅ SUBIR PDF SI EXISTE (manejar errores individualmente)
-      if (files.pdf) {
-        try {
-          console.log('📄 [UPLOAD] Subiendo PDF para nuevo lugar...');
-          await uploadPlacePDF(savedPlace.id, files.pdf);
-          console.log('✅ [UPLOAD] PDF subido correctamente');
-        } catch (err) {
-          console.error('❌ [UPLOAD] Error subiendo PDF:', err);
-          // No mostrar toast aquí, ya se maneja en el hook
-        }
-      }
-
       // ✅ ÉXITO - Mostrar toast solo si todo salió bien
+      const mensajeExito = pdfUrlFinal 
+        ? 'Lugar creado exitosamente con PDF aprobado' 
+        : 'Lugar creado exitosamente';
+
       toast({
         title: '✅ Lugar creado',
-        description: 'El lugar se ha creado exitosamente',
+        description: mensajeExito,
       });
 
     } 
@@ -655,7 +811,14 @@ const handleSubmit = async (e: React.FormEvent) => {
         }
         
         if (files.pdf) {
-          uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+          uploadPromises.push(
+            uploadPlacePDFConModeracion(editingPlace.id, files.pdf)
+              .catch(err => {
+                console.log('❌ [SUBMIT] PDF rechazado en proceso:', err);
+                // El toast ya se mostró en la función de moderación
+                throw err; // Re-lanzar para que Promise.allSettled detecte el rechazo
+              })
+          );
         }
         
         // ✅ IMPORTANTE: Usar allSettled y verificar resultados
@@ -696,7 +859,8 @@ const handleSubmit = async (e: React.FormEvent) => {
           uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
         }
         if (files.pdf) {
-          uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+          // ✅ USAR MODERACIÓN PARA PDFs
+          uploadPromises.push(uploadPlacePDFConModeracion(editingPlace.id, files.pdf));
         }
         
         if (uploadPromises.length > 0) {
@@ -772,7 +936,8 @@ const handleSubmit = async (e: React.FormEvent) => {
           uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
         }
         if (files.pdf) {
-          uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+          // ✅ USAR MODERACIÓN PARA PDFs
+          uploadPromises.push(uploadPlacePDFConModeracion(editingPlace.id, files.pdf));
         }
         
         if (uploadPromises.length > 0) {
@@ -815,7 +980,8 @@ const handleSubmit = async (e: React.FormEvent) => {
           uploadPromises.push(uploadPlaceImage(editingPlace.id, files.image));
         }
         if (files.pdf) {
-          uploadPromises.push(uploadPlacePDF(editingPlace.id, files.pdf));
+          // ✅ USAR MODERACIÓN PARA PDFs
+          uploadPromises.push(uploadPlacePDFConModeracion(editingPlace.id, files.pdf));
         }
         
         if (uploadPromises.length > 0) {
@@ -877,7 +1043,6 @@ const handleSubmit = async (e: React.FormEvent) => {
     setIsProcessing(false);
   }
 };
-
   const handleEdit = (place: Place) => {
     setEditingPlace(place);
     setFormData({

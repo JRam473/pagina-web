@@ -1,3 +1,4 @@
+// backend/src/services/moderacionImagenService.ts
 import { ModeloClient } from './modeloClient';
 import { pool } from '../utils/baseDeDatos';
 

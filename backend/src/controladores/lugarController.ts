@@ -10,7 +10,6 @@ import { generarHashNavegador } from '../utils/hashNavegador';
 import { ModeracionImagenService } from '../services/moderacionImagenService';
 import { PdfAnalysisService } from '../services/pdfAnalysisService';
 
-// ✅ FUNCIONES AUXILIARES MEJORADAS
 const generarSugerenciasLugar = (tipoProblema: string): string[] => {
   const sugerencias: string[] = [];
   
@@ -40,6 +39,11 @@ const generarSugerenciasLugar = (tipoProblema: string): string[] => {
     sugerencias.push('No incluyas armas o elementos peligrosos');
     sugerencias.push('Usa imágenes apropiadas para todas las edades');
     sugerencias.push('Verifica que la imagen sea clara y de buena calidad');
+  } else if (tipoProblema === 'pdf') {
+    sugerencias.push('Asegúrate de que el PDF no contenga lenguaje ofensivo o inapropiado');
+    sugerencias.push('Verifica que el contenido del PDF sea apropiado para todas las edades');
+    sugerencias.push('No incluyas contenido promocional, spam o enlaces no permitidos');
+    sugerencias.push('El PDF debe ser un archivo válido y legible');
   } else {
     sugerencias.push('Revisa el contenido antes de publicarlo');
     sugerencias.push('Asegúrate de que cumpla con las políticas de la comunidad');
@@ -47,20 +51,19 @@ const generarSugerenciasLugar = (tipoProblema: string): string[] => {
   
   return sugerencias;
 };
-
-// ✅ FUNCIÓN MEJORADA PARA ANALIZAR MOTIVOS DE RECHAZO
+// ✅ FUNCIÓN MEJORADA PARA ANALIZAR MOTIVOS DE RECHAZO (INCLUYENDO PDF)
 const analizarMotivoRechazoLugar = (resultadoModeracion: any): { 
   mensajeUsuario: string; 
   tipoProblema: string; 
   detallesEspecificos: string[];
-  campoEspecifico: 'nombre' | 'descripcion' | 'descripcion_foto' | 'imagen' | 'ambos';
+  campoEspecifico: 'nombre' | 'descripcion' | 'descripcion_foto' | 'imagen' | 'pdf' | 'ambos';
 } => {
   const detallesEspecificos: string[] = [];
   let mensajeUsuario = 'El contenido no cumple con nuestras políticas';
   let tipoProblema = 'general';
-  let campoEspecifico: 'nombre' | 'descripcion' | 'descripcion_foto' | 'imagen' | 'ambos' = 'ambos';
+  let campoEspecifico: 'nombre' | 'descripcion' | 'descripcion_foto' | 'imagen' | 'pdf' | 'ambos' = 'ambos';
 
-  // ✅ DETECCIÓN MEJORADA DE PROBLEMAS ESPECÍFICOS
+  // ✅ DETECCIÓN MEJORADA DE PROBLEMAS ESPECÍFICOS (INCLUYENDO PDF)
   if (resultadoModeracion.detalles?.texto && !resultadoModeracion.detalles.texto.esAprobado) {
     tipoProblema = 'texto';
     const texto = resultadoModeracion.detalles.texto;
@@ -86,6 +89,11 @@ const analizarMotivoRechazoLugar = (resultadoModeracion: any): {
     campoEspecifico = 'imagen';
     mensajeUsuario = 'La imagen no cumple con las políticas de contenido';
     detallesEspecificos.push(resultadoModeracion.motivoRechazo || 'Contenido inapropiado detectado en la imagen');
+  } else if (resultadoModeracion.detalles?.pdf && !resultadoModeracion.detalles.pdf.esAprobado) {
+    tipoProblema = 'pdf';
+    campoEspecifico = 'pdf';
+    mensajeUsuario = 'El PDF no cumple con las políticas de contenido';
+    detallesEspecificos.push(resultadoModeracion.motivoRechazo || 'Contenido inapropiado detectado en el PDF');
   }
 
   // ✅ ANÁLISIS DEL MOTIVO GENERAL SI NO HAY DETALLES ESPECÍFICOS
@@ -101,6 +109,9 @@ const analizarMotivoRechazoLugar = (resultadoModeracion: any): {
     } else if (motivo.includes('foto') || motivo.includes('imagen')) {
       campoEspecifico = 'descripcion_foto';
       mensajeUsuario = 'La descripción de la foto no cumple con las políticas';
+    } else if (motivo.includes('pdf')) {
+      campoEspecifico = 'pdf';
+      mensajeUsuario = 'El archivo PDF no cumple con las políticas';
     }
     
     detallesEspecificos.push(resultadoModeracion.motivoRechazo);
@@ -521,229 +532,365 @@ export const lugarController = {
   },
 
 
-  /**
-   * ✅ CORREGIDO: Crear lugar con moderación DE TEXTO E IMAGEN (igual que experiencias)
-   */
-  async crearLugar(req: Request, res: Response) {
-    try {
-      const file = req.file;
-      const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
+/**
+ * ✅ CORREGIDO: Crear lugar con moderación DE TEXTO, IMAGEN Y PDF (TODO EN UN SOLO PASO)
+ */
+async crearLugar(req: Request, res: Response) {
+  const client = await pool.connect();
+  
+  try {
+    const imageFile = req.file; // Archivo de imagen
+    const { nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url } = req.body;
 
-      // ✅ VERIFICAR QUE LOS DATOS LLEGUEN CORRECTAMENTE
-      console.log('📦 Datos recibidos para crear lugar:', {
-        tieneArchivo: !!file,
-        nombre: nombre ? `"${nombre.substring(0, 30)}..."` : 'undefined',
-        descripcion: descripcion ? `"${descripcion.substring(0, 50)}..."` : 'undefined',
-        ubicacion: ubicacion || 'undefined',
-        categoria: categoria || 'undefined'
+    // ✅ VERIFICAR QUE LOS DATOS LLEGUEN CORRECTAMENTE
+    console.log('📦 Datos recibidos para crear lugar:', {
+      tieneArchivoImagen: !!imageFile,
+      tienePdfUrl: !!pdf_url,
+      nombre: nombre ? `"${nombre.substring(0, 30)}..."` : 'undefined',
+      descripcion: descripcion ? `"${descripcion.substring(0, 50)}..."` : 'undefined',
+      ubicacion: ubicacion || 'undefined',
+      categoria: categoria || 'undefined',
+      pdf_url: pdf_url ? 'PROPORCIONADO' : 'NO_PROPORCIONADO'
+    });
+
+    // Validaciones básicas
+    if (!nombre?.trim() || !descripcion?.trim() || !ubicacion?.trim() || !categoria?.trim()) {
+      // Limpiar archivo si existe
+      if (imageFile) {
+        await fsPromises.unlink(imageFile.path).catch(console.error);
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'Nombre, descripción, ubicación y categoría son requeridos'
       });
+    }
 
-      // Validaciones básicas
-      if (!nombre?.trim() || !descripcion?.trim() || !ubicacion?.trim() || !categoria?.trim()) {
-        // Limpiar archivo si existe
-        if (file) {
-          await fsPromises.unlink(file.path).catch(console.error);
+    const hashNavegador = generarHashNavegador(req);
+    const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+
+    console.log('📍 Nuevo lugar desde:', {
+      hashNavegador: hashNavegador.substring(0, 10) + '...',
+      ip: ipUsuario,
+      nombre: nombre
+    });
+
+    const moderacionService = new ModeracionService();
+    const moderacionImagenService = new ModeracionImagenService();
+
+    // ✅ INICIAR TRANSACCIÓN PARA GARANTIZAR CONSISTENCIA
+    await client.query('BEGIN');
+
+    // ✅ 1. PRIMERO MODERAR EL TEXTO (NOMBRE + DESCRIPCIÓN)
+    const textoParaModerar = `${nombre} ${descripcion}`;
+    
+    console.log('🔍 Enviando texto para moderación:', textoParaModerar.substring(0, 100) + '...');
+    
+    const resultadoModeracionTexto = await moderacionService.moderarContenidoEnTiempoReal({
+      texto: textoParaModerar,
+      ipUsuario,
+      hashNavegador
+    });
+
+    if (!resultadoModeracionTexto.esAprobado) {
+      console.log('❌ Contenido de lugar rechazado por moderación:', resultadoModeracionTexto.motivoRechazo);
+      
+      // Limpiar archivo si existe
+      if (imageFile) {
+        await fsPromises.unlink(imageFile.path).catch(console.error);
+      }
+      
+      await client.query('ROLLBACK');
+
+      return res.status(400).json({
+        success: false,
+        error: 'CONTENIDO_RECHAZADO',
+        message: 'El contenido no cumple con las políticas de moderación',
+        motivo: resultadoModeracionTexto.motivoRechazo,
+        tipo: 'moderacion_texto',
+        detalles: {
+          puntuacion: resultadoModeracionTexto.puntuacionGeneral,
+          problemas: [resultadoModeracionTexto.motivoRechazo || 'Texto no aprobado por moderación'],
+          sugerencias: [
+            'Revisa que el texto sea coherente y tenga sentido',
+            'Evita contenido ofensivo o inapropiado',
+            'Asegúrate de que el texto sea descriptivo y claro'
+          ],
+          campoEspecifico: 'descripcion',
+          timestamp: new Date().toISOString()
         }
+      });
+    }
+
+    // ✅ 2. MODERAR LA IMAGEN SI SE PROPORCIONA
+    let imagenAprobada = true;
+    let resultadoModeracionImagen = null;
+    let rutaImagenFinal = foto_principal_url;
+
+    if (imageFile) {
+      console.log('🖼️ Iniciando moderación de imagen para lugar...');
+      resultadoModeracionImagen = await moderacionImagenService.moderarImagen(
+        imageFile.path,
+        ipUsuario,
+        hashNavegador
+      );
+
+      if (!resultadoModeracionImagen.esAprobado) {
+        imagenAprobada = false;
+        console.log('❌ Imagen rechazada por moderación:', resultadoModeracionImagen.motivoRechazo);
+        
+        // Eliminar archivo subido
+        await fsPromises.unlink(imageFile.path).catch(console.error);
+        
+        await client.query('ROLLBACK');
+        
         return res.status(400).json({
           success: false,
-          error: 'Nombre, descripción, ubicación y categoría son requeridos'
+          error: 'IMAGEN_RECHAZADA',
+          message: 'La imagen no cumple con las políticas de contenido',
+          motivo: resultadoModeracionImagen.motivoRechazo,
+          tipo: 'imagen',
+          detalles: {
+            puntuacion: resultadoModeracionImagen.puntuacionRiesgo,
+            problemas: [resultadoModeracionImagen.motivoRechazo || 'Contenido inapropiado detectado'],
+            sugerencias: generarSugerenciasLugar('imagen'),
+            timestamp: new Date().toISOString()
+          }
         });
       }
 
-      const hashNavegador = generarHashNavegador(req);
-      const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
-
-      console.log('📍 Nuevo lugar desde:', {
-        hashNavegador: hashNavegador.substring(0, 10) + '...',
-        ip: ipUsuario,
-        nombre: nombre
-      });
-
-      const moderacionService = new ModeracionService();
-      const moderacionImagenService = new ModeracionImagenService();
-
-      // ✅ 1. PRIMERO MODERAR EL TEXTO (NOMBRE + DESCRIPCIÓN)
-      const textoParaModerar = `${nombre} ${descripcion}`;
-      
-      console.log('🔍 Enviando texto para moderación:', textoParaModerar.substring(0, 100) + '...');
-      
-      const resultadoModeracionTexto = await moderacionService.moderarContenidoEnTiempoReal({
-        texto: textoParaModerar,
-        ipUsuario,
-        hashNavegador
-      });
-
-// En lugarController.ts - Asegurar que los errores se envíen correctamente
-
-// ✅ CORREGIR: En la función actualizarLugar
-if (!resultadoModeracionTexto.esAprobado) {
-  console.log('❌ Contenido de lugar rechazado por moderación:', resultadoModeracionTexto.motivoRechazo);
-  
-  // Limpiar archivo si existe
-  if (file) {
-    await fsPromises.unlink(file.path).catch(console.error);
-  }
-
-  // ✅ MEJORAR: Estructura de error más clara para el frontend
-  return res.status(400).json({
-    success: false,
-    error: 'CONTENIDO_RECHAZADO',
-    message: 'El contenido no cumple con las políticas de moderación',
-    motivo: resultadoModeracionTexto.motivoRechazo,
-    tipo: 'moderacion_texto',
-    detalles: {
-      puntuacion: resultadoModeracionTexto.puntuacionGeneral,
-      problemas: [resultadoModeracionTexto.motivoRechazo || 'Texto no aprobado por moderación'],
-      sugerencias: [
-        'Revisa que el texto sea coherente y tenga sentido',
-        'Evita contenido ofensivo o inapropiado',
-        'Asegúrate de que el texto sea descriptivo y claro'
-      ],
-      campoEspecifico: 'descripcion',
-      timestamp: new Date().toISOString()
+      console.log('✅ Imagen aprobada por moderación para lugar');
+      // Construir URL de imagen
+      rutaImagenFinal = `/uploads/images/lugares/${imageFile.filename}`;
     }
-  });
-}
 
-      // ✅ 2. MODERAR LA IMAGEN SI SE PROPORCIONA
-      let imagenAprobada = true;
-      let resultadoModeracionImagen = null;
-      let rutaImagenFinal = foto_principal_url;
+    // ✅ 3. SOLO SI TODO ESTÁ APROBADO, INSERTAR LUGAR (INCLUYENDO PDF SI EXISTE)
+    const result = await client.query(
+      `INSERT INTO lugares 
+       (nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        nombre.trim(), 
+        descripcion.trim(), 
+        ubicacion.trim(), 
+        categoria.trim(), 
+        rutaImagenFinal || null, 
+        pdf_url || null  // ✅ INCLUIR PDF SI FUE APROBADO
+      ]
+    );
 
-      if (file) {
-        console.log('🖼️ Iniciando moderación de imagen para lugar...');
-        resultadoModeracionImagen = await moderacionImagenService.moderarImagen(
-          file.path,
-          ipUsuario,
-          hashNavegador
-        );
+    const lugar = result.rows[0];
 
-        if (!resultadoModeracionImagen.esAprobado) {
-          imagenAprobada = false;
-          console.log('❌ Imagen rechazada por moderación:', resultadoModeracionImagen.motivoRechazo);
-          
-          // Eliminar archivo subido
-          await fsPromises.unlink(file.path).catch(console.error);
-          
-          return res.status(400).json({
-            success: false,
-            error: 'IMAGEN_RECHAZADA',
-            message: 'La imagen no cumple con las políticas de contenido',
-            motivo: resultadoModeracionImagen.motivoRechazo,
-            tipo: 'imagen',
-            detalles: {
-              puntuacion: resultadoModeracionImagen.puntuacionRiesgo,
-              problemas: [resultadoModeracionImagen.motivoRechazo || 'Contenido inapropiado detectado'],
-              sugerencias: generarSugerenciasLugar('imagen'),
-              timestamp: new Date().toISOString()
-            }
-          });
-        }
-
-        console.log('✅ Imagen aprobada por moderación para lugar');
-        // Construir URL de imagen
-        rutaImagenFinal = `/uploads/images/lugares/${file.filename}`;
+    // ✅ 4. SI HAY IMAGEN APROBADA, GUARDAR EN fotos_lugares
+    if (imageFile && imagenAprobada) {
+      // Obtener dimensiones de la imagen
+      let anchoImagen: number | null = null;
+      let altoImagen: number | null = null;
+      
+      try {
+        const metadata = await sharp(imageFile.path).metadata();
+        anchoImagen = metadata.width || null;
+        altoImagen = metadata.height || null;
+      } catch (sharpError) {
+        console.warn('⚠️ No se pudieron obtener dimensiones:', sharpError);
       }
 
-      // ✅ 3. INSERTAR LUGAR APROBADO
-      const result = await pool.query(
-        `INSERT INTO lugares 
-         (nombre, descripcion, ubicacion, categoria, foto_principal_url, pdf_url)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
+      await client.query(
+        `INSERT INTO fotos_lugares 
+         (lugar_id, url_foto, es_principal, descripcion, orden, 
+          ruta_almacenamiento, tamaño_archivo, tipo_archivo, ancho_imagen, alto_imagen)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
-          nombre.trim(), 
-          descripcion.trim(), 
-          ubicacion.trim(), 
-          categoria.trim(), 
-          rutaImagenFinal || null, 
-          pdf_url || null
+          lugar.id,
+          rutaImagenFinal,
+          true,
+          'Imagen principal del lugar',
+          1,
+          imageFile.path,
+          imageFile.size,
+          imageFile.mimetype,
+          anchoImagen,
+          altoImagen
         ]
       );
+    }
 
-      const lugar = result.rows[0];
+    await client.query('COMMIT');
 
-      // ✅ 4. SI HAY IMAGEN APROBADA, GUARDAR EN fotos_lugares
-      if (file && imagenAprobada) {
-        // Obtener dimensiones de la imagen
-        let anchoImagen: number | null = null;
-        let altoImagen: number | null = null;
-        
-        try {
-          const metadata = await sharp(file.path).metadata();
-          anchoImagen = metadata.width || null;
-          altoImagen = metadata.height || null;
-        } catch (sharpError) {
-          console.warn('⚠️ No se pudieron obtener dimensiones:', sharpError);
-        }
+    console.log('✅ Lugar creado y publicado:', {
+      id: lugar.id,
+      nombre: lugar.nombre,
+      moderacion_texto: 'aprobado',
+      moderacion_imagen: imagenAprobada ? 'aprobado' : 'sin imagen',
+      moderacion_pdf: pdf_url ? 'aprobado' : 'sin pdf'
+    });
 
-        await pool.query(
-          `INSERT INTO fotos_lugares 
-           (lugar_id, url_foto, es_principal, descripcion, orden, 
-            ruta_almacenamiento, tamaño_archivo, tipo_archivo, ancho_imagen, alto_imagen)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [
-            lugar.id,
-            rutaImagenFinal,
-            true,
-            'Imagen principal del lugar',
-            1,
-            file.path,
-            file.size,
-            file.mimetype,
-            anchoImagen,
-            altoImagen
-          ]
-        );
-      }
-
-      console.log('✅ Lugar creado y publicado:', {
+    // Respuesta al usuario
+    res.status(201).json({
+      success: true,
+      mensaje: 'Lugar creado exitosamente.',
+      lugar: {
         id: lugar.id,
         nombre: lugar.nombre,
-        moderacion_texto: 'aprobado',
-        moderacion_imagen: imagenAprobada ? 'aprobado' : 'sin imagen'
-      });
-
-      // Respuesta al usuario
-      res.status(201).json({
-        success: true,
-        mensaje: 'Lugar creado exitosamente.',
-        lugar: {
-          id: lugar.id,
-          nombre: lugar.nombre,
-          descripcion: lugar.descripcion,
-          ubicacion: lugar.ubicacion,
-          categoria: lugar.categoria,
-          foto_principal_url: lugar.foto_principal_url,
-          pdf_url: lugar.pdf_url,
-          creado_en: lugar.creado_en
+        descripcion: lugar.descripcion,
+        ubicacion: lugar.ubicacion,
+        categoria: lugar.categoria,
+        foto_principal_url: lugar.foto_principal_url,
+        pdf_url: lugar.pdf_url,
+        creado_en: lugar.creado_en
+      },
+      moderacion: {
+        texto: {
+          esAprobado: true,
+          puntuacion: resultadoModeracionTexto.puntuacionGeneral
         },
-        moderacion: {
-          texto: {
-            esAprobado: true,
-            puntuacion: resultadoModeracionTexto.puntuacionGeneral
-          },
-          imagen: file ? {
-            esAprobado: imagenAprobada,
-            puntuacion: resultadoModeracionImagen?.puntuacionRiesgo
-          } : null
-        }
-      });
-
-    } catch (error) {
-      // Limpiar archivo en caso de error
-      if (req.file) {
-        await fsPromises.unlink(req.file.path).catch(console.error);
+        imagen: imageFile ? {
+          esAprobado: imagenAprobada,
+          puntuacion: resultadoModeracionImagen?.puntuacionRiesgo
+        } : null,
+        pdf: pdf_url ? {
+          esAprobado: true,
+          url: pdf_url
+        } : null
       }
-      
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('❌ Error creando lugar:', errorMessage);
-      res.status(500).json({ 
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK').catch(console.error);
+    
+    // Limpiar archivo en caso de error
+    if (req.file) {
+      await fsPromises.unlink(req.file.path).catch(console.error);
+    }
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('❌ Error creando lugar:', errorMessage);
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al crear lugar' 
+    });
+  } finally {
+    client.release();
+  }
+},
+
+/**
+ * ✅ NUEVO: Subir PDF temporal para creación de lugar
+ */
+async subirPDFTemporal(req: Request, res: Response) {
+  try {
+    console.log('📄 Subiendo PDF temporal para creación de lugar...');
+
+    if (!req.file) {
+      return res.status(400).json({ 
         success: false,
-        error: 'Error al crear lugar' 
+        error: 'No se proporcionó ningún PDF' 
       });
     }
-  },
+
+    const hashNavegador = generarHashNavegador(req);
+    const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
+
+    // ✅ NUEVO: Análisis del PDF
+    const pdfAnalysisService = new PdfAnalysisService();
+    
+    // Validación básica primero
+    const validacionBasica = await pdfAnalysisService.validarPDFBasico(req.file.path);
+    if (!validacionBasica.valido) {
+      await fsPromises.unlink(req.file.path);
+      return res.status(400).json({
+        success: false,
+        error: 'PDF_INVALIDO',
+        message: validacionBasica.error || 'PDF no válido',
+        detalles: {
+          problemas: [validacionBasica.error || 'Archivo PDF no válido'],
+          sugerencias: [
+            'Asegúrate de que el archivo sea un PDF válido',
+            'Verifica que el tamaño no supere los 10MB',
+            'Intenta con otro archivo PDF'
+          ]
+        }
+      });
+    }
+
+    console.log('✅ PDF válido, procediendo con análisis de contenido...');
+
+    // Análisis de contenido textual
+    const resultadoAnalisis = await pdfAnalysisService.analizarTextoPDF(
+      req.file.path,
+      ipUsuario,
+      hashNavegador
+    );
+
+    // ✅ SI EL PDF ES RECHAZADO
+    if (!resultadoAnalisis.esAprobado) {
+      console.log('❌ PDF rechazado por moderación:', resultadoAnalisis.motivo);
+      
+      // Eliminar archivo
+      try {
+        await fsPromises.unlink(req.file.path);
+      } catch (error) {
+        console.error('Error eliminando PDF:', error);
+      }
+      
+      return res.status(400).json({
+        success: false,
+        error: 'PDF_RECHAZADO',
+        message: 'El contenido del PDF no cumple con las políticas de moderación',
+        motivo: resultadoAnalisis.motivo,
+        tipo: 'pdf_texto',
+        detalles: {
+          puntuacion: resultadoAnalisis.puntuacion,
+          problemas: [resultadoAnalisis.motivo || 'Contenido inapropiado detectado'],
+          sugerencias: [
+            'Revisa que el PDF no contenga lenguaje ofensivo o inapropiado',
+            'Asegúrate de que el contenido sea apropiado para todos los públicos',
+            'Evita contenido promocional, spam o enlaces no permitidos'
+          ],
+          metadata: resultadoAnalisis.metadata
+        }
+      });
+    }
+
+    console.log('✅ PDF aprobado por moderación');
+
+    const rutaPDF = `/uploads/pdfs/${req.file.filename}`;
+
+    res.json({
+      success: true,
+      mensaje: 'PDF aprobado para crear lugar',
+      url_pdf: rutaPDF,
+      moderacion: {
+        esAprobado: true,
+        puntuacion: resultadoAnalisis.puntuacion,
+        metadata: resultadoAnalisis.metadata
+      },
+      archivo: {
+        nombre: req.file.filename,
+        tamaño: req.file.size,
+        tipo: req.file.mimetype
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error subiendo PDF temporal:', error);
+    
+    // Limpiar archivo en caso de error
+    if (req.file?.path) {
+      try {
+        await fsPromises.unlink(req.file.path);
+      } catch (unlinkError) {
+        console.error('Error eliminando archivo:', unlinkError);
+      }
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al procesar PDF',
+      detalle: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+},
 
   /**
    * ✅ MEJORADO: Actualizar lugar con manejo completo de todos los estados de edición

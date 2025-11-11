@@ -151,68 +151,110 @@ export const useAdminPlaces = () => {
   const [error, setError] = useState<string | ModeracionError | null>(null);
   const { toast } = useToast();
 
-  // ✅ CORREGIDO: Manejar errores con mejor logging y estructura
-  const handleError = (err: unknown): string | ModeracionError => {
-    console.log('🔍 [ERROR HANDLER] Analizando error:', err);
-    
-    const error = err as ApiError;
+// ✅ CORREGIDO: Manejar errores con mejor logging y estructura
+const handleError = (err: unknown): string | ModeracionError => {
+  console.log('🔍 [ERROR HANDLER] Analizando error:', err);
+  
+  const error = err as ApiError;
+  
+  // ✅ MEJORADO: Verificar si hay datos de respuesta con estructura de moderación
+  if (error?.response?.data) {
+    const errorData = error.response.data;
+    console.log('📦 [ERROR HANDLER] Datos de error del servidor:', errorData);
     
     // Si es error de moderación con detalles específicos
-    if (error?.response?.data?.error && 
-        (error.response.data.error === 'CONTENIDO_RECHAZADO' || 
-         error.response.data.error === 'IMAGEN_RECHAZADA' ||
-         error.response.data.error === 'DESCRIPCION_RECHAZADA' ||
-         error.response.data.error === 'TEXTO_RECHAZADO' ||
-         error.response.data.error === 'VALIDACION_RECHAZADA')) {
+    if (errorData.error && 
+        (errorData.error === 'CONTENIDO_RECHAZADO' || 
+         errorData.error === 'IMAGEN_RECHAZADA' ||
+         errorData.error === 'DESCRIPCION_RECHAZADA' ||
+         errorData.error === 'TEXTO_RECHAZADO' ||
+         errorData.error === 'VALIDACION_RECHAZADA' ||
+         errorData.error === 'PDF_RECHAZADO' || // ✅ AGREGADO
+         errorData.error === 'PDF_INVALIDO')) { // ✅ AGREGADO
       
-      console.log('🎯 [ERROR HANDLER] Es error de moderación:', error.response.data);
+      console.log('🎯 [ERROR HANDLER] Es error de moderación estructurado:', errorData);
       
       return {
-        message: error.response.data.message || 'Contenido rechazado por moderación',
-        motivo: error.response.data.motivo,
-        tipo: error.response.data.tipo,
-        detalles: error.response.data.detalles
+        message: errorData.message || 'Contenido rechazado por moderación',
+        motivo: errorData.motivo,
+        tipo: errorData.tipo,
+        detalles: errorData.detalles
       };
     }
     
-    // Si es error de axios con response
-    if (error?.response?.data) {
-      const errorData = error.response.data;
-      return errorData.error || errorData.message || 'Error del servidor';
+    // ✅ NUEVO: Si no tiene la estructura esperada pero tiene mensaje/motivo
+    if (errorData.motivo || errorData.message) {
+      console.log('🎯 [ERROR HANDLER] Error con estructura alternativa:', errorData);
+      
+      return {
+        message: errorData.message || errorData.error || 'Error de moderación',
+        motivo: errorData.motivo,
+        tipo: errorData.tipo || 'general',
+        detalles: errorData.detalles || {
+          problemas: [errorData.motivo || errorData.message],
+          sugerencias: ['Revisa el contenido antes de intentar nuevamente']
+        }
+      };
     }
     
-    // Si es error nativo
-    return error?.message || 'Error desconocido';
-  };
+    // Si es error de axios con response pero sin estructura de moderación
+    return errorData.error || errorData.message || 'Error del servidor';
+  }
+  
+  // Si es error nativo
+  return error?.message || 'Error desconocido';
+};
 
-  // ✅ MEJORADO: Mostrar toast de rechazo con detalles mejorados
-  const mostrarToastRechazo = useCallback((resultado: ModeracionError) => {
-    console.log('🎯 [TOAST] Mostrando toast de rechazo:', resultado);
-    
-    const title = '🚫 Contenido no aprobado';
-    let description = resultado.motivo || resultado.message;
-    
-    // Construir descripción detallada
-    if (resultado.detalles?.problemas && resultado.detalles.problemas.length > 0) {
-      description += `\n\nProblemas detectados:\n• ${resultado.detalles.problemas.join('\n• ')}`;
-    }
-    
-    if (resultado.detalles?.sugerencias && resultado.detalles.sugerencias.length > 0) {
-      description += `\n\nSugerencias:\n• ${resultado.detalles.sugerencias.join('\n• ')}`;
-    }
-    
-    // Agregar puntuación si está disponible
-    if (resultado.detalles?.puntuacion) {
-      description += `\n\nNivel de riesgo: ${(resultado.detalles.puntuacion * 100).toFixed(1)}%`;
-    }
-
+// ✅ MEJORADO: Mostrar toast de rechazo con manejo de casos edge
+const mostrarToastRechazo = useCallback((resultado: ModeracionError | string) => {
+  console.log('🎯 [TOAST] Mostrando toast de rechazo:', resultado);
+  
+  // ✅ NUEVO: Manejar caso donde resultado es un string
+  if (typeof resultado === 'string') {
     toast({
-      title,
-      description,
+      title: '🚫 Error',
+      description: resultado,
       variant: 'destructive',
-      duration: 10000, // 10 segundos para leer
+      duration: 8000,
     });
-  }, [toast]);
+    return;
+  }
+  
+  let title = '🚫 Contenido no aprobado';
+  let description = resultado.motivo || resultado.message;
+  
+  // ✅ ESPECÍFICO PARA PDFs - MEJORADO
+  if (resultado.tipo === 'pdf_texto' || resultado.tipo === 'pdf') {
+    title = '🚫 PDF rechazado';
+    description = resultado.motivo || 'El contenido del PDF no cumple con las políticas';
+  }
+  
+  // ✅ MEJORADO: Construir descripción detallada
+  if (resultado.detalles?.problemas && resultado.detalles.problemas.length > 0) {
+    description += `\n\nProblemas detectados:\n• ${resultado.detalles.problemas.join('\n• ')}`;
+  }
+  
+  if (resultado.detalles?.sugerencias && resultado.detalles.sugerencias.length > 0) {
+    description += `\n\nSugerencias:\n• ${resultado.detalles.sugerencias.join('\n• ')}`;
+  }
+  
+  // Agregar puntuación si está disponible
+  if (resultado.detalles?.puntuacion) {
+    description += `\n\nNivel de riesgo: ${(resultado.detalles.puntuacion * 100).toFixed(1)}%`;
+  }
+
+  // ✅ NUEVO: Si no hay detalles, usar el mensaje básico
+  if (!description || description === resultado.message) {
+    description = resultado.message || 'El contenido no cumple con las políticas de moderación';
+  }
+
+  toast({
+    title,
+    description,
+    variant: 'destructive',
+    duration: 10000,
+  });
+}, [toast]);
 
   const { 
     validarDescripcionFoto, 
@@ -785,44 +827,127 @@ const uploadPlaceImage = useCallback(async (placeId: string, imageFile: File) =>
   }
 }, [toast, mostrarToastRechazo]);
 
-  /**
-   * Subir PDF para un lugar
-   */
-  const uploadPlacePDF = useCallback(async (placeId: string, pdfFile: File) => {
-    try {
-      console.log('📄 [UPLOAD] Subiendo PDF para lugar:', placeId);
+
+// En tu hook useAdminPlaces - mejorar la función uploadPlacePDFConModeracion
+
+const uploadPlacePDFConModeracion = useCallback(async (placeId: string, pdfFile: File) => {
+  try {
+    console.log('📄 [UPLOAD] Subiendo PDF con moderación para lugar:', placeId);
+    
+    const formData = new FormData();
+    formData.append('pdf', pdfFile);
+
+    const response = await api.post<{ 
+      success: boolean;
+      mensaje: string;
+      url_pdf: string;
+      moderacion?: {
+        esAprobado: boolean;
+        puntuacion?: number;
+        metadata?: Record<string, unknown>;
+      };
+      archivo: {
+        nombre: string;
+        tamaño: number;
+        tipo: string;
+      };
+    }>(`/api/lugares/${placeId}/pdf-con-moderacion`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 45000,
+    });
+
+    console.log('✅ [UPLOAD] PDF procesado con moderación:', response.data);
+
+    // ✅ VERIFICAR SI FUE RECHAZADO
+    if (response.data.moderacion && !response.data.moderacion.esAprobado) {
+      const errorModeracion: ModeracionError = {
+        message: 'El contenido del PDF no cumple con las políticas de moderación',
+        motivo: 'Contenido inapropiado detectado en el PDF',
+        tipo: 'pdf_texto',
+        detalles: {
+          puntuacion: response.data.moderacion.puntuacion,
+          problemas: ['El PDF contiene texto que no cumple con las políticas'],
+          sugerencias: [
+            'Revisa que el PDF no contenga lenguaje ofensivo o inapropiado',
+            'Asegúrate de que el contenido sea apropiado para todos los públicos',
+            'Evita contenido promocional, spam o enlaces no permitidos'
+          ],
+          campoEspecifico: 'descripcion' as const
+        }
+      };
       
-      const formData = new FormData();
-      formData.append('pdf', pdfFile);
-
-      const response = await api.post<{ 
-        mensaje: string;
-        url_pdf: string;
-      }>(`/api/lugares/${placeId}/pdf`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000,
-      });
-
-      console.log('✅ [UPLOAD] PDF subido correctamente');
-
-      // Actualizar el estado local
-      setPlaces(prevPlaces => 
-        prevPlaces.map(place => 
-          place.id === placeId 
-            ? { ...place, pdf_url: response.data.url_pdf }
-            : place
-        )
-      );
-
-      return response.data;
-    } catch (err: unknown) {
-      const errorMessage = handleError(err);
-      console.error('❌ [UPLOAD] Error subiendo PDF:', errorMessage);
-      throw new Error(typeof errorMessage === 'string' ? errorMessage : errorMessage.message);
+      mostrarToastRechazo(errorModeracion);
+      throw errorModeracion;
     }
-  }, []);
+
+    // ✅ SI ES APROBADO: Actualizar estado local
+    setPlaces(prevPlaces => 
+      prevPlaces.map(place => 
+        place.id === placeId 
+          ? { ...place, pdf_url: response.data.url_pdf }
+          : place
+      )
+    );
+
+    // ✅ MOSTRAR TOAST DE ÉXITO
+    toast({
+      title: '✅ PDF aprobado',
+      description: 'El PDF ha sido subido y aprobado por moderación',
+    });
+
+    return response.data;
+
+  } catch (err: any) {
+    console.error('❌ [UPLOAD] Error subiendo PDF con moderación:', err);
+    
+    // ✅ MEJORADO: Capturar errores de respuesta del servidor
+    if (err.response?.data) {
+      const errorData = err.response.data;
+      console.log('📦 [PDF UPLOAD ERROR] Datos del error:', errorData);
+      
+      // ✅ CONSTRUIR ERROR DE MODERACIÓN CON DETALLES
+      const errorModeracion: ModeracionError = {
+        message: errorData.message || 'El contenido del PDF no cumple con las políticas',
+        motivo: errorData.motivo || errorData.error,
+        tipo: errorData.tipo || 'pdf_texto',
+        detalles: errorData.detalles || {
+          problemas: [errorData.motivo || 'Contenido inapropiado detectado'],
+          sugerencias: [
+            'Revisa que el PDF no contenga lenguaje ofensivo o inapropiado',
+            'Asegúrate de que el contenido sea apropiado para todos los públicos',
+            'Evita contenido promocional, spam o enlaces no permitidos'
+          ],
+          puntuacion: errorData.detalles?.puntuacion
+        }
+      };
+      
+      console.log('🎯 [PDF REJECTED] Mostrando toast específico para PDF con detalles');
+      mostrarToastRechazo(errorModeracion);
+      throw errorModeracion;
+    }
+    
+    // ✅ PARA ERRORES GENÉRICOS
+    const errorResult = handleError(err);
+    
+    if (typeof errorResult === 'object' && 'detalles' in errorResult) {
+      console.log('🎯 [PDF REJECTED] Error de moderación capturado');
+      mostrarToastRechazo(errorResult);
+    } else {
+      // Para errores genéricos
+      const errorMessage = typeof errorResult === 'string' ? errorResult : errorResult.message;
+      console.log('⚠️ [UPLOAD] Error genérico:', errorMessage);
+      toast({
+        title: '❌ Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
+    
+    throw errorResult;
+  }
+}, [toast, mostrarToastRechazo]);
 
   /**
    * Subir múltiples imágenes a la galería de un lugar - CORREGIDA
@@ -1442,7 +1567,7 @@ const uploadPlaceImage = useCallback(async (placeId: string, imageFile: File) =>
     deleteGalleryImage,
     setMainImage,
     fetchPlaces,
-    uploadPlacePDF,
+    uploadPlacePDFConModeracion,
     refetch: fetchPlaces,
     updateImageDescription,
     deleteMainImage,

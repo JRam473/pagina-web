@@ -1,4 +1,4 @@
-// rutas/lugarRoutes.ts - VERSIÓN COMPLETADA
+// rutas/lugarRoutes.ts - VERSIÓN CORREGIDA
 import { Router } from 'express';
 import { lugarController } from '../controladores/lugarController';
 import { autenticarAdmin } from '../middleware/autenticacion';
@@ -22,10 +22,18 @@ router.post('/moderacion/analizar-descripcion-foto', lugarController.analizarDes
 
 // ==================== RUTAS PROTEGIDAS (ADMIN ONLY) ====================
 
+// ✅ NUEVA: Ruta para subir PDF temporal (para creación de lugares)
+router.post('/pdf-temporal', 
+  autenticarAdmin, 
+  uploadPDF.single('pdf'),
+  validacion.validarArchivoPDF,
+  lugarController.subirPDFTemporal  // ← Esta función debe existir en el controlador
+);
+
 // ✅ CORREGIDO: Ruta para validación previa de cambios
 router.post('/:id/validar-cambios',
   autenticarAdmin,
-  lugarController.validarCambiosLugar  // ← Esta función debe existir en el controlador
+  lugarController.validarCambiosLugar
 );
 
 // Crear lugar CON soporte para imagen
@@ -39,7 +47,7 @@ router.post('/',
 // ✅ CORREGIDO: Usar validación específica para actualización
 router.put('/:id', 
   autenticarAdmin, 
-  validacion.validarActualizarLugar,  // ← Nueva validación
+  validacion.validarActualizarLugar,
   lugarController.actualizarLugar
 );
 
@@ -65,7 +73,7 @@ router.post('/:id/imagenes',
 );
 
 // Subir PDF (admin)
-router.post('/:id/pdf', 
+router.post('/:id/pdf-con-moderacion', 
   autenticarAdmin, 
   uploadPDF.single('pdf'),
   validacion.validarArchivoPDF,
