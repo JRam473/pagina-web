@@ -628,7 +628,7 @@ async crearLugar(req: Request, res: Response) {
 
     if (imageFile) {
       console.log('🖼️ Iniciando moderación de imagen para lugar...');
-      resultadoModeracionImagen = await moderacionImagenService.moderarImagen(
+      resultadoModeracionImagen = await moderacionImagenService.moderarImagenLugar(
         imageFile.path,
         ipUsuario,
         hashNavegador
@@ -1380,7 +1380,7 @@ async subirPDFTemporal(req: Request, res: Response) {
 
       const moderacionImagenService = new ModeracionImagenService();
       
-      const resultadoModeracion = await moderacionImagenService.moderarImagen(
+      const resultadoModeracion = await moderacionImagenService.moderarImagenLugar(
         req.file.path,
         ipUsuario,
         hashNavegador
@@ -1603,7 +1603,7 @@ async subirPDFTemporal(req: Request, res: Response) {
       const imagenesAceptadas = [];
       
       for (const file of req.files) {
-        const resultadoModeracion = await moderacionImagenService.moderarImagen(
+        const resultadoModeracion = await moderacionImagenService.moderarImagenLugar(
           file.path,
           ipUsuario,
           hashNavegador
@@ -2613,7 +2613,7 @@ async reemplazarImagenPrincipal(req: Request, res: Response) {
 
     const moderacionImagenService = new ModeracionImagenService();
     
-    const resultadoModeracion = await moderacionImagenService.moderarImagen(
+    const resultadoModeracion = await moderacionImagenService.moderarImagenLugar(
       req.file.path,
       ipUsuario,
       hashNavegador

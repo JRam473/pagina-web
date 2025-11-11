@@ -127,20 +127,11 @@ export const experienciaController = {
   /**
    * Crear experiencia con moderación DE TEXTO, NOMBRE DE USUARIO E IMAGEN
    */
-  async crearExperiencia(req: Request, res: Response) {
+ async crearExperiencia(req: Request, res: Response) {
     try {
       const file = req.file;
       const { descripcion, lugar_id, nombre_usuario } = req.body;
 
-      // ✅ VERIFICAR QUE LOS DATOS LLEGUEN CORRECTAMENTE
-      console.log('📦 Datos recibidos:', {
-        tieneArchivo: !!file,
-        descripcion: descripcion ? `"${descripcion.substring(0, 50)}..."` : 'undefined',
-        lugar_id: lugar_id || 'undefined',
-        nombre_usuario: nombre_usuario ? `"${nombre_usuario}"` : 'undefined (anónimo)'
-      });
-
-      // Validaciones básicas
       if (!file || !descripcion?.trim()) {
         return res.status(400).json({ 
           success: false,
@@ -148,241 +139,89 @@ export const experienciaController = {
         });
       }
 
-      // Validar longitud de descripción
-      if (descripcion.trim().length > 500) {
-        return res.status(400).json({
-          success: false,
-          error: 'La descripción no puede exceder los 500 caracteres'
-        });
-      }
-
       const hashNavegador = generarHashNavegador(req);
       const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
 
-      console.log('📱 Nueva experiencia desde:', {
-        hashNavegador: hashNavegador.substring(0, 10) + '...',
-        ip: ipUsuario,
-        nombre_usuario: nombre_usuario || 'Usuario Anónimo'
-      });
-
       const moderacionService = new ModeracionService();
-      const moderacionImagenService = new ModeracionImagenService(); // 🆕 NUEVO
+      const moderacionImagenService = new ModeracionImagenService();
 
-      // ✅ 1. PRIMERO MODERAR EL NOMBRE DE USUARIO (SI SE PROPORCIONA)
-      const resultadoModeracionNombre = await moderarNombreUsuario(
-        nombre_usuario,
-        ipUsuario,
-        hashNavegador,
-        moderacionService
-      );
+      // ✅ 1. CREAR Y MODERAR IMAGEN TEMPORAL (TODO EN UN PASO)
+      const fileBuffer = await fs.readFile(file.path);
+      const tempResult = await moderacionImagenService.crearImagenTemporal(fileBuffer, file.filename);
+      
+      // Limpiar archivo original inmediatamente
+      await fs.unlink(file.path);
 
-      if (!resultadoModeracionNombre.esAprobado) {
-        console.log('❌ Nombre de usuario rechazado:', resultadoModeracionNombre.motivoRechazo);
-        
-        let detallesEspecificos: string[] = [];
-        
-        // Extraer detalles específicos del análisis de texto
-        if (resultadoModeracionNombre.detalles?.texto) {
-          const texto = resultadoModeracionNombre.detalles.texto;
-          if (texto.palabrasOfensivas?.length > 0) {
-            detallesEspecificos.push(`Palabras problemáticas: ${texto.palabrasOfensivas.slice(0, 3).join(', ')}`);
-          }
-          if (texto.razon) {
-            detallesEspecificos.push(`Razón: ${texto.razon}`);
-          }
-        }
-        
-        return res.status(400).json({
+      if (!tempResult.success) {
+        return res.status(500).json({
           success: false,
-          error: 'NOMBRE_USUARIO_RECHAZADO',
-          message: 'El nombre de usuario no cumple con las políticas de contenido',
-          motivo: resultadoModeracionNombre.motivoRechazo,
-          tipo: 'nombre_usuario',
-          detalles: {
-            problemas: detallesEspecificos,
-            sugerencias: generarSugerencias('nombre_usuario'),
-            timestamp: new Date().toISOString()
-          }
+          error: 'Error al procesar imagen'
         });
       }
 
-      // ✅ 2. LUEGO MODERAR LA DESCRIPCIÓN
-      const resultadoModeracionTexto = await moderacionService.moderarContenidoEnTiempoReal({
+      // Moderar la imagen temporal
+      const resultadoImagen = await moderacionImagenService.moderarImagenExperiencia(
+        tempResult.tempPath!,
+        ipUsuario,
+        hashNavegador
+      );
+
+      if (!resultadoImagen.esAprobado) {
+        return res.status(400).json({
+          success: false,
+          error: 'IMAGEN_RECHAZADA',
+          message: 'La imagen no cumple con las políticas de contenido',
+          motivo: resultadoImagen.motivoRechazo
+        });
+      }
+
+      // ✅ 2. MODERAR TEXTO
+      const resultadoTexto = await moderacionService.moderarContenidoEnTiempoReal({
         texto: descripcion,
         ipUsuario,
         hashNavegador
       });
 
-      // ✅ SI LA DESCRIPCIÓN ES RECHAZADA: Responder inmediatamente
-      if (!resultadoModeracionTexto.esAprobado) {
-        console.log('❌ Contenido rechazado por moderación:', resultadoModeracionTexto.motivoRechazo);
-        
-        // ✅ MEJORADO: Buscar el log más reciente para obtener detalles específicos
-        const logReciente = await pool.query(
-          `SELECT motivo, resultado_moderacion 
-           FROM logs_moderacion 
-           WHERE hash_navegador = $1 
-           ORDER BY creado_en DESC 
-           LIMIT 1`,
-          [hashNavegador]
-        );
-
-        let motivoDetallado = resultadoModeracionTexto.motivoRechazo;
-        let detallesEspecificos: string[] = [];
-
-        if (logReciente.rows.length > 0) {
-          const log = logReciente.rows[0];
-          motivoDetallado = log.motivo;
-          
-          // Extraer detalles específicos del resultado de moderación
-          try {
-            const resultado = JSON.parse(log.resultado_moderacion);
-            if (resultado.analisisTexto) {
-              const analisis = resultado.analisisTexto;
-              if (analisis.palabrasOfensivas?.length > 0) {
-                detallesEspecificos.push(`Palabras problemáticas: ${analisis.palabrasOfensivas.slice(0, 3).join(', ')}`);
-              }
-              if (analisis.razon) {
-                detallesEspecificos.push(`Razón: ${analisis.razon}`);
-              }
-            }
-          } catch (error) {
-            console.error('Error parseando resultado moderación:', error);
-          }
-        }
-        
+      if (!resultadoTexto.esAprobado) {
         return res.status(400).json({
           success: false,
           error: 'CONTENIDO_RECHAZADO',
-          message: 'El contenido no cumple con las políticas de contenido',
-          motivo: motivoDetallado,
-          tipo: 'texto',
-          detalles: {
-            puntuacion: resultadoModeracionTexto.puntuacionGeneral,
-            problemas: detallesEspecificos,
-            sugerencias: generarSugerencias('texto'),
-            timestamp: new Date().toISOString()
-          }
+          message: 'El texto no cumple con las políticas de contenido'
         });
       }
 
-      // 🆕 3. MODERAR LA IMAGEN
-      console.log('🖼️ Iniciando moderación de imagen...');
-      const resultadoModeracionImagen = await moderacionImagenService.moderarImagen(
-        file.path,
-        ipUsuario,
-        hashNavegador
-      );
-
-      if (!resultadoModeracionImagen.esAprobado) {
-        console.log('❌ Imagen rechazada por moderación:', resultadoModeracionImagen.motivoRechazo);
-        
-        // Eliminar archivo subido
-        await fs.unlink(file.path).catch(console.error);
-        
-        return res.status(400).json({
-          success: false,
-          error: 'IMAGEN_RECHAZADA',
-          message: 'La imagen no cumple con las políticas de contenido',
-          motivo: resultadoModeracionImagen.motivoRechazo,
-          tipo: 'imagen',
-          detalles: {
-            puntuacion: resultadoModeracionImagen.puntuacionRiesgo,
-            problemas: [resultadoModeracionImagen.motivoRechazo || 'Contenido inapropiado detectado'],
-            sugerencias: [
-              'Asegúrate de que la imagen no contenga contenido violento o gráfico',
-              'No incluyas armas o elementos peligrosos',
-              'Usa imágenes apropiadas para todas las edades',
-              'Verifica que la imagen sea clara y de buena calidad'
-            ],
-            timestamp: new Date().toISOString()
-          }
-        });
-      }
-
-      console.log('✅ Imagen aprobada por moderación');
-
-      // ✅ 4. VERIFICAR LÍMITES DE USUARIO (SOLO SI TODO ES APROBADO)
-      const limitesResult = await pool.query(
-        `SELECT COUNT(*) as count 
-         FROM experiencias 
-         WHERE (hash_navegador = $1 OR ip_usuario = $2)
-         AND creado_en >= CURRENT_DATE`,
-        [hashNavegador, ipUsuario]
-      );
-
-      const experienciasHoy = parseInt(limitesResult.rows[0].count);
-      const limiteDiario = 10;
-
-      if (experienciasHoy >= limiteDiario) {
-        // Eliminar archivo si se excede el límite
-        await fs.unlink(file.path).catch(console.error);
-        
-        return res.status(429).json({ 
-          success: false,
-          error: `Límite diario alcanzado: máximo ${limiteDiario} experiencias por día`,
-          detalles: `Has subido ${experienciasHoy} experiencias hoy`
-        });
-      }
-
-      // Construir URLs de imagen
-      const imageUrl = `/uploads/images/experiencias/${file.filename}`;
-      const fullImageUrl = `${process.env.BASE_URL || 'http://localhost:4000'}${imageUrl}`;
-
-      // ✅ 5. INSERTAR EXPERIENCIA APROBADA CON NOMBRE DE USUARIO
-      const nombreUsuarioFinal = nombre_usuario?.trim() || 'Usuario Anónimo';
-      
+      // ✅ 3. CREAR EXPERIENCIA CON RUTA FINAL
       const result = await pool.query(
         `INSERT INTO experiencias (
           lugar_id, url_foto, descripcion, ruta_almacenamiento,
-          tamaño_archivo, tipo_archivo,
           ip_usuario, hash_navegador, nombre_usuario
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7) 
         RETURNING *`,
         [
           lugar_id || null,
-          fullImageUrl,
+          resultadoImagen.rutaFinal,
           descripcion.trim(),
-          file.path,
-          file.size,
-          file.mimetype,
+          resultadoImagen.rutaFinal,
           ipUsuario,
           hashNavegador,
-          nombreUsuarioFinal
+          nombre_usuario?.trim() || 'Usuario Anónimo'
         ]
       );
 
-      const experiencia = result.rows[0];
+      console.log('✅ Experiencia creada con imagen aprobada');
 
-      console.log('✅ Experiencia creada y publicada:', {
-        id: experiencia.id,
-        nombre_usuario: experiencia.nombre_usuario,
-        moderacion_texto: 'aprobado',
-        moderacion_imagen: 'aprobado'
-      });
-
-      // Respuesta al usuario
       res.status(201).json({
         success: true,
-        mensaje: 'Experiencia creada y publicada exitosamente.',
-        experiencia: {
-          id: experiencia.id,
-          url_foto: experiencia.url_foto,
-          descripcion: experiencia.descripcion,
-          nombre_usuario: experiencia.nombre_usuario,
-          creado_en: experiencia.creado_en,
-          limite_restante: limiteDiario - experienciasHoy - 1
-        }
+        mensaje: 'Experiencia creada exitosamente',
+        experiencia: result.rows[0]
       });
 
     } catch (error) {
-      // Limpiar archivo en caso de error
       if (req.file) {
         await fs.unlink(req.file.path).catch(console.error);
       }
       
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('❌ Error creando experiencia:', errorMessage);
+      console.error('❌ Error creando experiencia:', error);
       res.status(500).json({ 
         success: false,
         error: 'Error al crear experiencia' 
@@ -824,41 +663,115 @@ export const experienciaController = {
 
 
 
-  /**
-   * Eliminar experiencia - SIN CAMBIOS (pero ya incluye nombre_usuario en la respuesta)
-   */
-  async eliminarExperiencia(req: Request, res: Response) {
-    try {
-      const { id } = req.params;
-      const hashNavegador = generarHashNavegador(req);
+/**
+ * Eliminar experiencia - VERSIÓN MEJORADA CON MÚLTIPLES CRITERIOS
+ */
+async eliminarExperiencia(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const hashNavegador = generarHashNavegador(req);
+    const ipUsuario = req.ip || req.connection.remoteAddress || 'unknown';
 
-      const result = await pool.query(
-        'DELETE FROM experiencias WHERE id = $1 AND hash_navegador = $2 RETURNING *',
-        [id, hashNavegador]
+    console.log('🗑️ Intentando eliminar experiencia:', {
+      id,
+      hashNavegador: hashNavegador.substring(0, 10) + '...',
+      ipUsuario
+    });
+
+    // ✅ VERIFICACIÓN MEJORADA: Buscar por múltiples criterios
+    const experienciaExistente = await pool.query(
+      `SELECT * FROM experiencias 
+       WHERE id = $1 
+       AND (hash_navegador = $2 OR ip_usuario = $3)`,
+      [id, hashNavegador, ipUsuario]
+    );
+
+    if (experienciaExistente.rows.length === 0) {
+      console.log('❌ Experiencia no encontrada con los criterios actuales:', {
+        id,
+        hashNavegador: hashNavegador.substring(0, 10) + '...',
+        ipUsuario
+      });
+
+      // ✅ DIAGNÓSTICO: Obtener información de la experiencia para debugging
+      const experienciaInfo = await pool.query(
+        'SELECT id, hash_navegador, ip_usuario, creado_en FROM experiencias WHERE id = $1',
+        [id]
       );
 
-      if (result.rows.length === 0) {
+      if (experienciaInfo.rows.length === 0) {
         return res.status(404).json({ 
           success: false,
-          error: 'Experiencia no encontrada o no tienes permisos para eliminarla' 
+          error: 'Experiencia no encontrada en el sistema'
         });
       }
 
-      res.json({ 
-        success: true,
-        mensaje: 'Experiencia eliminada exitosamente',
-        experiencia: result.rows[0] // ✅ Ya incluye nombre_usuario
+      const exp = experienciaInfo.rows[0];
+      console.log('🔍 Información de la experiencia encontrada:', {
+        id: exp.id,
+        hash_guardado: exp.hash_navegador ? exp.hash_navegador.substring(0, 10) + '...' : 'null',
+        ip_guardada: exp.ip_usuario,
+        creado_en: exp.creado_en,
+        hash_actual: hashNavegador.substring(0, 10) + '...',
+        ip_actual: ipUsuario
       });
 
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('Error eliminando experiencia:', errorMessage);
-      res.status(500).json({ 
+      return res.status(403).json({ 
         success: false,
-        error: 'Error al eliminar experiencia' 
+        error: 'No tienes permisos para eliminar esta experiencia',
+        detalles: {
+          motivo: 'La experiencia fue creada desde un navegador o IP diferente',
+          solucion: 'Intenta desde el mismo navegador y red donde la creaste'
+        }
       });
     }
-  },
+
+    // ✅ ELIMINACIÓN: Primero obtener info para limpiar archivos
+    const experiencia = experienciaExistente.rows[0];
+    
+    // Eliminar archivos de imagen si existen
+    if (experiencia.ruta_almacenamiento) {
+      try {
+        await fs.unlink(experiencia.ruta_almacenamiento);
+        console.log('🗑️ Archivo de imagen eliminado:', experiencia.ruta_almacenamiento);
+      } catch (error) {
+        console.warn('⚠️ No se pudo eliminar el archivo de imagen:', error);
+      }
+    }
+
+    // Eliminar de la base de datos
+    const result = await pool.query(
+      'DELETE FROM experiencias WHERE id = $1 RETURNING *',
+      [id]
+    );
+
+    // Limpiar vistas relacionadas
+    await pool.query(
+      'DELETE FROM vistas_experiencias WHERE experiencia_id = $1',
+      [id]
+    );
+
+    console.log('✅ Experiencia eliminada exitosamente:', {
+      id,
+      descripcion: experiencia.descripcion?.substring(0, 50) + '...'
+    });
+
+    res.json({ 
+      success: true,
+      mensaje: 'Experiencia eliminada exitosamente',
+      experiencia: result.rows[0]
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('❌ Error eliminando experiencia:', errorMessage);
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al eliminar experiencia',
+      detalles: errorMessage
+    });
+  }
+},
 
   /**
    * Obtener experiencias del usuario actual - YA ACTUALIZADO
@@ -1298,7 +1211,7 @@ export const experienciaController = {
         console.log('🖼️ Procesando nueva imagen para experiencia:', id);
         
         // 🆕 CORREGIDO: Usar el servicio de moderación de imágenes
-        const resultadoModeracionImagen = await moderacionImagenService.moderarImagen(
+        const resultadoModeracionImagen = await moderacionImagenService.moderarImagenExperiencia(
           file.path,
           actual.ip_usuario,
           hashNavegador

@@ -109,51 +109,6 @@ app.get('/api/moderacion/estado', async (req, res) => {
   }
 });
 
-// ✅ RUTA PARA PRUEBAS DE MODERACIÓN (solo desarrollo)
-if (process.env.NODE_ENV === 'development') {
-  app.post('/api/moderacion/debug', async (req, res) => {
-    try {
-      const { texto, tipo = 'texto' } = req.body;
-      
-      if (texto && tipo === 'texto') {
-        const analizador = new AnalizadorTexto();
-        const resultado = await analizador.analizarTexto(texto);
-        
-        return res.json({
-          success: true,
-          tipo: 'texto',
-          resultado
-        });
-      }
-      
-      if (tipo === 'imagen') {
-        const moderacionImagenService = new ModeracionImagenService();
-        const resultadoSimulado = await moderacionImagenService.moderarImagen(
-          '/ruta/simulada/imagen.jpg',
-          '127.0.0.1',
-          'debug-hash'
-        );
-        
-        return res.json({
-          success: true,
-          tipo: 'imagen',
-          resultado: resultadoSimulado,
-          nota: 'Análisis simulado en modo desarrollo'
-        });
-      }
-      
-      res.status(400).json({ 
-        success: false,
-        error: 'Parámetros requeridos para análisis' 
-      });
-    } catch (error) {
-      res.status(500).json({ 
-        success: false,
-        error: 'Error en análisis debug' 
-      });
-    }
-  });
-}
 
 // ✅ MANEJO DE RUTAS NO ENCONTRADAS
 app.use('/api/', (req, res) => {
