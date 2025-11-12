@@ -1,17 +1,13 @@
 {
-  "name": "san_juan",
+  "name": "frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "nodemon src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "install-all-deps": "npm install && pip install -r scripts/requirements_optimizado.txt",
-    "start-with-models": "concurrently \"npm run model-server\" \"npm run start\"",
-    "model-server": "cd scripts && python modelo_server.py",
-    "railway-build": "npm run build",
-    "railway-start": "npm run start-with-models"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",

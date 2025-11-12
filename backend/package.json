@@ -1,7 +1,6 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "Backend con Express, TypeScript y soporte para usuarios, fotos y comentarios",
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",

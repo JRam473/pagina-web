@@ -1,0 +1,16 @@
+docker-compose.yml
+docker-compose.*
+.gitignore
+README.md
+docs/
+backend/venv/
+backend/google-credentials/
+frontend/dist/
+frontend/node_modules/
+backend/node_modules/
+*.local
+.env
+.env.local
+*.env
+dockerfile
+Dockerfile
