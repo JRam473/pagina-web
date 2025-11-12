@@ -1,0 +1,22 @@
+[phases.setup]
+cmds = [
+    "npm install",
+    "pip install --upgrade pip",
+    "pip install -r scripts/requirements.txt"
+]
+
+[phases.build]
+cmds = [
+    "npm run build"
+]
+
+[phases.install]
+cmds = [
+    "echo 'Install phase completed'"
+]
+
+[start]
+cmd = "npm run start-with-models"
+
+[build.env]
+NODE_ENV = "production"
