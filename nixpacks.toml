@@ -1,0 +1,17 @@
+[phases.setup]
+cmds = [
+    "cd backend && npm install",
+    "cd backend && pip install --upgrade pip",
+    "cd backend && pip install -r scripts/requirements_optimizado.txt"
+]
+
+[phases.build]
+cmds = [
+    "cd backend && npm run build"
+]
+
+[start]
+cmd = "cd backend && npm run start-with-models"
+
+[build.env]
+NODE_ENV = "production"
